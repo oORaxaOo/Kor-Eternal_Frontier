@@ -111,6 +111,8 @@ namespace KorEternalFrontier
         System.Random rng;
         Camera cameraRig;
         string buildMode = "";
+        bool isDraggingSelection;
+        Vector2 dragStartGui, dragCurrentGui;
         float economyTimer, blightTimer;
 
         void Start()
@@ -201,28 +203,80 @@ namespace KorEternalFrontier
         {
             if (cameraRig == null) return;
             Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-            if (guiMouse.x > Screen.width - 262 || guiMouse.y < 70 || guiMouse.y > Screen.height - 66) return;
-            if (Input.GetMouseButtonDown(0))
+            bool overHud = guiMouse.x > Screen.width - 262 || guiMouse.y < 70 || guiMouse.y > Screen.height - 66;
+
+            if (Input.GetMouseButtonDown(0) && !overHud)
             {
+                isDraggingSelection = true;
+                dragStartGui = guiMouse;
+                dragCurrentGui = guiMouse;
+            }
+            if (isDraggingSelection && Input.GetMouseButton(0))
+                dragCurrentGui = guiMouse;
+
+            if (Input.GetMouseButtonUp(0) && isDraggingSelection)
+            {
+                dragCurrentGui = guiMouse;
+                bool dragged = Vector2.Distance(dragStartGui, dragCurrentGui) >= 12f;
+                isDraggingSelection = false;
+                if (dragged)
+                {
+                    SelectInRectangle(dragStartGui, dragCurrentGui,
+                        Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift));
+                    return;
+                }
+                if (overHud) return;
                 var ray = cameraRig.ScreenPointToRay(Input.mousePosition);
                 if (Physics.Raycast(ray, out var hit, 300f))
                 {
                     var e = hit.collider.GetComponentInParent<KorEntity>();
                     if (e != null && e.Team == 0) { Select(e, Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)); return; }
-                    if (buildMode != "" && selected.Exists(s => s.Kind == KorKind.Pioneer)) { Build(buildMode, hit.point); return; }
+                    if (buildMode != "" && selected.Exists(unit => unit != null && unit.Kind == KorKind.Pioneer)) { Build(buildMode, hit.point); return; }
+                    if (!Input.GetKey(KeyCode.LeftShift) && !Input.GetKey(KeyCode.RightShift))
+                    {
+                        foreach (var old in selected) if (old != null) old.Tint(false);
+                        selected.Clear();
+                    }
                     Notice = "Right-click to issue a movement or attack order.";
                 }
             }
-            if (Input.GetMouseButtonDown(1) && selected.Count > 0)
+
+            if (Input.GetMouseButtonDown(1) && !overHud && selected.Count > 0)
             {
                 var ray = cameraRig.ScreenPointToRay(Input.mousePosition);
                 if (Physics.Raycast(ray, out var hit, 300f))
                 {
                     var target = hit.collider.GetComponentInParent<KorEntity>();
-                    foreach (var e in selected) if (!e.Building) e.Destination = target != null && target.Team == 1 ? target.transform.position : hit.point;
+                    foreach (var e in selected)
+                        if (e != null && !e.Building)
+                            e.Destination = target != null && target.Team == 1 ? target.transform.position : hit.point;
                     Notice = target != null && target.Team == 1 ? "Engagement order issued." : "Movement order issued.";
                 }
             }
+        }
+
+        void SelectInRectangle(Vector2 a, Vector2 b, bool additive)
+        {
+            Rect rect = Rect.MinMaxRect(Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y),
+                Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
+            if (!additive)
+            {
+                foreach (var old in selected) if (old != null) old.Tint(false);
+                selected.Clear();
+            }
+            foreach (var e in entities)
+            {
+                if (e == null || e.Team != 0 || e.Building || selected.Contains(e)) continue;
+                Vector3 screen = cameraRig.WorldToScreenPoint(e.transform.position);
+                if (screen.z <= 0f) continue;
+                Vector2 point = new Vector2(screen.x, Screen.height - screen.y);
+                if (rect.Contains(point))
+                {
+                    selected.Add(e);
+                    e.Tint(true);
+                }
+            }
+            Notice = selected.Count > 0 ? "Selected group: " + selected.Count + " units." : "No units in selection area.";
         }
 
         void Select(KorEntity e, bool additive = false)
@@ -452,6 +506,16 @@ namespace KorEternalFrontier
 
         void OnGUI()
         {
+            if (isDraggingSelection && Vector2.Distance(dragStartGui, dragCurrentGui) >= 12f)
+            {
+                Rect selectionRect = Rect.MinMaxRect(Mathf.Min(dragStartGui.x, dragCurrentGui.x),
+                    Mathf.Min(dragStartGui.y, dragCurrentGui.y), Mathf.Max(dragStartGui.x, dragCurrentGui.x),
+                    Mathf.Max(dragStartGui.y, dragCurrentGui.y));
+                Color oldColor = GUI.color;
+                GUI.color = new Color(1f, .72f, .2f, .22f);
+                GUI.Box(selectionRect, GUIContent.none);
+                GUI.color = oldColor;
+            }
             GUI.skin.label.fontSize=15; GUI.skin.button.fontSize=13;
             GUI.color=new Color(.055f,.05f,.06f,.95f); GUI.Box(new Rect(12,12,Screen.width-24,54),GUIContent.none); GUI.color=Color.white;
             GUI.Label(new Rect(26,22,235,30),"KOR  /  ETERNAL FRONTIER");
