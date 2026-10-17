@@ -16,6 +16,8 @@ namespace KorEternalFrontier
         public bool Building;
         public Vector3 Destination;
         public float Cooldown;
+        public bool IsConstructing;
+        public float BuildWorkRequired, BuildWorkDone;
         Renderer body;
         public string Label => Kind.ToString();
 
@@ -23,6 +25,23 @@ namespace KorEternalFrontier
         void Update()
         {
             if (World == null || World.Paused) return;
+            if (IsConstructing)
+            {
+                int workers = 0;
+                foreach (var worker in World.EntitiesSnapshot())
+                    if (worker != null && worker.Team == 0 && worker.Kind == KorKind.Pioneer &&
+                        Vector3.Distance(worker.transform.position, transform.position) <= 7f) workers++;
+                if (workers > 0)
+                {
+                    BuildWorkDone += Time.deltaTime * workers;
+                    if (BuildWorkDone >= BuildWorkRequired)
+                    {
+                        IsConstructing = false;
+                        World.Notice = Kind + " construction complete.";
+                    }
+                }
+                return;
+            }
             if (!Building && Kind != KorKind.Blight)
                 transform.position = Vector3.MoveTowards(transform.position, Destination, (Kind == KorKind.Guardian ? 4.2f : 3f) * Time.deltaTime);
             Cooldown -= Time.deltaTime;
@@ -55,7 +74,8 @@ namespace KorEternalFrontier
     public sealed class KorEntitySave
     {
         public int Kind, Team, HitPoints;
-        public bool Building;
+        public bool Building, IsConstructing;
+        public float BuildWorkRequired, BuildWorkDone;
         public Vector3 Position, Destination;
     }
 
@@ -75,6 +95,7 @@ namespace KorEternalFrontier
         public bool Paused;
         public string Notice = "The frontier is waiting, Kor.";
         readonly List<KorEntity> entities = new List<KorEntity>();
+        public List<KorEntity> EntitiesSnapshot() => new List<KorEntity>(entities);
         readonly List<KorEntity> selected = new List<KorEntity>();
         readonly HashSet<string> researched = new HashSet<string>();
         System.Random rng;
@@ -215,8 +236,11 @@ namespace KorEternalFrontier
             }
             if (Supplies<s || Alloy<a || Energy<energy) { Notice = "Insufficient resources."; return; }
             Supplies-=s; Alloy-=a; Energy-=energy; p.y=.8f;
-            Spawn(k,p,true,0).HitPoints=160;
-            buildMode=""; Notice = kind + " construction started.";
+            var site = Spawn(k,p,true,0); site.HitPoints=160;
+            site.IsConstructing = true;
+            site.BuildWorkRequired = k == KorKind.CommandCore ? 0 : (k == KorKind.Barracks ? 14f : (k == KorKind.Archive || k == KorKind.Turret ? 10f : 7f));
+            site.BuildWorkDone = 0f;
+            buildMode=""; Notice = kind + " construction site placed. Keep a Pioneer nearby to build it.";
         }
 
         KorEntity Spawn(KorKind kind, Vector3 p, bool building, int team)
@@ -312,7 +336,7 @@ namespace KorEternalFrontier
                     Entities = entities.FindAll(e => e != null).ConvertAll(e => new KorEntitySave
                     {
                         Kind = (int)e.Kind, Team = e.Team, HitPoints = e.HitPoints,
-                        Building = e.Building, Position = e.transform.position, Destination = e.Destination
+                        Building = e.Building, IsConstructing = e.IsConstructing, BuildWorkRequired = e.BuildWorkRequired, BuildWorkDone = e.BuildWorkDone, Position = e.transform.position, Destination = e.Destination
                     }).ToArray(),
                     Research = new List<string>(researched).ToArray()
                 };
@@ -344,6 +368,9 @@ namespace KorEternalFrontier
                     var e = Spawn((KorKind)saved.Kind, saved.Position, saved.Building, saved.Team);
                     e.HitPoints = saved.HitPoints;
                     e.Destination = saved.Destination;
+                    e.IsConstructing = saved.IsConstructing;
+                    e.BuildWorkRequired = saved.BuildWorkRequired;
+                    e.BuildWorkDone = saved.BuildWorkDone;
                 }
                 buildMode = "";
                 Notice = "Frontier loaded successfully.";
