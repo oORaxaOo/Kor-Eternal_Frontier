@@ -5,10 +5,12 @@ on:
     branches: [main, gondwana-kor-foundation]
     paths:
       - "GondwanaGame/**"
+      - "GondwanaGame.Tests/**"
       - ".github/workflows/gondwana-build.yml"
   pull_request:
     paths:
       - "GondwanaGame/**"
+      - "GondwanaGame.Tests/**"
       - ".github/workflows/gondwana-build.yml"
   workflow_dispatch:
 
@@ -16,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,7 +27,11 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - name: Restore
+      - name: Restore game
         run: dotnet restore GondwanaGame/KorFrontier.Gondwana.csproj --nologo
-      - name: Build
+      - name: Build game
         run: dotnet build GondwanaGame/KorFrontier.Gondwana.csproj --configuration Release --no-restore --nologo
+      - name: Restore tests
+        run: dotnet restore GondwanaGame.Tests/KorFrontier.Tests.csproj --nologo
+      - name: Run simulation tests
+        run: dotnet test GondwanaGame.Tests/KorFrontier.Tests.csproj --configuration Release --no-restore --nologo
