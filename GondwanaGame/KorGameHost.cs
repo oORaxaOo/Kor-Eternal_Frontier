@@ -232,6 +232,10 @@ internal sealed class KorGameHost : AvaloniaGpuGameHost
         {
             if (!_unitSprites.TryGetValue(unit.Id, out var sprite)) continue;
             sprite.SetPosition(new Vector2(unit.X, unit.Y));
+            int frame = unit.Selected
+                ? (unit.Kind == KorUnitKind.Pioneer ? KorArt.PioneerSelected : KorArt.WardenSelected)
+                : (unit.Kind == KorUnitKind.Pioneer ? KorArt.Pioneer : KorArt.Warden);
+            sprite.CurrentFrame = _atlas[frame, 0];
             sprite.ZOrder = 40 + (int)((unit.X + unit.Y) * 10);
         }
         foreach (var building in _world.Buildings)
