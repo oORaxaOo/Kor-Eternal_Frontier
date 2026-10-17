@@ -50,7 +50,7 @@ public sealed class KorWorld
     public int Energy { get; private set; } = 90;
     public int Knowledge { get; private set; } = 0;
     public int BlightTiles { get; private set; }
-    public string Status { get; private set; } = "A new frontier. A place for every Kor.";
+    public string Status { get; internal set; } = "A new frontier. A place for every Kor.";
 
     public KorWorld(int seed = 7319)
     {
