@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace KorEternalFrontier
@@ -50,6 +51,22 @@ namespace KorEternalFrontier
         }
     }
 
+    [Serializable]
+    public sealed class KorEntitySave
+    {
+        public int Kind, Team, HitPoints;
+        public bool Building;
+        public Vector3 Position, Destination;
+    }
+
+    [Serializable]
+    public sealed class KorSaveData
+    {
+        public int Version = 1, Seed, MapSize, Supplies, Alloy, Energy, Knowledge, Era;
+        public KorEntitySave[] Entities;
+        public string[] Research;
+    }
+
     public sealed class KorGame : MonoBehaviour
     {
         public int Seed = 73421, MapSize = 52;
@@ -82,6 +99,8 @@ namespace KorEternalFrontier
         int Range(int min, int max) => rng.Next(min, max);
         void Update()
         {
+            if (Input.GetKeyDown(KeyCode.F5)) SaveGame();
+            if (Input.GetKeyDown(KeyCode.F9)) LoadGame();
             if (Input.GetKeyDown(KeyCode.Space)) Paused = !Paused;
             if (Input.GetKeyDown(KeyCode.Escape)) buildMode = "";
             if (Input.GetKeyDown(KeyCode.B)) { buildMode = "Solar"; Notice = "Place a Solar Collector with left-click."; }
@@ -279,6 +298,59 @@ namespace KorEternalFrontier
             Notice="Research complete: "+name;
         }
 
+
+        string SavePath => Path.Combine(Application.persistentDataPath, "kor-frontier-save.json");
+
+        void SaveGame()
+        {
+            try
+            {
+                var data = new KorSaveData
+                {
+                    Seed = Seed, MapSize = MapSize, Supplies = Supplies, Alloy = Alloy,
+                    Energy = Energy, Knowledge = Knowledge, Era = Era,
+                    Entities = entities.FindAll(e => e != null).ConvertAll(e => new KorEntitySave
+                    {
+                        Kind = (int)e.Kind, Team = e.Team, HitPoints = e.HitPoints,
+                        Building = e.Building, Position = e.transform.position, Destination = e.Destination
+                    }).ToArray(),
+                    Research = new List<string>(researched).ToArray()
+                };
+                File.WriteAllText(SavePath, JsonUtility.ToJson(data, true));
+                Notice = "Frontier saved successfully.";
+            }
+            catch (Exception ex) { Notice = "Save failed: " + ex.Message; }
+        }
+
+        void LoadGame()
+        {
+            try
+            {
+                if (!File.Exists(SavePath)) { Notice = "No save found yet. Press F5 to create one."; return; }
+                var data = JsonUtility.FromJson<KorSaveData>(File.ReadAllText(SavePath));
+                if (data == null || data.Version != 1 || data.Entities == null) { Notice = "Save file is invalid or incompatible."; return; }
+                foreach (var old in selected) if (old != null) old.Tint(false);
+                selected.Clear();
+                foreach (var old in new List<KorEntity>(entities)) if (old != null) Destroy(old.gameObject);
+                entities.Clear();
+                Seed = data.Seed; MapSize = data.MapSize;
+                Supplies = data.Supplies; Alloy = data.Alloy; Energy = data.Energy;
+                Knowledge = data.Knowledge; Era = data.Era;
+                researched.Clear();
+                if (data.Research != null) foreach (var tech in data.Research) if (!string.IsNullOrEmpty(tech)) researched.Add(tech);
+                foreach (var saved in data.Entities)
+                {
+                    if (saved == null || saved.Kind < 0 || saved.Kind > (int)KorKind.Relay) continue;
+                    var e = Spawn((KorKind)saved.Kind, saved.Position, saved.Building, saved.Team);
+                    e.HitPoints = saved.HitPoints;
+                    e.Destination = saved.Destination;
+                }
+                buildMode = "";
+                Notice = "Frontier loaded successfully.";
+            }
+            catch (Exception ex) { Notice = "Load failed: " + ex.Message; }
+        }
+
         void OnGUI()
         {
             GUI.skin.label.fontSize=15; GUI.skin.button.fontSize=13;
@@ -289,6 +361,8 @@ namespace KorEternalFrontier
             GUI.Label(new Rect(520,22,110,30),"ENERGY  "+Energy);
             GUI.Label(new Rect(635,22,155,30),"KNOWLEDGE  "+Knowledge);
             GUI.Label(new Rect(800,22,90,30),"ERA  "+Era);
+            if (GUI.Button(new Rect(Screen.width-178,21,72,30),"SAVE [F5]")) SaveGame();
+            if (GUI.Button(new Rect(Screen.width-100,21,72,30),"LOAD [F9]")) LoadGame();
             float x=Screen.width-258;
             GUI.color=new Color(.055f,.05f,.06f,.96f); GUI.Box(new Rect(x,80,246,Screen.height-100),GUIContent.none); GUI.color=Color.white;
             GUI.Label(new Rect(x+12,94,220,24),"COMMAND / CONSTRUCTION");
