@@ -32,7 +32,7 @@ Save data is written to Unity's `Application.persistentDataPath` as `kor-frontie
 - Solar Collectors, Ore Extractors, Knowledge Archives, Guardian Barracks, Defence Turrets and Relay Beacons.
 - Research directives with prerequisite chains, automatic defence fire, combat and Blight expansion.
 - Blight pursuit AI: hostiles seek Kor forces and close distance before attacking.
-- Pioneer-driven construction: place a construction site, then move a Pioneer close enough to work on it.
+- Pioneer-driven construction: place a construction site, then move a Pioneer close enough to work on it. Structures cannot be placed overlapping nearby buildings.
 - Drag-box unit selection, additive selection and group orders.
 - Multi-unit selection and group movement/attack orders.
 - Persistent local save/load; the sandbox can continue without a forced victory screen.
