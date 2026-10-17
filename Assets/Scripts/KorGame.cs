@@ -393,16 +393,26 @@ namespace KorEternalFrontier
         public void TrySpread(Vector3 origin)
         {
             int count=0; foreach(var e in entities) if(e!=null && e.Kind==KorKind.Blight) count++;
-            if(count>32) return;
+            if(count>=32) return;
             Vector2 d=UnityEngine.Random.insideUnitCircle*7f;
-            Spawn(KorKind.Blight,new Vector3(origin.x+d.x,.6f,origin.z+d.y),false,1);
+            float edge = MapSize * .75f - 1f;
+            Vector3 spawnPoint = new Vector3(Mathf.Clamp(origin.x+d.x,-edge,edge),.6f,Mathf.Clamp(origin.z+d.y,-edge,edge));
+            Spawn(KorKind.Blight,spawnPoint,false,1);
         }
 
         void ReSeedBlight()
         {
             int count=0; foreach(var e in entities) if(e!=null && e.Kind==KorKind.Blight) count++;
             if(count<3 && Knowledge>20)
-            { Spawn(KorKind.Blight,new Vector3(Range(-MapSize,MapSize),.6f,Range(-MapSize,MapSize)),false,1); Notice="Sensors report a new Blight signature."; }
+            {
+                float edge = MapSize * .75f - 1f;
+                Vector3 spawnPoint = new Vector3(
+                    Mathf.Clamp(Range(-MapSize / 2, MapSize / 2) * 1.5f, -edge, edge),
+                    .6f,
+                    Mathf.Clamp(Range(-MapSize / 2, MapSize / 2) * 1.5f, -edge, edge));
+                Spawn(KorKind.Blight,spawnPoint,false,1);
+                Notice="Sensors report a new Blight signature.";
+            }
         }
 
         void Economy()
