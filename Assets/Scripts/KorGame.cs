@@ -310,8 +310,20 @@ namespace KorEternalFrontier
                 case "Turret": k=KorKind.Turret; s=60; a=38; energy=12; break;
                 default: k=KorKind.Relay; s=45; a=22; energy=6; break;
             }
+            p.y=.8f;
+            foreach (var existing in entities)
+            {
+                if (existing == null || !existing.Building) continue;
+                Vector3 delta = existing.transform.position - p;
+                delta.y = 0f;
+                if (delta.magnitude < 2.4f)
+                {
+                    Notice = "Cannot place a structure so close to another building.";
+                    return;
+                }
+            }
             if (Supplies<s || Alloy<a || Energy<energy) { Notice = "Insufficient resources."; return; }
-            Supplies-=s; Alloy-=a; Energy-=energy; p.y=.8f;
+            Supplies-=s; Alloy-=a; Energy-=energy;
             var site = Spawn(k,p,true,0); site.HitPoints=160;
             site.IsConstructing = true;
             site.BuildWorkRequired = k == KorKind.CommandCore ? 0 : (k == KorKind.Barracks ? 14f : (k == KorKind.Archive || k == KorKind.Turret ? 10f : 7f));
@@ -364,6 +376,9 @@ namespace KorEternalFrontier
             foreach (var obstacle in entities)
             {
                 if (obstacle == null || obstacle == unit || !obstacle.Building) continue;
+                Vector3 toDestination = obstacle.transform.position - destination;
+                toDestination.y = 0f;
+                if (toDestination.magnitude < 1.8f) continue;
                 Vector3 away = current - obstacle.transform.position;
                 away.y = 0f;
                 float distance = away.magnitude;
