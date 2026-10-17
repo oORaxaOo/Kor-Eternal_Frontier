@@ -198,7 +198,7 @@ namespace KorEternalFrontier
                 if (Physics.Raycast(ray, out var hit, 300f))
                 {
                     var e = hit.collider.GetComponentInParent<KorEntity>();
-                    if (e != null && e.Team == 0) { Select(e); return; }
+                    if (e != null && e.Team == 0) { Select(e, Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)); return; }
                     if (buildMode != "" && selected.Exists(s => s.Kind == KorKind.Pioneer)) { Build(buildMode, hit.point); return; }
                     Notice = "Right-click to issue a movement or attack order.";
                 }
@@ -215,11 +215,23 @@ namespace KorEternalFrontier
             }
         }
 
-        void Select(KorEntity e)
+        void Select(KorEntity e, bool additive = false)
         {
-            foreach (var old in selected) old.Tint(false);
-            selected.Clear(); selected.Add(e); e.Tint(true);
-            Notice = "Selected: " + e.Label;
+            if (!additive)
+            {
+                foreach (var old in selected) if (old != null) old.Tint(false);
+                selected.Clear();
+            }
+            else if (selected.Contains(e))
+            {
+                selected.Remove(e);
+                e.Tint(false);
+                Notice = "Unit removed from selection.";
+                return;
+            }
+            selected.Add(e);
+            e.Tint(true);
+            Notice = selected.Count > 1 ? "Selected group: " + selected.Count + " units." : "Selected: " + e.Label;
         }
 
         void Build(string kind, Vector3 p)
