@@ -43,7 +43,7 @@ namespace KorEternalFrontier
                 return;
             }
             if (!Building && Kind != KorKind.Blight)
-                transform.position = Vector3.MoveTowards(transform.position, Destination, (Kind == KorKind.Guardian ? 4.2f : 3f) * Time.deltaTime);
+                World.MoveUnit(this, Destination, (Kind == KorKind.Guardian ? 4.2f : 3f) * Time.deltaTime);
             Cooldown -= Time.deltaTime;
             if (Kind == KorKind.Blight || Kind == KorKind.Guardian || Kind == KorKind.Turret || Kind == KorKind.Barracks)
             {
@@ -289,8 +289,38 @@ namespace KorEternalFrontier
             return best;
         }
 
+        public void MoveUnit(KorEntity unit, Vector3 destination, float step)
+        {
+            Vector3 current = unit.transform.position;
+            Vector3 desired = destination - current;
+            desired.y = 0f;
+            if (desired.sqrMagnitude < .025f) return;
+            Vector3 direction = desired.normalized;
+            Vector3 avoidance = Vector3.zero;
+            foreach (var obstacle in entities)
+            {
+                if (obstacle == null || obstacle == unit || !obstacle.Building) continue;
+                Vector3 away = current - obstacle.transform.position;
+                away.y = 0f;
+                float distance = away.magnitude;
+                if (distance < 2.5f && distance > .01f && Vector3.Dot(direction, -away.normalized) > -.2f)
+                {
+                    Vector3 side = Vector3.Cross(Vector3.up, direction).normalized;
+                    float sign = Vector3.Dot(side, away) >= 0f ? 1f : -1f;
+                    avoidance += side * sign * ((2.5f - distance) / 2.5f);
+                    avoidance += away.normalized * ((2.5f - distance) / 3.5f);
+                }
+            }
+            if (avoidance.sqrMagnitude > .01f) direction = (direction + avoidance * 1.5f).normalized;
+            Vector3 next = Vector3.MoveTowards(current, current + direction, step);
+            next.x = Mathf.Clamp(next.x, -MapSize * .75f + 1f, MapSize * .75f - 1f);
+            next.z = Mathf.Clamp(next.z, -MapSize * .75f + 1f, MapSize * .75f - 1f);
+            unit.transform.position = next;
+        }
+
         public void Remove(KorEntity e)
         {
+            selected.Remove(e);
             entities.Remove(e);
             if (e.Team==1) { Knowledge+=4; Notice="Blight entity neutralised. +4 Knowledge."; }
             else if (e.Kind==KorKind.CommandCore) Notice="Command core lost. The frontier has fallen.";
