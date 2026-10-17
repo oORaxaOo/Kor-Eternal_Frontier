@@ -7,8 +7,8 @@ internal static class KorArt
 {
     internal const int FrameSize = 64;
     internal const int Meadow = 0, Soil = 1, Crystal = 2, Blight = 3;
-    internal const int Core = 4, Pioneer = 5, Warden = 6, Solar = 7, Extractor = 8, Archive = 9, Relay = 10;
-    internal const int FrameCount = 11;
+    internal const int Core = 4, Pioneer = 5, Warden = 6, Solar = 7, Extractor = 8, Archive = 9, Relay = 10, PioneerSelected = 11, WardenSelected = 12;
+    internal const int FrameCount = 13;
 
     internal static SKBitmap CreateAtlas()
     {
@@ -20,8 +20,10 @@ internal static class KorArt
         DrawGround(canvas, Crystal, new SKColor(40, 72, 79), new SKColor(78, 195, 187));
         DrawGround(canvas, Blight, new SKColor(50, 19, 34), new SKColor(169, 35, 68));
         DrawBuilding(canvas, Core, new SKColor(183, 35, 54), true);
-        DrawUnit(canvas, Pioneer, new SKColor(228, 220, 194), new SKColor(207, 50, 65));
-        DrawUnit(canvas, Warden, new SKColor(45, 49, 57), new SKColor(226, 174, 76));
+        DrawUnit(canvas, Pioneer, new SKColor(228, 220, 194), new SKColor(207, 50, 65), false);
+        DrawUnit(canvas, Warden, new SKColor(45, 49, 57), new SKColor(226, 174, 76), false);
+        DrawUnit(canvas, PioneerSelected, new SKColor(228, 220, 194), new SKColor(207, 50, 65), true);
+        DrawUnit(canvas, WardenSelected, new SKColor(45, 49, 57), new SKColor(226, 174, 76), true);
         DrawBuilding(canvas, Solar, new SKColor(218, 163, 59), false);
         DrawBuilding(canvas, Extractor, new SKColor(86, 150, 151), false);
         DrawBuilding(canvas, Archive, new SKColor(152, 111, 194), false);
@@ -64,7 +66,7 @@ internal static class KorArt
         }
     }
 
-    private static void DrawUnit(SKCanvas canvas, int frame, SKColor armor, SKColor accent)
+    private static void DrawUnit(SKCanvas canvas, int frame, SKColor armor, SKColor accent, bool selected)
     {
         int x = Left(frame);
         using var shadow = new SKPaint { IsAntialias = true, Color = new SKColor(0, 0, 0, 100), Style = SKPaintStyle.Fill };
@@ -72,6 +74,11 @@ internal static class KorArt
         using var trim = new SKPaint { IsAntialias = true, Color = accent, Style = SKPaintStyle.Fill };
         using var line = new SKPaint { IsAntialias = true, Color = new SKColor(12, 15, 19), StrokeWidth = 2, Style = SKPaintStyle.Stroke };
         canvas.DrawOval(new SKRect(x + 14, 42, x + 50, 54), shadow);
+        if (selected)
+        {
+            using var selection = new SKPaint { IsAntialias = true, Color = new SKColor(230, 185, 91), StrokeWidth = 2.5f, Style = SKPaintStyle.Stroke };
+            canvas.DrawOval(new SKRect(x + 8, 42, x + 56, 58), selection);
+        }
         canvas.DrawRoundRect(new SKRect(x + 19, 28, x + 45, 48), 7, 7, body);
         canvas.DrawRoundRect(new SKRect(x + 23, 30, x + 41, 40), 4, 4, trim);
         canvas.DrawCircle(x + 32, 21, 9, body);
