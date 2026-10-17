@@ -30,7 +30,10 @@ namespace KorEternalFrontier
                 var target = World.FindEnemy(this, Kind == KorKind.Turret ? 8f : 5f);
                 if (target != null && Cooldown <= 0f)
                 {
-                    target.Damage(Kind == KorKind.Turret ? 28 : (Kind == KorKind.Blight ? 8 : 14));
+                    int damage = Kind == KorKind.Turret ? 28 : (Kind == KorKind.Blight ? 8 : 14);
+                    if (Team == 0 && World.HasResearch("Blight Countermeasures"))
+                        damage += Kind == KorKind.Turret ? 14 : (Kind == KorKind.Guardian ? 6 : 0);
+                    target.Damage(damage);
                     Cooldown = Kind == KorKind.Turret ? 1.1f : 1.35f;
                 }
             }
@@ -219,6 +222,8 @@ namespace KorEternalFrontier
             }
         }
 
+        public bool HasResearch(string name) => researched.Contains(name);
+
         public KorEntity FindEnemy(KorEntity source, float range)
         {
             KorEntity best=null; float closest=range;
@@ -251,7 +256,8 @@ namespace KorEternalFrontier
 
         void Economy()
         {
-            Supplies+=3; Energy+=researched.Contains("Grid Architecture")?5:2;
+            Supplies+=researched.Contains("Field Logistics")?6:3;
+            Energy+=researched.Contains("Grid Architecture")?5:2;
             foreach(var e in new List<KorEntity>(entities)) if(e!=null && e.Team==0)
             {
                 if(e.Kind==KorKind.Solar) Energy+=3;
