@@ -91,7 +91,7 @@ internal sealed class KorGameHost : AvaloniaGpuGameHost
     {
         var keyboard = Engine.Input.KeyboardEventPoller!;
         keyboard.KeyDown += OnKeyDown;
-        foreach (var key in new[] { Key.W, Key.A, Key.S, Key.D, Key.Up, Key.Down, Key.Left, Key.Right, Key.Escape, Key.Space, Key.B, Key.Home })
+        foreach (var key in new[] { Key.W, Key.A, Key.S, Key.D, Key.Up, Key.Down, Key.Left, Key.Right, Key.Escape, Key.Space, Key.B, Key.Home, Key.F5, Key.F9 })
             keyboard.StartMonitoringKey((int)key, key.ToString());
     }
 
@@ -117,6 +117,53 @@ internal sealed class KorGameHost : AvaloniaGpuGameHost
             Engine.Input.MouseEventPoller.MouseEvent -= OnMouse;
         Engine.BeforeBackgroundTasksExecute -= UpdateWorld;
     }
+
+
+    internal void SaveGame()
+    {
+        try
+        {
+            _world.SaveToFile(SavePath);
+        }
+        catch (Exception ex)
+        {
+            _world.Status = $"Save failed · {ex.Message}";
+        }
+    }
+
+    internal void LoadGame()
+    {
+        try
+        {
+            _world.LoadFromFile(SavePath);
+            UpdateGround();
+
+            var wanted = _world.Buildings.Select(b => b.Id).ToHashSet();
+            foreach (int id in _buildingSprites.Keys.Where(id => !wanted.Contains(id)).ToArray())
+            {
+                _buildingSprites[id].Dispose();
+                _buildingSprites.Remove(id);
+            }
+            foreach (var building in _world.Buildings)
+                if (!_buildingSprites.ContainsKey(building.Id))
+                    AddBuildingSprite(building);
+
+            UpdateSprites();
+        }
+        catch (FileNotFoundException)
+        {
+            _world.Status = "No save yet · press F5 or use SAVE FRONTIER first.";
+        }
+        catch (Exception ex)
+        {
+            _world.Status = $"Load failed · {ex.Message}";
+        }
+    }
+
+    private static string SavePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "KorFrontier",
+        "frontier-save.json");
 
     internal void SetBuildMode(KorBuildKind kind)
     {
@@ -160,6 +207,8 @@ internal sealed class KorGameHost : AvaloniaGpuGameHost
             case Key.Space: _paused = !_paused; _world.Status = _paused ? "Simulation paused." : "Simulation resumed."; break;
             case Key.B: SetBuildMode(KorBuildKind.Solar); break;
             case Key.Home: CenterOnCore(); break;
+            case Key.F5: SaveGame(); break;
+            case Key.F9: LoadGame(); break;
         }
     }
 
