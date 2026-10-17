@@ -59,8 +59,9 @@ internal sealed class KorGameHost : AvaloniaGpuGameHost
         return scene;
     }
 
-    protected override void OnSceneBound()
+    protected override void OnInitialized()
     {
+        base.OnInitialized();
         RenderSurface.Host.Backbuffer!.ClearColor = new SKColor(12, 17, 22);
         var view = RenderSurface.Host.ViewManager.Views[0];
         view.Camera.WorldBoundsPx = Scene!.GetWorldBoundsPx();
