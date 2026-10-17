@@ -322,6 +322,7 @@ public sealed class KorWorld
 
     private sealed class Snapshot
     {
+        public Snapshot() { }
         public int Version { get; set; } = 1;
         public int Supplies { get; set; }
         public int Alloy { get; set; }
@@ -339,6 +340,7 @@ public sealed class KorWorld
 
     private sealed class UnitSnapshot
     {
+        public UnitSnapshot() { }
         public int Id { get; set; }
         public KorUnitKind Kind { get; set; }
         public float X { get; set; }
@@ -351,6 +353,7 @@ public sealed class KorWorld
 
     private sealed class BuildingSnapshot
     {
+        public BuildingSnapshot() { }
         public int Id { get; set; }
         public KorBuildKind Kind { get; set; }
         public int X { get; set; }
