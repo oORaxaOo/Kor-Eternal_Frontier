@@ -42,12 +42,22 @@ namespace KorEternalFrontier
                 }
                 return;
             }
-            if (!Building && Kind != KorKind.Blight)
+            if (!Building && Kind == KorKind.Blight)
+            {
+                var prey = World.FindEnemy(this, 90f);
+                if (prey != null)
+                {
+                    Destination = prey.transform.position;
+                    if (Vector3.Distance(transform.position, prey.transform.position) > 1.8f)
+                        World.MoveUnit(this, Destination, 1.65f * Time.deltaTime);
+                }
+            }
+            else if (!Building)
                 World.MoveUnit(this, Destination, (Kind == KorKind.Guardian ? 4.2f : 3f) * Time.deltaTime);
             Cooldown -= Time.deltaTime;
             if (Kind == KorKind.Blight || Kind == KorKind.Guardian || Kind == KorKind.Turret || Kind == KorKind.Barracks)
             {
-                var target = World.FindEnemy(this, Kind == KorKind.Turret ? 8f : 5f);
+                var target = World.FindEnemy(this, Kind == KorKind.Turret ? 8f : (Kind == KorKind.Blight ? 2.1f : 5f));
                 if (target != null && Cooldown <= 0f)
                 {
                     int damage = Kind == KorKind.Turret ? 28 : (Kind == KorKind.Blight ? 8 : 14);
@@ -355,9 +365,29 @@ namespace KorEternalFrontier
             }
         }
 
+        bool HasResearchPrerequisites(string name)
+        {
+            switch (name)
+            {
+                case "Blight Countermeasures":
+                    return researched.Contains("Grid Architecture");
+                case "Dynastic Synthesis":
+                    return researched.Contains("Field Logistics") && researched.Contains("Blight Countermeasures");
+                default:
+                    return true;
+            }
+        }
+
         void ResearchTech(string name,int cost)
         {
             if(researched.Contains(name)){Notice=name+" already researched.";return;}
+            if(!HasResearchPrerequisites(name))
+            {
+                Notice = name == "Blight Countermeasures"
+                    ? "Research Grid Architecture first."
+                    : "Requires Field Logistics and Blight Countermeasures.";
+                return;
+            }
             if(Knowledge<cost){Notice="Insufficient Knowledge.";return;}
             Knowledge-=cost; researched.Add(name);
             if(name=="Dynastic Synthesis") Era=2;
