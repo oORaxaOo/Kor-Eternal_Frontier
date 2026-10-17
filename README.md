@@ -46,3 +46,15 @@ The Kor Dynasty is the primary playable faction. The goal is classic RTS readabi
 ## License
 
 MIT. See `LICENSE`.
+
+## Gondwana 2.5D migration track (experimental)
+
+A separate cross-platform prototype now lives in [`GondwanaGame/`](GondwanaGame/README.md). It uses Gondwana with Avalonia for an original isometric Kor look, a command-centre HUD, seeded terrain, settlement resources, construction, unit selection/movement, and a spreading Blight ecosystem. The existing Unity prototype remains intact while the new path is validated.
+
+Run it with the .NET 8 SDK:
+
+```bash
+dotnet run --project GondwanaGame/KorFrontier.Gondwana.csproj
+```
+
+Automated build and simulation tests are defined in [`.github/workflows/gondwana-build.yml`](.github/workflows/gondwana-build.yml). The project has not yet been compiled or interactively playtested in this environment; treat CI and first launch as required integration gates.
