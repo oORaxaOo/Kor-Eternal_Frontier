@@ -150,6 +150,8 @@ namespace KorEternalFrontier
         void Orders()
         {
             if (cameraRig == null) return;
+            Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+            if (guiMouse.x > Screen.width - 262 || guiMouse.y < 70 || guiMouse.y > Screen.height - 66) return;
             if (Input.GetMouseButtonDown(0))
             {
                 var ray = cameraRig.ScreenPointToRay(Input.mousePosition);
