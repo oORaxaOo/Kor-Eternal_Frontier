@@ -16,7 +16,8 @@ This repository contains Unity source code, not a precompiled Linux executable. 
 
 - WASD / arrow keys: move camera; mouse wheel: zoom; hold Shift for faster camera movement.
 - Left-click: select a Kor unit or place the active building.
-- Shift + left-click: add/remove Kor units from the current selection.
+- Drag with the left mouse button: select multiple Kor units.
+- Shift + left-click or Shift + drag: add/remove or extend the current selection.
 - Right-click: move selected units or issue an attack order against a hostile.
 - B: Solar Collector build mode; Space: pause.
 - F5 or **SAVE**: save the current frontier; F9 or **LOAD**: restore it.
@@ -32,6 +33,7 @@ Save data is written to Unity's `Application.persistentDataPath` as `kor-frontie
 - Research directives with prerequisite chains, automatic defence fire, combat and Blight expansion.
 - Blight pursuit AI: hostiles seek Kor forces and close distance before attacking.
 - Pioneer-driven construction: place a construction site, then move a Pioneer close enough to work on it.
+- Drag-box unit selection, additive selection and group orders.
 - Multi-unit selection and group movement/attack orders.
 - Persistent local save/load; the sandbox can continue without a forced victory screen.
 
