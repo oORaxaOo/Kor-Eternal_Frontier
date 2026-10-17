@@ -162,7 +162,7 @@ internal sealed class KorGameHost : AvaloniaGpuGameHost
         }
     }
 
-    private void OnMouse(Gondwana.Input.Mouse.MouseEventArgs args)
+    private void OnMouse(global::Gondwana.Input.Mouse.MouseEventArgs args)
     {
         var view = RenderSurface.Host.ViewManager.Views[0];
         if (args.ScrollDelta != 0)
