@@ -38,3 +38,18 @@ jobs:
         run: dotnet restore GondwanaGame.Tests/KorFrontier.Tests.csproj --nologo
       - name: Run simulation tests
         run: dotnet test GondwanaGame.Tests/KorFrontier.Tests.csproj --configuration Release --no-restore --nologo
+      - name: Publish self-contained Linux x64 build
+        run: dotnet publish GondwanaGame/KorFrontier.Gondwana.csproj --configuration Release --runtime linux-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/kor-frontier-linux-x64
+      - name: Add one-command launcher
+        run: |
+          cp GondwanaGame/launch-linux.sh artifacts/kor-frontier-linux-x64/launch.sh
+          chmod +x artifacts/kor-frontier-linux-x64/launch.sh
+      - name: Package Linux build
+        run: tar -czf artifacts/kor-frontier-linux-x64.tar.gz -C artifacts kor-frontier-linux-x64
+      - name: Upload Linux build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kor-frontier-linux-x64
+          path: artifacts/kor-frontier-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
