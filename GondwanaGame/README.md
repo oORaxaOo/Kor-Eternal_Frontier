@@ -25,6 +25,17 @@ The game uses an original crimson, charcoal, and warm-gold art language; sharp d
 - Supplies, alloy, energy, knowledge, and an evolving Blight footprint.
 - Code-first Avalonia HUD, command buttons, and responsive desktop layout.
 
+
+## Standalone Linux build
+
+The GitHub Actions workflow publishes a self-contained Linux x64 package named `kor-frontier-linux-x64`. Download the artifact from the latest successful **Gondwana prototype** workflow run, extract it, then launch with:
+
+```bash
+./launch.sh
+```
+
+The package includes the .NET runtime, so a separate .NET installation is not needed to run that published build. The source project still requires the .NET 8 SDK for development.
+
 ## Controls
 
 - **WASD / arrows:** pan camera.
