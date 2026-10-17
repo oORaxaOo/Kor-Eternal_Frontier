@@ -28,6 +28,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Show .NET SDK
+        run: dotnet --info
       - name: Restore game
         run: dotnet restore GondwanaGame/KorFrontier.Gondwana.csproj --nologo
       - name: Build game
