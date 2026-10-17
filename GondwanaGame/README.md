@@ -34,6 +34,7 @@ The game uses an original crimson, charcoal, and warm-gold art language; sharp d
 - **Right-click:** issue a move order, or place the selected structure.
 - **B:** quick-select Solar Array build mode.
 - **Home:** return camera to the command core.
+- **F5 / F9:** save / load the latest frontier (`LocalApplicationData/KorFrontier/frontier-save.json`).
 - **Space:** pause/resume simulation.
 - **Escape:** cancel build mode.
 
