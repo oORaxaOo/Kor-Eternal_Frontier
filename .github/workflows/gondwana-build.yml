@@ -1,0 +1,31 @@
+name: Gondwana prototype
+
+on:
+  push:
+    branches: [main, gondwana-kor-foundation]
+    paths:
+      - "GondwanaGame/**"
+      - ".github/workflows/gondwana-build.yml"
+  pull_request:
+    paths:
+      - "GondwanaGame/**"
+      - ".github/workflows/gondwana-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore
+        run: dotnet restore GondwanaGame/KorFrontier.Gondwana.csproj --nologo
+      - name: Build
+        run: dotnet build GondwanaGame/KorFrontier.Gondwana.csproj --configuration Release --no-restore --nologo
