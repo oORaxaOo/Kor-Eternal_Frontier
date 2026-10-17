@@ -12,7 +12,7 @@ The Kor are the primary playable faction. Their identity is a community that gro
 6. Save the frontier and continue expanding instead of ending at a fixed campaign victory screen.
 
 ## Current prototype
-The Unity build uses generated terrain and primitive meshes so that the game systems can be iterated without waiting for final art. Resource counters, construction sites with Pioneer work, multi-unit selection, research, movement, simple combat and local JSON save/load are implemented in the runtime controller.
+The Unity build uses generated terrain and primitive meshes so that the game systems can be iterated without waiting for final art. Resource counters, construction sites with Pioneer work, multi-unit selection, research prerequisites, movement, simple combat, nearest-target Blight pursuit and local JSON save/load are implemented in the runtime controller.
 
 ## Controls and persistence
 - Shift + left-click adds/removes units from selection.
@@ -22,7 +22,7 @@ The Unity build uses generated terrain and primitive meshes so that the game sys
 ## Next milestones
 - A* pathfinding, drag selection, attack-move, unit formations and line-of-sight.
 - Seed selection and world presets; larger streamed maps.
-- Multi-branch research with prerequisites and meaningful unlocks.
+- Expand the initial research chain into a multi-branch tree with stronger unlocks and UI feedback.
 - Blight ecology with nests, spread pressure, evolving threats and countermeasures.
 - Production-ready Kor models, animation, audio, UI and Linux player builds.
 - A deeper 4X layer: territory, logistics, settlement policies, diplomacy and long-term world events.
