@@ -29,14 +29,15 @@ Save data is written to Unity's `Application.persistentDataPath` as `kor-frontie
 - Seeded terrain generation and resource deposits, Kor command core and starting units.
 - Supplies, alloy, energy and knowledge economy.
 - Solar Collectors, Ore Extractors, Knowledge Archives, Guardian Barracks, Defence Turrets and Relay Beacons.
-- Research directives, automatic defence fire, combat and Blight expansion.
+- Research directives with prerequisite chains, automatic defence fire, combat and Blight expansion.
+- Blight pursuit AI: hostiles seek Kor forces and close distance before attacking.
 - Pioneer-driven construction: place a construction site, then move a Pioneer close enough to work on it.
 - Multi-unit selection and group movement/attack orders.
 - Persistent local save/load; the sandbox can continue without a forced victory screen.
 
 ## Roadmap
 
-The current build is an early systems prototype, not a finished commercial-scale game. It uses generated primitive models and materials. Better pathfinding, animated art, deeper tech dependencies, logistics, diplomacy, faction AI, audio and a more complete 4X simulation remain planned.
+The current build is an early systems prototype, not a finished commercial-scale game. It uses generated primitive models and materials. A* pathfinding, animated art, deeper logistics, diplomacy, more advanced faction AI, audio and a more complete 4X simulation remain planned. Blight pursuit is currently simple nearest-target behavior rather than strategic pathfinding.
 
 The Kor Dynasty is the primary playable faction. The goal is classic RTS readability with settlement growth, research progression and a persistent procedural frontier. References to other games are inspirations only; this repository uses original code and placeholder art.
 
