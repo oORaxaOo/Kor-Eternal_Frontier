@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace KorFrontier.Gondwana.Simulation;
 
 public enum GroundKind { Meadow, Soil, Crystal, Blight }
@@ -35,7 +37,7 @@ public sealed class KorWorld
     public const int Width = 40;
     public const int Height = 40;
     private readonly GroundKind[,] _ground = new GroundKind[Width, Height];
-    private readonly Random _random;
+    private uint _randomState;
     private int _nextId = 1;
     private float _economyClock;
     private float _blightClock;
@@ -54,7 +56,8 @@ public sealed class KorWorld
 
     public KorWorld(int seed = 7319)
     {
-        _random = new Random(seed);
+        _randomState = unchecked((uint)seed);
+        if (_randomState == 0) _randomState = 0xA341316Cu;
         GenerateTerrain();
         _buildings.Add(new KorBuilding { Id = _nextId++, Kind = KorBuildKind.Relay, X = 20, Y = 20, Progress = 1f });
         _units.Add(new KorUnit { Id = _nextId++, Kind = KorUnitKind.Pioneer, X = 19, Y = 20, TargetX = 19, TargetY = 20 });
@@ -181,7 +184,7 @@ public sealed class KorWorld
         for (int y = 0; y < Height; y++)
         for (int x = 0; x < Width; x++)
         {
-            double roll = _random.NextDouble();
+            double roll = NextRandomDouble();
             _ground[x, y] = roll < 0.055 ? GroundKind.Crystal : roll < 0.15 ? GroundKind.Soil : GroundKind.Meadow;
         }
 
@@ -192,7 +195,7 @@ public sealed class KorWorld
 
         for (int i = 0; i < 8; i++)
         {
-            int x = _random.Next(2, Width - 2), y = _random.Next(2, Height - 2);
+            int x = NextRandom(2, Width - 2), y = NextRandom(2, Height - 2);
             _ground[x, y] = GroundKind.Blight;
         }
         RecountBlight();
@@ -210,7 +213,7 @@ public sealed class KorWorld
             if (_ground[x + 1, y] == GroundKind.Blight) neighbours++;
             if (_ground[x, y - 1] == GroundKind.Blight) neighbours++;
             if (_ground[x, y + 1] == GroundKind.Blight) neighbours++;
-            if (neighbours > 0 && _random.NextDouble() < 0.08 * neighbours)
+            if (neighbours > 0 && NextRandomDouble() < 0.08 * neighbours)
                 frontier.Add((x, y));
         }
 
@@ -222,6 +225,137 @@ public sealed class KorWorld
         Status = BlightTiles > 45
             ? "The Blight is spreading. Expand carefully and establish a stable frontier."
             : "The frontier is stable · gather, build, and grow.";
+    }
+
+
+    public void SaveToFile(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        string fullPath = Path.GetFullPath(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        var snapshot = new Snapshot
+        {
+            Version = 1,
+            Supplies = Supplies,
+            Alloy = Alloy,
+            Energy = Energy,
+            Knowledge = Knowledge,
+            NextId = _nextId,
+            EconomyClock = _economyClock,
+            BlightClock = _blightClock,
+            RandomState = _randomState,
+            Status = Status,
+            Ground = Enumerable.Range(0, Height)
+                .SelectMany(y => Enumerable.Range(0, Width).Select(x => _ground[x, y]))
+                .ToArray(),
+            Units = _units.Select(u => new UnitSnapshot
+            {
+                Id = u.Id, Kind = u.Kind, X = u.X, Y = u.Y,
+                TargetX = u.TargetX, TargetY = u.TargetY, Selected = u.Selected, Work = u.Work
+            }).ToArray(),
+            Buildings = _buildings.Select(b => new BuildingSnapshot
+            {
+                Id = b.Id, Kind = b.Kind, X = b.X, Y = b.Y, Progress = b.Progress
+            }).ToArray()
+        };
+        File.WriteAllText(fullPath, JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true }));
+        Status = $"Frontier saved · {Path.GetFileName(fullPath)}.";
+    }
+
+    public void LoadFromFile(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        string fullPath = Path.GetFullPath(path);
+        var snapshot = JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(fullPath))
+            ?? throw new InvalidDataException("The save file is empty or invalid.");
+        if (snapshot.Version != 1 || snapshot.Ground.Length != Width * Height)
+            throw new InvalidDataException("The save file version or map dimensions are not supported.");
+
+        Supplies = Math.Clamp(snapshot.Supplies, 0, 9999);
+        Alloy = Math.Clamp(snapshot.Alloy, 0, 9999);
+        Energy = Math.Clamp(snapshot.Energy, 0, 9999);
+        Knowledge = Math.Clamp(snapshot.Knowledge, 0, 9999);
+        _nextId = Math.Max(1, snapshot.NextId);
+        _economyClock = Math.Clamp(snapshot.EconomyClock, 0f, 1f);
+        _blightClock = Math.Clamp(snapshot.BlightClock, 0f, 10f);
+        _randomState = snapshot.RandomState == 0 ? 0xA341316Cu : snapshot.RandomState;
+        Status = snapshot.Status ?? "Frontier restored.";
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            _ground[x, y] = snapshot.Ground[y * Width + x];
+
+        _units.Clear();
+        foreach (var u in snapshot.Units)
+            _units.Add(new KorUnit
+            {
+                Id = u.Id, Kind = u.Kind, X = u.X, Y = u.Y,
+                TargetX = u.TargetX, TargetY = u.TargetY, Selected = u.Selected, Work = u.Work
+            });
+
+        _buildings.Clear();
+        foreach (var b in snapshot.Buildings)
+            _buildings.Add(new KorBuilding
+            {
+                Id = b.Id, Kind = b.Kind, X = b.X, Y = b.Y, Progress = Math.Clamp(b.Progress, 0f, 1f)
+            });
+
+        RecountBlight();
+        Status = "Frontier restored · all systems synchronized.";
+    }
+
+    private uint NextRandomUInt()
+    {
+        // Xorshift32: small, deterministic, and serializable for reproducible saves.
+        uint x = _randomState;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        _randomState = x == 0 ? 0xA341316Cu : x;
+        return _randomState;
+    }
+
+    private double NextRandomDouble() => NextRandomUInt() / ((double)uint.MaxValue + 1d);
+
+    private int NextRandom(int minimumInclusive, int maximumExclusive) =>
+        minimumInclusive + (int)(NextRandomUInt() % (uint)(maximumExclusive - minimumInclusive));
+
+    private sealed class Snapshot
+    {
+        public int Version { get; set; } = 1;
+        public int Supplies { get; set; }
+        public int Alloy { get; set; }
+        public int Energy { get; set; }
+        public int Knowledge { get; set; }
+        public int NextId { get; set; }
+        public float EconomyClock { get; set; }
+        public float BlightClock { get; set; }
+        public uint RandomState { get; set; }
+        public string? Status { get; set; }
+        public GroundKind[] Ground { get; set; } = [];
+        public UnitSnapshot[] Units { get; set; } = [];
+        public BuildingSnapshot[] Buildings { get; set; } = [];
+    }
+
+    private sealed class UnitSnapshot
+    {
+        public int Id { get; set; }
+        public KorUnitKind Kind { get; set; }
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float TargetX { get; set; }
+        public float TargetY { get; set; }
+        public bool Selected { get; set; }
+        public float Work { get; set; }
+    }
+
+    private sealed class BuildingSnapshot
+    {
+        public int Id { get; set; }
+        public KorBuildKind Kind { get; set; }
+        public int X { get; set; }
+        public int Y { get; set; }
+        public float Progress { get; set; }
     }
 
     private void RecountBlight()
