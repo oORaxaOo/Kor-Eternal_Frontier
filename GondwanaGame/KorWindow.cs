@@ -94,6 +94,8 @@ internal sealed class KorWindow : Window
         commands.Children.Add(SectionLabel("COMMANDS"));
         commands.Children.Add(CommandButton("SELECT / MOVE", "Left-click a Kor · right-click ground to move", () => _host?.CancelBuildMode()));
         commands.Children.Add(CommandButton("CENTER ON CORE", "Return to the heart of the settlement", () => _host?.CenterOnCore()));
+        commands.Children.Add(CommandButton("SAVE FRONTIER", "F5 · save resources, map, units, and structures", () => _host?.SaveGame()));
+        commands.Children.Add(CommandButton("LOAD FRONTIER", "F9 · restore the latest frontier save", () => _host?.LoadGame()));
         commands.Children.Add(CommandButton("CANCEL ORDER", "Escape cancels the active build mode", () => _host?.CancelBuildMode()));
         commands.Children.Add(new TextBlock
         {
