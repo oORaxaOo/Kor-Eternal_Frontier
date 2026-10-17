@@ -15,7 +15,8 @@ The Kor are the primary playable faction. Their identity is a community that gro
 The Unity build uses generated terrain and primitive meshes so that the game systems can be iterated without waiting for final art. Resource counters, construction sites with Pioneer work, multi-unit selection, research prerequisites, movement, simple combat, nearest-target Blight pursuit and local JSON save/load are implemented in the runtime controller.
 
 ## Controls and persistence
-- Shift + left-click adds/removes units from selection.
+- Drag a rectangle to select multiple Kor units.
+- Shift + click or Shift + drag adds units to the current selection.
 - F5 saves and F9 loads from Unity's persistent data directory.
 - Save files include resource totals, research, entities, positions, hit points, destinations and in-progress construction work.
 
