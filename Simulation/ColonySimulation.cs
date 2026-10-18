@@ -607,7 +607,7 @@ internal sealed class ColonySimulation
             Message = "That destination is outside the map.";
             return;
         }
-        if (worker.CarriedResource.HasValue)
+        if (worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId))
         {
             Message = $"{worker.Name} must deliver the carried material before taking another order.";
             return;
@@ -700,7 +700,7 @@ internal sealed class ColonySimulation
         {
             if (worker.Task != null) continue;
 
-            if (worker.CarriedResource.HasValue)
+            if (worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId))
             {
                 AssignDelivery(worker);
                 // Carrying cargo is an outstanding logistics obligation. Never assign unrelated
