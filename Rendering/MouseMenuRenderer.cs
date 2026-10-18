@@ -76,7 +76,7 @@ internal sealed class MouseMenuRenderer : IDisposable
         // Persistent contextual hint: all core play can be completed with the mouse.
         string hint = worldMapMode
             ? "Mouse: select territory  •  menus: claim land, diplomacy, turns and saves"
-            : $"Mouse: select / issue orders  •  Build menu: structures  •  { (paused ? "Paused" : "Simulation running") }";
+            : $"Left-click: select/place  •  right-click: issue orders  •  { (paused ? "Paused" : "Simulation running") }";
         _fill.Color = new SKColor(12, 16, 16, 225);
         canvas.DrawRoundRect(new SKRect(18, 662, 1082, 708), 5, 5, _fill);
         DrawText(canvas, hint, 30, 690, _small, new SKColor(201, 207, 193));
