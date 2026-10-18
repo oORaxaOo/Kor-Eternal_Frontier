@@ -29,6 +29,8 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - 40 by 26 orthogonal square-tile grid.
 - Three colonists with movement, task state, carrying, and hunger.
 - Finite deposits and resource-conserving gather/carry/deliver transfers.
+- Aggregate inventory capacity supplied by completed stockpiles (120 units each) and storage racks (80 units each).
+- Capacity-aware gathering, partial delivery, retained cargo while storage is full, and production output that waits for room.
 - Independent per-tile architecture orders with material costs and work progress.
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
@@ -38,7 +40,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 ## Remaining integration work
 
 - Extract worker scheduling into a reusable central job board and durable task ownership.
-- Material reservations and capacity-aware stockpiles.
+- Explicit material reservations and physically distinct stockpile locations.
 - General recipe catalogs, workplace queues and multiple production chains.
 - Broader needs, housing, work eligibility, skills and social relationships.
 - Research unlocks wired to local buildings, production and systems.
