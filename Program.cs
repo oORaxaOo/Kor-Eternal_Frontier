@@ -67,7 +67,7 @@ internal static class Program
             bool running = true, wasLeft = false, wasRight = false, wasEscape = false, wasLeftArrow = false, wasRightArrow = false;
             bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
             bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
-            bool wasT = false, wasI = false, wasE = false, wasM = false, wasY = false, wasG = false, wasR = false;
+            bool wasT = false, wasI = false, wasE = false, wasM = false, wasY = false, wasG = false, wasR = false, wasC = false;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -116,6 +116,7 @@ internal static class Program
                 bool yDown = IsDown(keys, Sdl.ScancodeY);
                 bool gDown = IsDown(keys, Sdl.ScancodeG);
                 bool rDown = IsDown(keys, Sdl.ScancodeR);
+                bool cDown = IsDown(keys, Sdl.ScancodeC);
                 bool leftDown = IsDown(keys, Sdl.ScancodeLeft);
                 bool rightDown = IsDown(keys, Sdl.ScancodeRight);
 
@@ -138,6 +139,7 @@ internal static class Program
                 if (worldMapMode && yDown && !wasY) worldMap.OfferNonAggression();
                 if (worldMapMode && gDown && !wasG) worldMap.OfferTradePact();
                 if (worldMapMode && rDown && !wasR) worldMap.ImproveRelations();
+                if (worldMapMode && cDown && !wasC) worldMap.ClaimSelected();
                 if (spaceDown && !wasSpace) paused = !paused;
                 if (tDown && !wasT)
                 {
@@ -175,7 +177,7 @@ internal static class Program
                 was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
                 wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
                 wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
-                wasT = tDown; wasI = iDown; wasE = eDown; wasM = mDown; wasY = yDown; wasG = gDown; wasR = rDown;
+                wasT = tDown; wasI = iDown; wasE = eDown; wasM = mDown; wasY = yDown; wasG = gDown; wasR = rDown; wasC = cDown;
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
@@ -288,7 +290,7 @@ internal static class Sdl
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206;
     public const uint ButtonLeftMask = 1, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    public const int ScancodeA = 4, ScancodeD = 7, ScancodeE = 8, ScancodeG = 10, ScancodeI = 12, ScancodeM = 16, ScancodeO = 18, ScancodeR = 21, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26, ScancodeY = 28;
+    public const int ScancodeA = 4, ScancodeC = 6, ScancodeD = 7, ScancodeE = 8, ScancodeG = 10, ScancodeI = 12, ScancodeM = 16, ScancodeO = 18, ScancodeR = 21, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26, ScancodeY = 28;
     public const int Scancode1 = 30, Scancode2 = 31, Scancode3 = 32, Scancode4 = 33, Scancode5 = 34;
     public const int ScancodeTab = 43, ScancodeSpace = 44, ScancodeMinus = 45, ScancodeEquals = 46, ScancodeEscape = 41;
     public const int ScancodeF5 = 62, ScancodeF9 = 66, ScancodeRight = 79, ScancodeLeft = 80;
