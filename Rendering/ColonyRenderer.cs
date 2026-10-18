@@ -245,18 +245,14 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText("BUILD / CAMPAIGN", 790, 470, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText("BUILD / CAMPAIGN", 790, 493, SKTextAlign.Left, _headingFont, _text);
         _text.Color = TextColor;
-        canvas.DrawText("1 Wall  2 Floor  3 Path", 790, 472, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("4 Door  5 Conduit", 790, 491, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText($"O Object: {objectType}", 790, 510, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Tab changes object", 790, 529, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Left click design/select", 790, 548, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Right click move/gather", 790, 567, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("WASD camera  +/- zoom", 790, 586, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Space pause  Esc cancel", 790, 585, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("T end turn  I import  E export", 790, 604, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("F5 save session  F9 load", 790, 623, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("1 Wall 2 Floor 3 Path | 4 Door 5 Conduit", 790, 515, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText($"O place {objectType} | Tab next | Esc cancel", 790, 536, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("Left click design/select", 790, 557, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("Right click move/gather", 790, 578, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("WASD camera | +/- zoom | Space pause", 790, 599, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("T turn | I import | E export | F5/F9 save", 790, 620, SKTextAlign.Left, _smallFont, _text);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
