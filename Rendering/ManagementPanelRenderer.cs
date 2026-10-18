@@ -211,10 +211,11 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Note(c, "Large data catalogue foundation; entries are not yet wired into live inventory, queues or save migration.", 254, 362, 385);
                 Section(c, "Starter production chains", 670, 164);
                 int chainY = 194;
+                var materialNames = ProgressionCatalog.Resources.ToDictionary(r => r.Id, r => r.Name, StringComparer.Ordinal);
                 foreach (var recipe in ProgressionCatalog.Recipes.Where(r => r.Stage == 0).Take(5))
                 {
-                    string inputs = string.Join(" + ", recipe.Inputs.Select(p => $"{p.Value} {p.Key}"));
-                    string outputs = string.Join(" + ", recipe.Outputs.Select(p => $"{p.Value} {p.Key}"));
+                    string inputs = string.Join(" + ", recipe.Inputs.Select(p => $"{p.Value} {materialNames.GetValueOrDefault(p.Key, p.Key)}"));
+                    string outputs = string.Join(" + ", recipe.Outputs.Select(p => $"{p.Value} {materialNames.GetValueOrDefault(p.Key, p.Key)}"));
                     Row(c, recipe.Industry, $"{inputs} → {outputs}", 670, chainY);
                     chainY += 39;
                 }
