@@ -28,14 +28,14 @@ The strategic campaign and local colony are now connected through explicit logis
 
 ## Implementation priority
 
-1. Extract central job assignment and resource reservations without changing verified gameplay behavior.
+1. Migrate the new GridManager/CitizenAgent/JobBroker core into the active colony scheduler through an adapter, preserving verified gather/carry/build behavior and save compatibility.
 2. Generalize production definitions, workplace queues, stockpile capacity and delivery rules.
 3. Add research projects that unlock actual buildings and recipes.
 4. Connect strategic regions to real local settlement state and resource/person flows.
 5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
 
 
-## Integrated alpha controls
+## New colony-system core (not yet live-wired)\n\nA separate deterministic core now exists in `Simulation/ColonyEcosystem.cs`: resource-specific connected stockpile zones, bounded per-tile stacks, storage reservations, citizen hunger/fatigue/happiness, pathfinding, workplace capacity, work output, and workplace-removal cleanup. `Tests/ColonyEcosystemChecks.cs` exercises these rules in the self-test. The active visible colony still uses its existing central inventory and worker scheduler; the new core is not yet wired as the runtime source of truth. See `docs/colony-systems.md` for the API and migration boundary.\n\n## Integrated alpha controls
 
 - **T** — advance one strategic campaign turn. Regional production, army orders, upkeep, research effects, and Blight spread are resolved by the campaign model.
 - **I** — import up to 20 strategic Supplies as local Food and up to 10 strategic Alloy, limited by available local storage. Only accepted deliveries are charged to the campaign.
