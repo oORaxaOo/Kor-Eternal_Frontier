@@ -177,7 +177,6 @@ internal sealed class WorldMapSimulation
             int ownerIndex = ranked[0].i;
             if (ranked[0].distance - ranked[1].distance < 1.5 && rng.NextDouble() < .72) ownerIndex = -1;
             var owner = ownerIndex < 0 ? WorldFactionKind.FreeMarches : Factions[ownerIndex];
-            if (ownerIndex < 0 && rng.NextDouble() < .55) owner = WorldFactionKind.values()[0];
             bool settlement = (x, y) == capitals[Math.Max(0, ownerIndex)];
             state.Territories.Add(new WorldTerritory { Id = id, X = x, Y = y, Owner = owner, Development = settlement ? 3 : rng.Next(0, 2), Supplies = rng.Next(4, 18), BlightPressure = owner == WorldFactionKind.Blight ? 2 : 0, Explored = owner == WorldFactionKind.Kor || owner == WorldFactionKind.Blight, HasSettlement = settlement });
         }
