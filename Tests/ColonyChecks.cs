@@ -163,6 +163,34 @@ internal static class ColonyChecks
         Check(fullWorker.Task == null && fullWoodDeposit.Amount == fullDepositBefore,
             "gathering must not begin when storage has no free capacity");
 
+        var partialDeliverySnapshot = new ColonySimulation().CaptureSnapshot();
+        int targetInventory = ColonySimulation.BaseStockpileCapacity - 2;
+        int partialStartingInventory = partialDeliverySnapshot.Inventory.Sum(stack => stack.Amount);
+        partialDeliverySnapshot.Inventory.Single(stack => stack.Resource == ResourceKind.Food).Amount +=
+            targetInventory - partialStartingInventory;
+        var cargoWorker = partialDeliverySnapshot.Workers[0];
+        cargoWorker.X = 18.5f;
+        cargoWorker.Y = 7.5f;
+        cargoWorker.CarriedResource = ResourceKind.Wood;
+        cargoWorker.CarriedAmount = 5;
+        cargoWorker.Task = new WorkerTaskSnapshot
+        {
+            Kind = ColonyTaskKind.Deliver,
+            TargetX = 18,
+            TargetY = 7,
+            Route = [],
+            RouteIndex = 0
+        };
+        var partialDeliveryColony = ColonySimulation.RestoreSnapshot(partialDeliverySnapshot);
+        var restoredCarrier = partialDeliveryColony.Workers.Single(worker => worker.Id == cargoWorker.Id);
+        partialDeliveryColony.Step(0.1f);
+        Check(partialDeliveryColony.InventoryUsed == partialDeliveryColony.InventoryCapacity &&
+              restoredCarrier.CarriedResource == ResourceKind.Wood && restoredCarrier.CarriedAmount == 3,
+            "delivery must transfer only available storage space and retain remaining cargo");
+        partialDeliveryColony.Step(0.1f);
+        Check(restoredCarrier.CarriedAmount == 3 && restoredCarrier.Task == null,
+            "a worker with undelivered cargo must wait rather than take unrelated work while storage remains full");
+
         var overCapacity = fullColony.CaptureSnapshot();
         overCapacity.Inventory.Single(stack => stack.Resource == ResourceKind.Food).Amount++;
         bool excessInventoryRejected = false;
