@@ -144,6 +144,39 @@ internal sealed class OutpostRenderer : IDisposable
         c.DrawText(symbol, p.X - 4.5f * zoom, cy + 5 * zoom, SKTextAlign.Left, _font, _bold);
     }
 
+    private void DrawWirePrism(SKCanvas c, float x, float groundY, float halfWidth, float halfDepth,
+        float height, float zoom, SKColor topFill, SKColor sideFill, SKColor edgeColor)
+    {
+        float w = halfWidth * zoom, d = halfDepth * zoom, h = height * zoom;
+        var backTop = (X: x, Y: groundY - h - d);
+        var rightTop = (X: x + w, Y: groundY - h);
+        var frontTop = (X: x, Y: groundY - h + d);
+        var leftTop = (X: x - w, Y: groundY - h);
+        var rightBase = (X: x + w, Y: groundY);
+        var frontBase = (X: x, Y: groundY + d);
+        var leftBase = (X: x - w, Y: groundY);
+
+        DrawPoly(c, _fill, sideFill, zoom, leftTop, frontTop, frontBase, leftBase);
+        DrawPoly(c, _fill, new SKColor(
+            (byte)Math.Min(255, sideFill.Red + 5),
+            (byte)Math.Min(255, sideFill.Green + 7),
+            (byte)Math.Min(255, sideFill.Blue + 9),
+            sideFill.Alpha), zoom, frontTop, rightTop, rightBase, frontBase);
+        DrawPoly(c, _fill, topFill, zoom, backTop, rightTop, frontTop, leftTop);
+
+        _line.Color = edgeColor;
+        _line.StrokeWidth = Math.Max(1.1f, zoom * .95f);
+        DrawPoly(c, _line, edgeColor, zoom, leftTop, frontTop, frontBase, leftBase);
+        DrawPoly(c, _line, edgeColor, zoom, frontTop, rightTop, rightBase, frontBase);
+        DrawPoly(c, _line, edgeColor, zoom, backTop, rightTop, frontTop, leftTop);
+        c.DrawLine(leftTop.X, leftTop.Y, leftBase.X, leftBase.Y, _line);
+        c.DrawLine(rightTop.X, rightTop.Y, rightBase.X, rightBase.Y, _line);
+        c.DrawLine(frontTop.X, frontTop.Y, frontBase.X, frontBase.Y, _line);
+        c.DrawLine(backTop.X, backTop.Y, leftTop.X, leftTop.Y, _line);
+        c.DrawLine(backTop.X, backTop.Y, rightTop.X, rightTop.Y, _line);
+        _line.StrokeWidth = 1;
+    }
+
     private void DrawBase(SKCanvas c, float cameraX, float cameraY, float zoom)
     {
         var p = OutpostSimulation.TileCenter(OutpostSimulation.BaseX, OutpostSimulation.BaseY, cameraX, cameraY, zoom);
