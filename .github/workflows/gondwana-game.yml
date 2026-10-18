@@ -8,7 +8,6 @@ on:
     paths:
       - "**.cs"
       - "**.csproj"
-      - "Data/**"
       - ".github/workflows/gondwana-game.yml"
       - "*.md"
       - ".gitignore"
@@ -18,7 +17,6 @@ on:
     paths:
       - "**.cs"
       - "**.csproj"
-      - "Data/**"
       - ".github/workflows/gondwana-game.yml"
       - "*.md"
       - ".gitignore"
@@ -44,7 +42,7 @@ jobs:
       - name: Build canonical root project
         run: dotnet build GondwanaGame.csproj --configuration Release
 
-      - name: Run local simulation and campaign checks
+      - name: Run colony and campaign checks
         run: dotnet run --project GondwanaGame.csproj --configuration Release --no-build -- --self-test
 
       - name: Publish self-contained Linux x86_64 build
