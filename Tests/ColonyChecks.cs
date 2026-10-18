@@ -82,6 +82,19 @@ internal static class ColonyChecks
             "a worker must finish the queued recipe and place the output in inventory");
         Check(!colony.QueueComponentProduction(999999), "production at a missing workstation must be rejected");
 
+        int woodBeforeRecipe = colony.ResourceCount(ResourceKind.Wood);
+        Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage0"),
+            "a catalogue recipe should be queueable when its real inputs and workstation are available");
+        Check(colony.ResourceCount(ResourceKind.Wood) == woodBeforeRecipe - 2,
+            "catalogue recipe inputs must be removed from the same live colony inventory");
+        Check(!colony.QueueRecipeProduction(workbenchId, "recipe.metallurgy.stage0"),
+            "a recipe requiring unavailable raw ore must be rejected instead of creating free materials");
+        for (int i = 0; i < 1200; i++) colony.Step(0.1f);
+        Check(colony.MaterialCount("material.sawmill.stage0") == 2,
+            "worker labor must create the stage-specific stable-ID output from the selected recipe");
+        Check(colony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
+            "completed production orders must preserve their catalogue recipe identity");
+
         Check(colony.DesignTileConstruction(19, 14, ArchitectureKind.Path), "a new path order should be accepted before saving");
         colony.Step(0.1f);
         string json = ColonySaveService.Serialize(colony);
@@ -90,6 +103,9 @@ internal static class ColonyChecks
         Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
             "save/load must preserve actual inventory balances");
+        Check(restored.MaterialCount("material.sawmill.stage0") == 2 &&
+              restored.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
+            "save/load must preserve stable-ID industry stock and queued recipe identities");
         Check(restored.TileOrders.Count == colony.TileOrders.Count &&
               restored.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))
                   .SequenceEqual(colony.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))),
