@@ -263,15 +263,27 @@ internal static class Program
                                     }
                                     break;
                                 case 5:
-                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035)
+                                    if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
+                                        logicalMouse.Y >= 350 && logicalMouse.Y < 385)
                                     {
-                                        int index = Math.Max(0, (int)((logicalMouse.Y - 194) / 48));
-                                        var benches = simulation.Objects.Where(o => o.Kind == PlaceableKind.Workbench).ToList();
-                                        if (index < benches.Count && benches[index].IsBuilt)
-                                        {
-                                            bool queued = simulation.QueueComponentProduction(benches[index].Id);
-                                            simulation.SetMessage(queued ? "Component production queued." : "Production could not be queued; check materials and workstation.");
-                                        }
+                                        var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
+                                        if (bench == null)
+                                            simulation.SetMessage("Build and complete a Workbench before queuing component production.");
+                                        else
+                                            simulation.QueueComponentProduction(bench.Id);
+                                    }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 194 && logicalMouse.Y < 594)
+                                    {
+                                        int index = (int)((logicalMouse.Y - 194) / 50);
+                                        var recipe = simulation.ManagementRecipes.ElementAtOrDefault(index);
+                                        var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
+                                        if (recipe == null)
+                                            simulation.SetMessage("No recipe is listed at that position.");
+                                        else if (bench == null)
+                                            simulation.SetMessage("Build and complete a Workbench before queuing catalog recipes.");
+                                        else
+                                            simulation.QueueRecipeProduction(bench.Id, recipe.Id);
                                     }
                                     break;
                                 case 6:
