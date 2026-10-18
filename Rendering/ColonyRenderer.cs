@@ -246,6 +246,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText("Right click move/gather", 790, 567, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("WASD camera  +/- zoom", 790, 586, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("Space pause  Esc cancel", 790, 605, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("F5 save  F9 load", 790, 624, SKTextAlign.Left, _smallFont, _text);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";

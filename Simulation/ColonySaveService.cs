@@ -1,0 +1,303 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace KorTheBlight.Simulation;
+
+/// <summary>Versioned JSON persistence for a complete local colony simulation snapshot.</summary>
+internal static class ColonySaveService
+{
+    private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
+
+    public static string SavePath
+    {
+        get
+        {
+            string root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ??
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+            return Path.Combine(root, "kor-eternal-frontier", "colony.json");
+        }
+    }
+
+    public static string Serialize(ColonySimulation simulation)
+    {
+        ArgumentNullException.ThrowIfNull(simulation);
+        var snapshot = simulation.CaptureSnapshot();
+        snapshot.Validate();
+        return JsonSerializer.Serialize(snapshot, JsonOptions);
+    }
+
+    public static ColonySimulation Deserialize(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) throw new InvalidDataException("Colony save is empty.");
+        ColonySnapshot snapshot;
+        try
+        {
+            snapshot = JsonSerializer.Deserialize<ColonySnapshot>(json, JsonOptions)
+                ?? throw new InvalidDataException("Colony save is empty.");
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException($"Colony save is not valid JSON: {error.Message}", error);
+        }
+        return ColonySimulation.RestoreSnapshot(snapshot);
+    }
+
+    public static void Save(ColonySimulation simulation, string? path = null)
+    {
+        string target = path ?? SavePath;
+        string directory = Path.GetDirectoryName(Path.GetFullPath(target))
+            ?? throw new InvalidOperationException("Could not determine the colony save directory.");
+        Directory.CreateDirectory(directory);
+        string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, Serialize(simulation));
+            File.Move(temporary, target, true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
+    public static ColonySimulation Load(string? path = null)
+    {
+        string target = path ?? SavePath;
+        if (!File.Exists(target))
+            throw new FileNotFoundException("No Kor Eternal Frontier colony save exists yet.", target);
+        return Deserialize(File.ReadAllText(target));
+    }
+
+    private static JsonSerializerOptions CreateOptions()
+    {
+        var options = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = false };
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
+    }
+}
+
+internal sealed class ColonySnapshot
+{
+    public int SchemaVersion { get; set; } = 1;
+    public int Width { get; set; } = ColonySimulation.Width;
+    public int Height { get; set; } = ColonySimulation.Height;
+    public double ElapsedSeconds { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int? SelectedWorkerId { get; set; }
+    public int NextOrderId { get; set; }
+    public int NextObjectId { get; set; }
+    public int NextDepositId { get; set; }
+    public int NextProductionId { get; set; }
+    public List<TileSnapshot> Tiles { get; set; } = [];
+    public List<TileOrderSnapshot> TileOrders { get; set; } = [];
+    public List<PlaceableObjectSnapshot> Objects { get; set; } = [];
+    public List<ResourceDepositSnapshot> Deposits { get; set; } = [];
+    public List<ColonyWorkerSnapshot> Workers { get; set; } = [];
+    public List<ResourceStackSnapshot> Inventory { get; set; } = [];
+    public List<ProductionOrderSnapshot> ProductionOrders { get; set; } = [];
+
+    public void Validate()
+    {
+        if (SchemaVersion != 1) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
+            throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
+        if (!double.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
+            throw new InvalidDataException("Colony save contains an invalid simulation clock.");
+        if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
+            Workers is null || Inventory is null || ProductionOrders is null)
+            throw new InvalidDataException("Colony save is missing a required collection.");
+        if (Tiles.Count != Width * Height)
+            throw new InvalidDataException("Colony save has an incomplete tile grid.");
+
+        var tileCoordinates = new HashSet<(int X, int Y)>();
+        foreach (var tile in Tiles)
+        {
+            CheckCell(tile.X, tile.Y, "tile");
+            if (!Enum.IsDefined(tile.Terrain) || !Enum.IsDefined(tile.Architecture))
+                throw new InvalidDataException("Colony save contains an unknown terrain or architecture enum.");
+            if (!tileCoordinates.Add((tile.X, tile.Y)))
+                throw new InvalidDataException("Colony save has duplicate tile coordinates.");
+            if (tile.ConstructionOrderId is < 1)
+                throw new InvalidDataException("Colony save has an invalid tile construction reference.");
+        }
+
+        var tileOrderIds = new HashSet<int>();
+        var tileOrderCells = new HashSet<(int X, int Y)>();
+        foreach (var order in TileOrders)
+        {
+            CheckId(order.Id, tileOrderIds, "tile construction order");
+            CheckCell(order.X, order.Y, "tile construction order");
+            if (!Enum.IsDefined(order.Target) || order.Target == ArchitectureKind.None || !Enum.IsDefined(order.Status))
+                throw new InvalidDataException("Colony save contains an invalid tile construction state.");
+            if (order.WorkRequired <= 0 || !float.IsFinite(order.WorkDone) || order.WorkDone < 0)
+                throw new InvalidDataException("Colony save contains invalid tile construction work values.");
+            if (!tileOrderCells.Add((order.X, order.Y)))
+                throw new InvalidDataException("More than one construction order targets the same tile.");
+        }
+
+        var objectIds = new HashSet<int>();
+        var occupied = new HashSet<(int X, int Y)>();
+        foreach (var item in Objects)
+        {
+            CheckId(item.Id, objectIds, "placeable object");
+            if (!Enum.IsDefined(item.Kind) || !Enum.IsDefined(item.Status) || item.Width <= 0 || item.Height <= 0 ||
+                item.X < 0 || item.Y < 0 || item.X + item.Width > Width || item.Y + item.Height > Height)
+                throw new InvalidDataException("Colony save contains an invalid placeable object footprint.");
+            if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0)
+                throw new InvalidDataException("Colony save contains invalid placeable object work values.");
+            for (int y = item.Y; y < item.Y + item.Height; y++)
+            for (int x = item.X; x < item.X + item.Width; x++)
+                if (!occupied.Add((x, y)))
+                    throw new InvalidDataException("Colony save contains overlapping placeable object footprints.");
+        }
+
+        var depositIds = new HashSet<int>();
+        foreach (var deposit in Deposits)
+        {
+            CheckId(deposit.Id, depositIds, "resource deposit");
+            CheckCell(deposit.X, deposit.Y, "resource deposit");
+            if (!Enum.IsDefined(deposit.Resource) || deposit.Amount < 0)
+                throw new InvalidDataException("Colony save contains an invalid resource deposit.");
+        }
+
+        var workerIds = new HashSet<int>();
+        foreach (var worker in Workers)
+        {
+            CheckId(worker.Id, workerIds, "colonist");
+            if (string.IsNullOrWhiteSpace(worker.Name) ||
+                !float.IsFinite(worker.X) || !float.IsFinite(worker.Y) ||
+                worker.X < 0 || worker.Y < 0 || worker.X >= Width || worker.Y >= Height ||
+                !float.IsFinite(worker.Hunger) || worker.Hunger is < 0 or > 100 || worker.CarriedAmount < 0)
+                throw new InvalidDataException("Colony save contains an invalid colonist state.");
+            if (worker.CarriedResource.HasValue != (worker.CarriedAmount > 0) ||
+                (worker.CarriedResource.HasValue && !Enum.IsDefined(worker.CarriedResource.Value)))
+                throw new InvalidDataException("Colony save contains an inconsistent colonist cargo state.");
+            if (worker.Task is null) continue;
+            if (!Enum.IsDefined(worker.Task.Kind) || !float.IsFinite(worker.Task.WorkDone) || worker.Task.WorkDone < 0 ||
+                worker.Task.Route is null || worker.Task.RouteIndex < 0 || worker.Task.RouteIndex > worker.Task.Route.Count)
+                throw new InvalidDataException("Colony save contains an invalid worker task.");
+            CheckCell(worker.Task.TargetX, worker.Task.TargetY, "worker task target");
+            foreach (var cell in worker.Task.Route) CheckCell(cell.X, cell.Y, "worker route");
+            if (worker.Task.Kind == ColonyTaskKind.BuildTile && !tileOrderIds.Contains(worker.Task.TargetId))
+                throw new InvalidDataException("Worker task references a missing tile construction order.");
+            if (worker.Task.Kind == ColonyTaskKind.BuildObject && !objectIds.Contains(worker.Task.TargetId))
+                throw new InvalidDataException("Worker task references a missing placeable object.");
+            if (worker.Task.Kind == ColonyTaskKind.Gather && !depositIds.Contains(worker.Task.DepositId))
+                throw new InvalidDataException("Worker task references a missing resource deposit.");
+        }
+
+        var resourceKinds = Enum.GetValues<ResourceKind>().ToHashSet();
+        if (Inventory.Count != resourceKinds.Count || Inventory.Any(stack =>
+                !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
+            Inventory.Select(stack => stack.Resource).Distinct().Count() != Inventory.Count)
+            throw new InvalidDataException("Colony inventory is incomplete, duplicated, or contains an invalid amount.");
+
+        var productionIds = new HashSet<int>();
+        foreach (var order in ProductionOrders)
+        {
+            CheckId(order.Id, productionIds, "production order");
+            if (!objectIds.Contains(order.WorkstationId) || !float.IsFinite(order.WorkRequired) ||
+                !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0)
+                throw new InvalidDataException("Colony save contains an invalid production order.");
+        }
+        foreach (var worker in Workers)
+            if (worker.Task?.Kind == ColonyTaskKind.Produce && !productionIds.Contains(worker.Task.TargetId))
+                throw new InvalidDataException("Worker task references a missing production order.");
+
+        if (SelectedWorkerId.HasValue && !workerIds.Contains(SelectedWorkerId.Value))
+            throw new InvalidDataException("Selected colonist is missing from the colony save.");
+        if (NextOrderId <= tileOrderIds.DefaultIfEmpty(0).Max() ||
+            NextObjectId <= objectIds.DefaultIfEmpty(0).Max() ||
+            NextDepositId <= depositIds.DefaultIfEmpty(0).Max() ||
+            NextProductionId <= productionIds.DefaultIfEmpty(0).Max())
+            throw new InvalidDataException("Colony save contains an invalid next-ID counter.");
+    }
+
+    private static void CheckCell(int x, int y, string label)
+    {
+        if (x < 0 || y < 0 || x >= ColonySimulation.Width || y >= ColonySimulation.Height)
+            throw new InvalidDataException($"Colony save contains an out-of-bounds {label} coordinate.");
+    }
+
+    private static void CheckId(int id, HashSet<int> existing, string label)
+    {
+        if (id < 1 || !existing.Add(id))
+            throw new InvalidDataException($"Colony save contains an invalid or duplicate {label} ID.");
+    }
+}
+
+internal sealed class CellSnapshot { public int X { get; set; } public int Y { get; set; } }
+internal sealed class TileSnapshot
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public TerrainKind Terrain { get; set; }
+    public ArchitectureKind Architecture { get; set; }
+    public int? ConstructionOrderId { get; set; }
+}
+internal sealed class TileOrderSnapshot
+{
+    public int Id { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public ArchitectureKind Target { get; set; }
+    public ConstructionStatus Status { get; set; }
+    public float WorkDone { get; set; }
+    public int WorkRequired { get; set; }
+}
+internal sealed class PlaceableObjectSnapshot
+{
+    public int Id { get; set; }
+    public PlaceableKind Kind { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public ConstructionStatus Status { get; set; }
+    public float WorkDone { get; set; }
+    public int WorkRequired { get; set; }
+}
+internal sealed class ResourceDepositSnapshot
+{
+    public int Id { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public ResourceKind Resource { get; set; }
+    public int Amount { get; set; }
+}
+internal sealed class ColonyWorkerSnapshot
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Hunger { get; set; }
+    public ResourceKind? CarriedResource { get; set; }
+    public int CarriedAmount { get; set; }
+    public WorkerTaskSnapshot? Task { get; set; }
+}
+internal sealed class WorkerTaskSnapshot
+{
+    public ColonyTaskKind Kind { get; set; }
+    public int TargetX { get; set; }
+    public int TargetY { get; set; }
+    public List<CellSnapshot> Route { get; set; } = [];
+    public int RouteIndex { get; set; }
+    public int TargetId { get; set; }
+    public float WorkDone { get; set; }
+    public int DepositId { get; set; }
+}
+internal sealed class ResourceStackSnapshot
+{
+    public ResourceKind Resource { get; set; }
+    public int Amount { get; set; }
+}
+internal sealed class ProductionOrderSnapshot
+{
+    public int Id { get; set; }
+    public int WorkstationId { get; set; }
+    public float WorkRequired { get; set; }
+    public float WorkDone { get; set; }
+    public bool Complete { get; set; }
+    public bool Assigned { get; set; }
+}

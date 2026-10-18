@@ -57,7 +57,7 @@ internal static class Program
 
             bool running = true, wasLeft = false, wasRight = false, wasEscape = false;
             bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
-            bool wasObject = false, wasTab = false, wasSpace = false;
+            bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -96,6 +96,8 @@ internal static class Program
                 bool objectDown = IsDown(keys, Sdl.ScancodeO);
                 bool tabDown = IsDown(keys, Sdl.ScancodeTab);
                 bool spaceDown = IsDown(keys, Sdl.ScancodeSpace);
+                bool f5Down = IsDown(keys, Sdl.ScancodeF5);
+                bool f9Down = IsDown(keys, Sdl.ScancodeF9);
                 bool escapeDown = IsDown(keys, Sdl.ScancodeEscape);
 
                 if (oneDown && !was1) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
@@ -112,9 +114,20 @@ internal static class Program
                 }
                 if (escapeDown && !wasEscape) { architectureMode = ArchitectureKind.None; placingObject = false; }
                 if (spaceDown && !wasSpace) paused = !paused;
+                if (f5Down && !wasF5)
+                {
+                    try { ColonySaveService.Save(simulation); simulation.SetMessage("Colony saved."); }
+                    catch (Exception ex) { simulation.SetMessage($"Save failed: {ex.Message}"); }
+                }
+                if (f9Down && !wasF9)
+                {
+                    try { simulation = ColonySaveService.Load(); simulation.SetMessage("Colony save loaded."); }
+                    catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); }
+                }
 
                 was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
-                wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown; wasEscape = escapeDown;
+                wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
+                wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
@@ -224,6 +237,7 @@ internal static class Sdl
     public const int ScancodeA = 4, ScancodeD = 7, ScancodeO = 18, ScancodeS = 22, ScancodeW = 26;
     public const int Scancode1 = 30, Scancode2 = 31, Scancode3 = 32, Scancode4 = 33, Scancode5 = 34;
     public const int ScancodeTab = 43, ScancodeSpace = 44, ScancodeMinus = 45, ScancodeEquals = 46, ScancodeEscape = 41;
+    public const int ScancodeF5 = 62, ScancodeF9 = 66;
     [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();

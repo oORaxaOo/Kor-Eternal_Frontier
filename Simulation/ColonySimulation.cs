@@ -113,6 +113,7 @@ internal sealed class ColonySimulation
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
     public string Message { get; private set; } = "Colony ready. Design architecture per tile or place an object blueprint.";
+    public void SetMessage(string message) => Message = message;
     public int? SelectedWorkerId { get; private set; }
     public float ElapsedSeconds { get; private set; }
     public int CompletedTileOrders => _tileOrders.Count(x => x.Status == ConstructionStatus.Complete);
@@ -152,6 +153,146 @@ internal sealed class ColonySimulation
         AddDeposit(new CellPosition(27, 12), ResourceKind.Stone, 90);
         AddDeposit(new CellPosition(14, 21), ResourceKind.Food, 100);
         AddDeposit(new CellPosition(34, 20), ResourceKind.Alloy, 45);
+    }
+
+    internal ColonySnapshot CaptureSnapshot()
+    {
+        var snapshot = new ColonySnapshot
+        {
+            SchemaVersion = 1,
+            ElapsedSeconds = ElapsedSeconds,
+            Message = Message,
+            SelectedWorkerId = SelectedWorkerId,
+            NextOrderId = _nextOrderId,
+            NextObjectId = _nextObjectId,
+            NextDepositId = _nextDepositId,
+            NextProductionId = _nextProductionId,
+            Tiles = [],
+            TileOrders = [],
+            Objects = [],
+            Deposits = [],
+            Workers = [],
+            Inventory = [],
+            ProductionOrders = []
+        };
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            var tile = _tiles[x, y];
+            snapshot.Tiles.Add(new TileSnapshot
+            {
+                X = x, Y = y, Terrain = tile.Terrain, Architecture = tile.Architecture,
+                ConstructionOrderId = tile.ConstructionOrderId
+            });
+        }
+
+        snapshot.TileOrders.AddRange(_tileOrders.Select(order => new TileOrderSnapshot
+        {
+            Id = order.Id, X = order.Cell.X, Y = order.Cell.Y, Target = order.Target,
+            Status = order.Status, WorkDone = order.WorkDone, WorkRequired = order.WorkRequired
+        }));
+        snapshot.Objects.AddRange(_objects.Select(item => new PlaceableObjectSnapshot
+        {
+            Id = item.Id, Kind = item.Kind, X = item.Origin.X, Y = item.Origin.Y,
+            Width = item.Width, Height = item.Height, Status = item.Status,
+            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired
+        }));
+        snapshot.Deposits.AddRange(_deposits.Select(deposit => new ResourceDepositSnapshot
+        {
+            Id = deposit.Id, X = deposit.Cell.X, Y = deposit.Cell.Y,
+            Resource = deposit.Resource, Amount = deposit.Amount
+        }));
+        snapshot.Workers.AddRange(_workers.Select(worker => new ColonyWorkerSnapshot
+        {
+            Id = worker.Id, Name = worker.Name, X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
+            CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
+            Task = worker.Task == null ? null : new WorkerTaskSnapshot
+            {
+                Kind = worker.Task.Kind, TargetX = worker.Task.Target.X, TargetY = worker.Task.Target.Y,
+                Route = worker.Task.Route.Select(cell => new CellSnapshot { X = cell.X, Y = cell.Y }).ToList(),
+                RouteIndex = worker.Task.RouteIndex, TargetId = worker.Task.TargetId,
+                WorkDone = worker.Task.WorkDone, DepositId = worker.Task.DepositId
+            }
+        }));
+        snapshot.Inventory.AddRange(_inventory.Select(item => new ResourceStackSnapshot
+        {
+            Resource = item.Key, Amount = item.Value
+        }));
+        snapshot.ProductionOrders.AddRange(_productionOrders.Select(order => new ProductionOrderSnapshot
+        {
+            Id = order.Id, WorkstationId = order.WorkstationId, WorkRequired = order.WorkRequired,
+            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
+        }));
+        return snapshot;
+    }
+
+    internal static ColonySimulation RestoreSnapshot(ColonySnapshot snapshot)
+    {
+        snapshot.Validate();
+        var simulation = new ColonySimulation();
+        foreach (var tileState in snapshot.Tiles)
+        {
+            var tile = simulation._tiles[tileState.X, tileState.Y];
+            tile.Terrain = tileState.Terrain;
+            tile.Architecture = tileState.Architecture;
+            tile.ConstructionOrderId = tileState.ConstructionOrderId;
+        }
+
+        simulation._tileOrders.Clear();
+        simulation._tileOrders.AddRange(snapshot.TileOrders.Select(order =>
+        {
+            var restored = new TileConstructionOrder(order.Id, new CellPosition(order.X, order.Y), order.Target, order.WorkRequired)
+            { Status = order.Status, WorkDone = order.WorkDone };
+            return restored;
+        }));
+
+        simulation._objects.Clear();
+        simulation._objects.AddRange(snapshot.Objects.Select(item => new PlaceableObjectState(
+            item.Id, item.Kind, new CellPosition(item.X, item.Y), item.Width, item.Height,
+            item.WorkRequired, item.Status) { WorkDone = item.WorkDone }));
+
+        simulation._deposits.Clear();
+        simulation._deposits.AddRange(snapshot.Deposits.Select(deposit => new ResourceDeposit(
+            deposit.Id, new CellPosition(deposit.X, deposit.Y), deposit.Resource, deposit.Amount)));
+
+        simulation._workers.Clear();
+        simulation._workers.AddRange(snapshot.Workers.Select(worker =>
+        {
+            var restored = new ColonyWorker(worker.Id, worker.Name, worker.X, worker.Y, worker.Hunger)
+            {
+                CarriedResource = worker.CarriedResource,
+                CarriedAmount = worker.CarriedAmount,
+                Task = worker.Task == null ? null : new WorkerTask(worker.Task.Kind,
+                    new CellPosition(worker.Task.TargetX, worker.Task.TargetY),
+                    worker.Task.Route.Select(cell => new CellPosition(cell.X, cell.Y)).ToList())
+                {
+                    RouteIndex = worker.Task.RouteIndex,
+                    TargetId = worker.Task.TargetId,
+                    WorkDone = worker.Task.WorkDone,
+                    DepositId = worker.Task.DepositId
+                }
+            };
+            return restored;
+        }));
+
+        simulation._inventory.Clear();
+        foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
+        simulation._productionOrders.Clear();
+        simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
+            order.Id, order.WorkstationId, order.WorkRequired)
+        {
+            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
+        }));
+
+        simulation._nextOrderId = snapshot.NextOrderId;
+        simulation._nextObjectId = snapshot.NextObjectId;
+        simulation._nextDepositId = snapshot.NextDepositId;
+        simulation._nextProductionId = snapshot.NextProductionId;
+        simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
+        simulation.Message = snapshot.Message;
+        simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
+        return simulation;
     }
 
     public int ResourceCount(ResourceKind resource) => _inventory.TryGetValue(resource, out int amount) ? amount : 0;

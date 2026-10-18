@@ -68,6 +68,43 @@ internal static class ColonyChecks
         Check(colony.ResourceCount(ResourceKind.Components) == componentBefore + 1,
             "a worker must finish the queued recipe and place the output in inventory");
         Check(!colony.QueueComponentProduction(999999), "production at a missing workstation must be rejected");
+
+        Check(colony.DesignTileConstruction(19, 14, ArchitectureKind.Path), "a new path order should be accepted before saving");
+        colony.Step(0.1f);
+        string json = ColonySaveService.Serialize(colony);
+        var restored = ColonySaveService.Deserialize(json);
+        Check(restored.Workers.Count == colony.Workers.Count, "save/load must preserve the colony population");
+        Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
+              restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
+            "save/load must preserve actual inventory balances");
+        Check(restored.TileOrders.Count == colony.TileOrders.Count &&
+              restored.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))
+                  .SequenceEqual(colony.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))),
+            "save/load must preserve each tile construction state and work progress");
+        Check(restored.Deposits.Select(d => (d.Id, d.Amount)).SequenceEqual(colony.Deposits.Select(d => (d.Id, d.Amount))),
+            "save/load must preserve finite deposit quantities");
+        Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
+              .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
+            "save/load must preserve worker positions, needs, cargo, and task kinds");
+
+        string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "colony.json");
+        try
+        {
+            ColonySaveService.Save(colony, path);
+            var loadedFromDisk = ColonySaveService.Load(path);
+            Check(loadedFromDisk.ResourceCount(ResourceKind.Food) == colony.ResourceCount(ResourceKind.Food),
+                "disk save/load must preserve inventory state");
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+
+        bool versionRejected = false;
+        try { ColonySaveService.Deserialize("{\"SchemaVersion\":99}"); }
+        catch (InvalidDataException) { versionRejected = true; }
+        Check(versionRejected, "unsupported or incomplete save data must be rejected rather than loaded");
     }
 
     private static void Check(bool condition, string message)

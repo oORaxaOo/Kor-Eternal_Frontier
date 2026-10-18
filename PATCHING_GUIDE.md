@@ -4,8 +4,9 @@ There is one active application: the root .NET 8 project. Do not add another pro
 
 ## Main files
 
-- Program.cs: window creation, input mapping, and simulation stepping.
+- Program.cs: window creation, input mapping, simulation stepping and save/load key bindings.
 - Simulation/ColonySimulation.cs: current colony state and gameplay rules.
+- Simulation/ColonySaveService.cs: validated local colony persistence.
 - Campaign/CampaignSimulation.cs and Campaign/CampaignState.cs: deterministic strategic state and campaign persistence.
 - Rendering/ColonyRenderer.cs: presentation-only square-grid view.
 - Rendering/OrthogonalGridProjection.cs: screen/world transforms at the input/render boundary.
@@ -25,5 +26,5 @@ There is one active application: the root .NET 8 project. Do not add another pro
 4. Do not use cosmetic rendering to fake simulation state.
 5. Keep tile architecture jobs distinct from placeable furniture and machine objects.
 6. Conserve inventory and deposit quantities across gather/deliver.
-7. Validate the actual diff and test output before declaring completion.
+7. Save schema changes require validation and round-trip tests.
 8. Do not commit bin, obj, artifacts, Python caches, or temporary output.
