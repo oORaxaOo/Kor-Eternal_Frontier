@@ -237,10 +237,12 @@ internal sealed class ColonyRenderer : IDisposable
         foreach (var worker in simulation.Workers)
         {
             _text.Color = simulation.SelectedWorkerId == worker.Id ? Gold : TextColor;
-            string job = worker.Task?.Kind.ToString() ?? "Idle";
-            canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)}", 790, row, SKTextAlign.Left, _smallFont, _text);
+            var citizen = simulation.CitizenForWorker(worker.Id);
+            string legacyJob = worker.Task?.Kind.ToString() ?? "Idle";
+            string citizenState = citizen?.State.ToString() ?? "Idle";
+            canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)} | Mood {(citizen?.Happiness ?? 100f):0}", 790, row, SKTextAlign.Left, _smallFont, _text);
             _muted.Color = MutedColor;
-            canvas.DrawText(job, 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText($"{legacyJob} / {citizenState}", 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
             row += 43;
         }
 
