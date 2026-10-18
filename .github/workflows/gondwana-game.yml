@@ -42,3 +42,11 @@ jobs:
         run: |
           test -f artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
           file artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
+
+      - name: Upload downloadable Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kor-Eternal-Frontier-linux-x64
+          path: artifacts/Kor-Eternal-Frontier/linux-x64/
+          if-no-files-found: error
+          retention-days: 14
