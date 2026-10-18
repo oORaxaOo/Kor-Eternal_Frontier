@@ -110,7 +110,7 @@ internal sealed class WorldMapSimulation
 
     public bool ImproveRelations()
     {
-        if (Selected.Owner is WorldFactionKind.Kor or WorldFactionKind.Blight) return false;
+        if (Selected.Owner is WorldFactionKind.Kor or WorldFactionKind.Blight or WorldFactionKind.Neutral) return false;
         string key = Key(WorldFactionKind.Kor, Selected.Owner);
         State.Relations[key] = Math.Min(100, State.Relations.GetValueOrDefault(key, 0) + 15);
         State.LastEvent = $"Diplomatic mission improved relations with {FactionName(Selected.Owner)}.";
