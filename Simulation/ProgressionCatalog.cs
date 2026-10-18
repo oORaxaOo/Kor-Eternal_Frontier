@@ -54,7 +54,16 @@ internal static class ProgressionCatalog
         ("construction", "Construction Components", ["Fasteners", "Prefab Panels", "Insulated Panels", "Pressure Doors", "Modular Frames", "Smart Facades", "Self-Repair Modules", "Adaptive Habitat Kits"], "alloy", "components"),
         ("vehicles", "Vehicle Fabrication", ["Axle Sets", "Tracked Chassis", "Electric Drive", "Autonomous Drive", "Armoured Chassis", "Magnetic Drive", "Adaptive Chassis", "Field-Shift Chassis"], "alloy", "vehicle_parts"),
         ("weapons", "Defence Manufacturing", ["Kinetic Barrels", "Optic Assemblies", "Stabilised Mounts", "Smart Ammunition", "Directed-Energy Parts", "Countermeasure Suite", "Autonomous Turret Kit", "Adaptive Defence Core"], "alloy", "defence_parts"),
-        ("research", "Research Instruments", ["Sample Glassware", "Spectrometer", "Lab Instruments", "Sensor Array", "Precision Scanner", "Quantum Sensor", "Field Analyzer", "Anomaly Observatory"], "components", "research_parts")
+        ("research", "Research Instruments", ["Sample Glassware", "Spectrometer", "Lab Instruments", "Sensor Array", "Precision Scanner", "Quantum Sensor", "Field Analyzer", "Anomaly Observatory"], "components", "research_parts"),
+        ("water", "Water Treatment", ["Rough Filtration", "Potable Water", "Mineral Balancing", "Membrane Filtration", "Closed-Loop Water", "Molecular Purification", "Atmospheric Recovery", "Adaptive Hydrology"], "water", "treated_water"),
+        ("textiles", "Technical Textiles", ["Plant Fibre", "Woven Cloth", "Reinforced Fabric", "Insulation Weave", "Smart Fabric", "Armoured Fibre", "Adaptive Textile", "Molecular Weave"], "biomass", "technical_fabric"),
+        ("glass", "Glassworks", ["Glass Cullets", "Industrial Glass", "Optical Glass", "Ceramic Glass", "Pressure Glass", "Radiation Glass", "Self-Healing Glass", "Adaptive Transparent Alloy"], "stone", "glass),
+        ("optics", "Optics", ["Ground Lenses", "Optical Lenses", "Thermal Optics", "Sensor Optics", "Laser Optics", "Photonic Lens", "Quantum Optics", "Adaptive Optics"], "crystal", "optical_parts"),
+        ("aerospace", "Aerospace Fabrication", ["Lightweight Frames", "Pressure Hulls", "Flight Controls", "Heat Shields", "High-G Structures", "Magnetic Thrusters", "Adaptive Hulls", "Field-Shift Assemblies"], "alloy", "aerospace_parts"),
+        ("biochemistry", "Biochemistry", ["Culture Medium", "Enzyme Blend", "Bio-Reagents", "Synthetic Tissue", "Programmable Enzymes", "Regenerative Matrix", "Adaptive Biomass", "Closed-Loop Biocatalyst"], "biomass", "bioreagents"),
+        ("waste_recovery", "Waste Recovery", ["Sorted Scrap", "Recovered Feedstock", "Reclaimed Metals", "Recycled Polymer", "Catalyst Recovery", "Closed-Loop Solvents", "Atom-Efficient Feedstock", "Near-Zero-Waste Matrix"], "recycled_feedstock", "reclaimed_material"),
+        ("robotics", "Robotics", ["Actuator Sets", "Servo Assemblies", "Control Stack", "Robot Limbs", "Autonomous Chassis", "Swarm Controller", "Self-Repair Actuators", "Adaptive Robotics Core"], "components", "robotics_parts"),
+        ("containment", "Blight Containment", ["Sealed Sample Kit", "Isolation Filters", "Sterile Barrier", "Pressure Containment", "Reactive Neutraliser", "Adaptive Quarantine", "Resonance Cage", "Blight Nullifier"], "blight_sample", "containment_medium")
     ];
 
     private static readonly (string Id, string Name, int Footprint, int Work, string Upkeep)[] BuildingFamilies =
@@ -70,7 +79,11 @@ internal static class ProgressionCatalog
         ("mine", "Extraction Complex", 4, 20, "energy"),
         ("defense", "Defence Bastion", 4, 24, "ammunition"),
         ("transport", "Transit Hub", 6, 18, "energy"),
-        ("computing", "Command Computation Core", 4, 26, "energy")
+        ("computing", "Command Computation Core", 4, 26, "energy"),
+        ("water", "Water Reclamation Plant", 6, 18, "energy"),
+        ("communications", "Communications Array", 4, 16, "energy"),
+        ("containment", "Blight Containment Facility", 6, 28, "energy"),
+        ("fabrication", "Molecular Fabricator", 4, 32, "energy")
     ];
 
     private static readonly (string Id, string Name, int Supplies, int Alloy, int Upkeep)[] UnitRoles =
@@ -79,7 +92,10 @@ internal static class ProgressionCatalog
         ("scout", "Scout", 16, 5, 2), ("guard", "Guardian", 20, 10, 2),
         ("ranger", "Ranger", 22, 12, 3), ("heavy", "Heavy Infantry", 28, 18, 4),
         ("drone", "Recon Drone", 18, 20, 3), ("walker", "Support Walker", 35, 32, 6),
-        ("tank", "Armoured Vehicle", 48, 45, 8), ("sentinel", "Autonomous Sentinel", 55, 60, 5)
+        ("tank", "Armoured Vehicle", 48, 45, 8), ("sentinel", "Autonomous Sentinel", 55, 60, 5),
+        ("technician", "Systems Technician", 18, 7, 2), ("carrier", "Logistics Carrier", 25, 12, 4),
+        ("artillery", "Artillery Platform", 42, 40, 7), ("interceptor", "Interception Drone", 30, 28, 4),
+        ("purifier", "Containment Purifier", 34, 25, 5), ("surveyor", "Frontier Surveyor", 20, 14, 3)
     ];
 
     private static readonly ResourceDef[] BaseResources =
@@ -102,7 +118,7 @@ internal static class ProgressionCatalog
         new("containment_medium", "Containment Medium", "Hazardous", 14, false), new("recycled_feedstock", "Recycled Feedstock", "Reclamation", 3, true)
     ];
 
-    public static IReadOnlyList<ResourceDef> Resources { get; } = BaseResources;
+    public static IReadOnlyList<ResourceDef> Resources { get; } = BaseResources.Concat(BuildIndustryResources()).ToArray();
     public static IReadOnlyList<ResearchDef> Research { get; } = BuildResearch();
     public static IReadOnlyList<BuildingDef> Buildings { get; } = BuildBuildings();
     public static IReadOnlyList<UnitDef> Units { get; } = BuildUnits();
@@ -110,6 +126,18 @@ internal static class ProgressionCatalog
 
     public static int TotalDefinitions => Resources.Count + Research.Count + Buildings.Count + Units.Count + Recipes.Count;
 
+    private static IReadOnlyList<ResourceDef> BuildIndustryResources()
+    {
+        var result = new List<ResourceDef>();
+        foreach (var industry in Industries)
+        for (int stage = 0; stage < industry.Stages.Length; stage++)
+        {
+            bool renewable = industry.Id is "food" or "water" or "textiles" or "biochemistry" or "waste_recovery";
+            result.Add(new ResourceDef($"material.{industry.Id}.stage{stage}",
+                $"{industry.Stages[stage]} ({industry.Name})", industry.Name, 4 + stage * 3, renewable));
+        }
+        return result;
+    }
     private static IReadOnlyList<ResearchDef> BuildResearch()
     {
         var result = new List<ResearchDef>();
@@ -186,10 +214,16 @@ internal static class ProgressionCatalog
         {
             int scale = stage + 1;
             string recipeId = $"recipe.{industry.Id}.stage{stage}";
-            string inputId = stage == 0 ? industry.Input : industry.Output;
-            var inputs = new Dictionary<string, int> { [inputId] = stage == 0 ? scale * 2 : scale + 1 };
-            if (stage > 0) inputs[industry.Input] = scale;
-            var outputs = new Dictionary<string, int> { [industry.Output] = scale * 2 };
+            string outputId = $"material.{industry.Id}.stage{stage}";
+            var inputs = new Dictionary<string, int>();
+            if (stage == 0)
+                inputs[industry.Input] = scale * 2;
+            else
+            {
+                inputs[$"material.{industry.Id}.stage{stage - 1}"] = scale + 1;
+                inputs[industry.Input] = scale;
+            }
+            var outputs = new Dictionary<string, int> { [outputId] = scale * 2 };
             result.Add(new RecipeDef(recipeId, industry.Stages[stage], industry.Name, stage,
                 inputs, outputs, 4 * scale * (stage + 1),
                 $"research.industry.machine_tools.era{Math.Min(stage, Eras.Length - 1)}"));
@@ -251,14 +285,18 @@ internal static class ProgressionCatalog
     {
         "housing" or "medical" => "medicine", "storage" or "transport" => "logistics",
         "farm" => "agriculture", "power" => "energy", "research" or "computing" => "computing",
-        "defense" => "defense", "mine" => "exploration", "recycling" => "ecology", _ => "industry"
+        "defense" => "defense", "mine" => "exploration", "recycling" => "ecology",
+        "water" => "ecology", "communications" => "computing", "containment" => "blight",
+        _ => "industry"
     };
 
     private static string FocusForFamily(string family) => family switch
     {
         "housing" or "medical" => "trauma_care", "storage" or "transport" => "warehousing",
         "farm" => "soil_recovery", "power" => "grid_stability", "research" or "computing" => "signal_processing",
-        "defense" => "fortification", "mine" => "geological_survey", "recycling" => "water_reclamation", _ => "machine_tools"
+        "defense" => "fortification", "mine" => "geological_survey", "recycling" => "water_reclamation",
+        "water" => "water_reclamation", "communications" => "signal_processing",
+        "containment" => "containment_theory", _ => "machine_tools"
     };
 
     private static string Slug(string value) => value.ToLowerInvariant()
