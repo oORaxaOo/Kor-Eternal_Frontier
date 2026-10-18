@@ -62,6 +62,7 @@ internal sealed class WorldMapSimulation
         if (x < 0 || x >= Width || y < 0 || y >= Height) return;
         State.SelectedTerritoryId = y * Width + x;
         var t = Selected;
+        t.Explored = true;
         State.LastEvent = $"{t.Owner}: {FactionName(t.Owner)} territory {t.X + 1},{t.Y + 1}; development {t.Development}; Blight pressure {t.BlightPressure}.";
     }
 
@@ -74,7 +75,7 @@ internal sealed class WorldMapSimulation
 
     public DiplomaticStatus RelationTo(WorldFactionKind faction)
     {
-        if (faction is WorldFactionKind.Kor or WorldFactionKind.Blight or WorldFactionKind.Neutral) return faction == WorldFactionKind.Blight ? DiplomaticStatus.Hostile : DiplomaticStatus.Friendly;
+        if (faction is WorldFactionKind.Kor or WorldFactionKind.Blight or WorldFactionKind.Neutral) return faction == WorldFactionKind.Blight ? DiplomaticStatus.Hostile : faction == WorldFactionKind.Neutral ? DiplomaticStatus.Neutral : DiplomaticStatus.Friendly;
         int score = State.Relations.GetValueOrDefault(Key(WorldFactionKind.Kor, faction), 0);
         if (score >= 70) return DiplomaticStatus.TradePact;
         if (score >= 40) return DiplomaticStatus.NonAggression;
@@ -208,7 +209,6 @@ internal sealed class WorldMapSimulation
         }
         // Ensure the Kor capital and a readable Blight front exist.
         foreach (var t in state.Territories.Where(t => t.Owner == WorldFactionKind.Kor)) t.Explored = true;
-        var korCapital = state.Territories.Single(t => t.X == capitals[0].x && t.Y == capitals[0].y);
         var frontier = state.Territories.Single(t => t.X == capitals[0].x + 1 && t.Y == capitals[0].y);
         frontier.Owner = WorldFactionKind.Neutral; frontier.HasSettlement = false; frontier.Development = 0;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.AshenCompact)] = 12;
