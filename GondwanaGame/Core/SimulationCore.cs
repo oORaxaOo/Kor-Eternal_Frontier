@@ -16,7 +16,18 @@ public enum JobType
     Build,
     Haul,
     Produce,
-    Research
+    Research,
+    Needs
+}
+
+public enum NeedType
+{
+    Food,
+    Water,
+    Rest,
+    Safety,
+    Medical,
+    Work
 }
 
 public sealed class ResourceInventory
@@ -34,6 +45,12 @@ public sealed class ResourceInventory
     {
         if (string.IsNullOrWhiteSpace(resource)) return 0;
         return _reserved.TryGetValue(resource, out var value) ? value : 0;
+    }
+
+    public bool HasAtLeast(string resource, int amount)
+    {
+        if (string.IsNullOrWhiteSpace(resource) || amount <= 0) return false;
+        return Get(resource) - Reserved(resource) >= amount;
     }
 
     public void Set(string resource, int value)
@@ -84,6 +101,7 @@ public sealed class ResourceInventory
     public bool TryTransferTo(ResourceInventory destination, string resource, int amount)
     {
         if (destination is null || string.IsNullOrWhiteSpace(resource) || amount <= 0) return false;
+        if (!HasAtLeast(resource, amount)) return false;
         if (!Reserve(resource, amount)) return false;
         if (!Consume(resource, amount))
         {
@@ -110,6 +128,15 @@ public sealed class Colonist
     public Dictionary<string, int> Skills { get; } = new(StringComparer.OrdinalIgnoreCase);
     public string? CurrentJobId { get; set; }
     public ResourceInventory Inventory { get; } = new();
+    public Dictionary<NeedType, int> Needs { get; } = new()
+    {
+        [NeedType.Food] = 0,
+        [NeedType.Water] = 0,
+        [NeedType.Rest] = 0,
+        [NeedType.Safety] = 0,
+        [NeedType.Medical] = 0,
+        [NeedType.Work] = 0
+    };
 }
 
 public sealed class Job
@@ -135,6 +162,38 @@ public sealed class Job
     public string? AssignedWorkerId { get; set; }
     public int Progress { get; set; }
     public int TotalWork { get; set; } = 1;
+    public int BasePriority => Priority;
+}
+
+public sealed class ProductionRecipe
+{
+    public ProductionRecipe(string name, IReadOnlyDictionary<string, int> inputs, IReadOnlyDictionary<string, int> outputs, int workRequired = 1)
+    {
+        Name = name;
+        Inputs = new Dictionary<string, int>(inputs, StringComparer.OrdinalIgnoreCase);
+        Outputs = new Dictionary<string, int>(outputs, StringComparer.OrdinalIgnoreCase);
+        WorkRequired = workRequired;
+    }
+
+    public string Name { get; }
+    public Dictionary<string, int> Inputs { get; }
+    public Dictionary<string, int> Outputs { get; }
+    public int WorkRequired { get; }
+}
+
+public sealed class ProductionStation
+{
+    public ProductionStation(string name)
+    {
+        Name = name;
+        Id = Guid.NewGuid().ToString("N");
+    }
+
+    public string Id { get; }
+    public string Name { get; }
+    public Dictionary<string, int> Inventory { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public string? CurrentRecipeName { get; set; }
+    public int Progress { get; set; }
 }
 
 public sealed class ColonyState
@@ -142,6 +201,7 @@ public sealed class ColonyState
     public ResourceInventory Storage { get; } = new();
     public List<Colonist> Colonists { get; } = new();
     public List<Job> Jobs { get; } = new();
+    public List<ProductionStation> Stations { get; } = new();
     public Dictionary<string, int> Research { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public Colonist AddColonist(string name, int x, int y)
@@ -149,6 +209,13 @@ public sealed class ColonyState
         var colonist = new Colonist(name, x, y);
         Colonists.Add(colonist);
         return colonist;
+    }
+
+    public ProductionStation AddStation(string name)
+    {
+        var station = new ProductionStation(name);
+        Stations.Add(station);
+        return station;
     }
 
     public Job EnqueueJob(JobType type, string description, int priority, string? requiredResource = null, int requiredAmount = 0)
@@ -195,5 +262,41 @@ public sealed class ColonyState
             if (worker != null) worker.CurrentJobId = null;
         }
         job.AssignedWorkerId = null;
+    }
+
+    public bool TryProduce(ProductionRecipe recipe, ProductionStation station, ResourceInventory? source = null)
+    {
+        if (recipe is null || station is null) return false;
+        var backing = source ?? Storage;
+        foreach (var input in recipe.Inputs)
+        {
+            if (!backing.HasAtLeast(input.Key, input.Value)) return false;
+        }
+
+        foreach (var input in recipe.Inputs)
+        {
+            if (!backing.Consume(input.Key, input.Value)) return false;
+        }
+
+        foreach (var output in recipe.Outputs)
+        {
+            station.Inventory[output.Key] = station.Inventory.TryGetValue(output.Key, out var existing) ? existing + output.Value : output.Value;
+        }
+
+        station.CurrentRecipeName = recipe.Name;
+        station.Progress = recipe.WorkRequired;
+        return true;
+    }
+
+    public void UpdateNeeds()
+    {
+        foreach (var colonist in Colonists)
+        {
+            foreach (var need in colonist.Needs.Keys.ToArray())
+            {
+                // Simple, deterministic growth model that makes needs explicit and testable.
+                colonist.Needs[need] = Math.Clamp(colonist.Needs[need] + 1, 0, 100);
+            }
+        }
     }
 }

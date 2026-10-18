@@ -31,7 +31,25 @@ internal static class CoreRules
         if (job.State != JobState.Complete || worker.CurrentJobId is not null)
             throw new InvalidOperationException("Completed jobs must clear the active assignment from the worker.");
 
-        Console.WriteLine("Core rules checks passed: inventory, reservation, transfers, and colony job assignment.");
+        var station = colony.AddStation("Smelter");
+        var recipe = new ProductionRecipe(
+            "Alloy bar",
+            new Dictionary<string, int> { ["ore"] = 2 },
+            new Dictionary<string, int> { ["alloy"] = 1 },
+            workRequired: 2);
+
+        colony.Storage.Add("ore", 8);
+        if (!colony.TryProduce(recipe, station))
+            throw new InvalidOperationException("A valid recipe must consume inputs and create outputs in the station inventory.");
+        if (station.Inventory["alloy"] != 1 || colony.Storage.Get("ore") != 6)
+            throw new InvalidOperationException("Production should consume inputs and emit deterministic outputs.");
+
+        var needs = colony.AddColonist("NeedsTester", 1, 1);
+        colony.UpdateNeeds();
+        if (needs.Needs[NeedType.Food] != 1 || needs.Needs[NeedType.Work] != 1)
+            throw new InvalidOperationException("Population needs should update deterministically on each simulation tick.");
+
+        Console.WriteLine("Core rules checks passed: inventory, reservations, transfers, jobs, production, and needs model.");
         return 0;
     }
 }
