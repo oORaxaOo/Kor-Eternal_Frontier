@@ -104,7 +104,16 @@ internal static class ColonyChecks
         int oreStockBefore = colony.MaterialCount("ore");
         Check(colony.SelectWorkerAt(worker.X, worker.Y), "a colonist should be selectable before raw-material extraction");
         colony.CommandSelectedTo(oreDeposit.Cell.X + 0.5f, oreDeposit.Cell.Y + 0.5f);
-        for (int i = 0; i < 500; i++) colony.Step(0.1f);
+        for (int i = 0; i < 300 && worker.CarriedMaterialId == null; i++) colony.Step(0.1f);
+        Check(worker.CarriedMaterialId == "ore" && worker.CarriedAmount == 5,
+            "a raw-material extraction trip must place stable-ID cargo on the worker");
+        string cargoSave = ColonySaveService.Serialize(colony);
+        var cargoRestored = ColonySaveService.Deserialize(cargoSave);
+        var restoredCargoWorker = cargoRestored.Workers.Single(item => item.Id == worker.Id);
+        Check(restoredCargoWorker.CarriedMaterialId == "ore" && restoredCargoWorker.CarriedAmount == 5 &&
+              restoredCargoWorker.Task?.Kind == ColonyTaskKind.Deliver,
+            "save/load must preserve a worker carrying raw materials and its delivery task");
+        for (int i = 0; i < 300; i++) colony.Step(0.1f);
         Check(colony.MaterialCount("ore") == oreStockBefore + 5,
             "workers must extract stable-ID raw materials and deliver them to the shared stockpile");
         Check(oreDeposit.Amount == oreDepositBefore - 5,
