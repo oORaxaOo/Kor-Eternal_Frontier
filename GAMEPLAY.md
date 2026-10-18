@@ -13,7 +13,7 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - A 40 x 26 square tile map.
 - Three colonists with independent position, movement task, cargo state, and hunger.
 - Finite resource deposits.
-- Real gather/carry/deliver trips that transfer resource from source deposit to inventory.
+- Real gather/carry/deliver trips for both legacy resources and stable-ID raw materials, with finite source quantities and shared inventory capacity.
 - Individual per-tile architecture construction orders with costs, work progress, and completion state.
 - Footprint-based multi-tile object blueprints that remain unfinished until workers complete construction.
 - Inventory-based construction and production costs with shared storage capacity across legacy resources and stable-ID industry materials.
@@ -26,12 +26,12 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 
 ## Known gaps
 
-The strategic campaign and local colony are connected through explicit logistics orders and a unified session save. Strategic Supplies transfer to local Food; Alloy transfers directly. Imports obey colony storage capacity and debit campaign stock only for accepted deliveries. Exports remove actual local Food/Alloy and credit strategic Supplies/Alloy. Strategic Energy and Knowledge remain campaign-only. The colony now supports stable-ID industry material stock alongside its five legacy resource types; both share storage capacity, and catalogue recipe orders consume real inputs and persist their recipe identity. Still missing are research-backed local unlocks, extraction sources for every catalogue raw material, power/workstation throughput, automatic supply balancing, advanced building/unit deployment and fuller needs/workplace simulation. The world map remains a separate strategic layer rather than a fully connected civilization simulation, and The Blight is still a simplified spread-and-cleanse model.
+The strategic campaign and local colony are connected through explicit logistics orders and a unified session save. Strategic Supplies transfer to local Food; Alloy transfers directly. Imports obey colony storage capacity and debit campaign stock only for accepted deliveries. Exports remove actual local Food/Alloy and credit strategic Supplies/Alloy. Strategic Energy and Knowledge remain campaign-only. The colony supports stable-ID industry materials alongside its five legacy resources; both share storage capacity, and catalogue recipe orders consume real inputs and persist recipe identity. Seven finite raw-material sites now provide ore, rare earth, conductive crystal, chemical reagents, water, biomass and recycled feedstock. Colonists can be selected and ordered to extract these materials, carry up to five units per trip, and deliver them to shared stockpiles. Remaining gaps include broader resource coverage, research-backed local unlocks, power/workstation throughput, automatic supply balancing, advanced building/unit deployment and fuller needs/workplace simulation. The world map remains a separate strategic layer rather than a fully connected civilization simulation, and The Blight is still a simplified spread-and-cleanse model.
 
 ## Implementation priority
 
 1. Extract central job assignment and resource reservations without changing verified gameplay behavior.
-2. Add raw-material extraction and logistics coverage for the full stable-ID material catalogue; make production throughput depend on workstation and energy capacity.
+2. Expand raw-material extraction coverage and make production throughput depend on workstation and energy capacity.
 3. Persist local research, prerequisites and unlocks so technologies gate recipes, buildings and units.
 4. Connect strategic regions to real local settlement state and resource/person flows.
 5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
@@ -73,7 +73,7 @@ The command UI now provides mouse-accessible menus and nested submenus; keyboard
 - **Empire**: advance the strategic turn, open logistics, or claim a selected frontier territory while on the world map.
 - **Empire → Logistics**: import strategic supplies or export colony resources.
 - **Diplomacy**: improve relations, offer a non-aggression pact, or propose trade while on the strategic world map.
-- **Orders**: select a colonist, open Orders → Move / gather order mode, then left-click the destination or a resource deposit. Right-click remains an optional shortcut.
+- **Orders**: select a colonist, open Orders → Move / gather order mode, then left-click the destination, a legacy resource deposit, or a marked stable-ID raw-material site. Workers collect up to five units per trip and deliver them to shared stockpiles. Right-click remains an optional shortcut.
 - **Game**: save or load the combined colony/campaign session.
 - **Mouse interaction**: left-click to select a colonist, inspect a territory, or place a selected construction/blueprint; right-click a colony tile to issue a movement/gather order to the selected colonist.
 
@@ -86,7 +86,7 @@ The mouse-first **Industry & Tech** page introduces a data-first content catalog
 
 Production content is organised as twenty-one multi-stage industries, including timber, stoneworks, metallurgy, chemistry, electronics, power equipment, food processing, pharmaceuticals, construction components, vehicles, defence manufacturing, research instruments, water treatment, technical textiles, glassworks, optics, aerospace, biochemistry, waste recovery, robotics, and Blight containment. Each stage has its own stable material ID, so intermediate goods form real catalog-level chains instead of repeatedly producing the same generic output. Resource definitions carry groups, baseline values, and renewability; recipes define inputs, outputs, work requirements and an unlock; buildings define footprint, construction work, material requirements and upkeep; units define recruitment costs and recurring upkeep. Research prerequisites form cross-linked era ladders so higher tiers become progressively more expensive and require both discipline progress and logistics infrastructure.
 
-**Implementation boundary:** the stable-ID material ledger, shared storage accounting, live catalogue recipe queue, worker-driven production, and save/load persistence are now connected to the colony. The legacy component batch remains supported. However, this is only the first runtime integration slice: not every catalogue resource has a local extraction source, research prerequisites do not yet gate recipes, and the catalogue's hundreds of buildings and units are not yet deployable systems. Each of those still needs simulation rules, action controls, persistence and scenario tests.
+**Implementation boundary:** the stable-ID material ledger, shared storage accounting, live catalogue recipe queue, worker-driven production, finite raw-material extraction, and schema-v3 save/load persistence are now connected to the colony. Older save schemas remain supported. However, this is still an incremental runtime slice: not every catalogue resource has a local extraction source, research prerequisites do not yet gate recipes, and the catalogue's hundreds of buildings and units are not yet deployable systems. Each of those still needs simulation rules, action controls, persistence and scenario tests.
 
 ### Intended pressure loop
 
