@@ -25,6 +25,7 @@ internal static class Program
         IntPtr window = IntPtr.Zero, rendererHandle = IntPtr.Zero;
         SdlAdapter? adapter = null;
         ColonyRenderer? painter = null;
+        WorldMapRenderer? worldPainter = null;
         Engine? engine = null;
         bool engineStarted = false;
         try
@@ -37,8 +38,10 @@ internal static class Program
 
             var simulation = new ColonySimulation();
             var campaign = new CampaignSimulation(70241);
+            var worldMap = new WorldMapSimulation(70241);
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
+            worldPainter = new WorldMapRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
             using var scene = new Scene();
             host.Bind(scene, false);
@@ -48,8 +51,12 @@ internal static class Program
             float cameraX = 0, cameraY = 0, zoom = 1;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
-            bool placingObject = false, paused = false;
-            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
+            bool placingObject = false, paused = false, worldMapMode = false;
+            host.RenderBackbufferPostScene += canvas =>
+            {
+                if (worldMapMode) worldPainter.Draw(canvas, worldMap);
+                else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
+            };
             engine = Engine.Instance;
             engine.Initialize();
             engine.Configuration.TargetFPS = 60;
@@ -57,10 +64,10 @@ internal static class Program
             engine.StartTimerDriven(context);
             engineStarted = true;
 
-            bool running = true, wasLeft = false, wasRight = false, wasEscape = false;
+            bool running = true, wasLeft = false, wasRight = false, wasEscape = false, wasLeftArrow = false, wasRightArrow = false;
             bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
             bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
-            bool wasT = false, wasI = false, wasE = false;
+            bool wasT = false, wasI = false, wasE = false, wasM = false, wasY = false, wasG = false, wasR = false, wasC = false;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -105,6 +112,13 @@ internal static class Program
                 bool iDown = IsDown(keys, Sdl.ScancodeI);
                 bool eDown = IsDown(keys, Sdl.ScancodeE);
                 bool escapeDown = IsDown(keys, Sdl.ScancodeEscape);
+                bool mDown = IsDown(keys, Sdl.ScancodeM);
+                bool yDown = IsDown(keys, Sdl.ScancodeY);
+                bool gDown = IsDown(keys, Sdl.ScancodeG);
+                bool rDown = IsDown(keys, Sdl.ScancodeR);
+                bool cDown = IsDown(keys, Sdl.ScancodeC);
+                bool leftDown = IsDown(keys, Sdl.ScancodeLeft);
+                bool rightDown = IsDown(keys, Sdl.ScancodeRight);
 
                 if (oneDown && !was1) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
                 if (twoDown && !was2) { architectureMode = ArchitectureKind.Floor; placingObject = false; }
@@ -119,10 +133,17 @@ internal static class Program
                     architectureMode = ArchitectureKind.None;
                 }
                 if (escapeDown && !wasEscape) { architectureMode = ArchitectureKind.None; placingObject = false; }
+                if (mDown && !wasM) worldMapMode = !worldMapMode;
+                if (worldMapMode && leftDown && !wasLeftArrow) worldMap.SelectNext(-1);
+                if (worldMapMode && rightDown && !wasRightArrow) worldMap.SelectNext(1);
+                if (worldMapMode && yDown && !wasY) worldMap.OfferNonAggression();
+                if (worldMapMode && gDown && !wasG) worldMap.OfferTradePact();
+                if (worldMapMode && rDown && !wasR) worldMap.ImproveRelations();
+                if (worldMapMode && cDown && !wasC) worldMap.ClaimSelected();
                 if (spaceDown && !wasSpace) paused = !paused;
                 if (tDown && !wasT)
                 {
-                    try { campaign.EndTurn(); simulation.SetMessage(campaign.Message); }
+                    try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
                     catch (Exception ex) { simulation.SetMessage($"Campaign turn failed: {ex.Message}"); }
                 }
                 if (iDown && !wasI)
@@ -152,24 +173,31 @@ internal static class Program
                     catch (Exception ex) { simulation.SetMessage($"Session load failed: {ex.Message}"); }
                 }
 
+                wasLeftArrow = leftDown; wasRightArrow = rightDown;
                 was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
                 wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
                 wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
-                wasT = tDown; wasI = iDown; wasE = eDown;
+                wasT = tDown; wasI = iDown; wasE = eDown; wasM = mDown; wasY = yDown; wasG = gDown; wasR = rDown; wasC = cDown;
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
                 var worldMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
                 bool inWorldView = logicalMouse.X < 770 && logicalMouse.Y >= 62 && logicalMouse.Y < 650;
                 bool left = (buttons & Sdl.ButtonLeftMask) != 0, right = (buttons & Sdl.ButtonRightMask) != 0;
-                if (inWorldView && left && !wasLeft)
+                if (worldMapMode && left && !wasLeft && logicalMouse.X >= 24 && logicalMouse.X < 24 + WorldMapSimulation.Width * 29 &&
+                    logicalMouse.Y >= 82 && logicalMouse.Y < 82 + WorldMapSimulation.Height * 29)
+                {
+                    int tx = (int)((logicalMouse.X - 24) / 29), ty = (int)((logicalMouse.Y - 82) / 29);
+                    worldMap.SelectAt(tx, ty);
+                }
+                else if (!worldMapMode && inWorldView && left && !wasLeft)
                 {
                     int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
                     if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                     else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
                     else simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                 }
-                if (inWorldView && right && !wasRight) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
+                if (!worldMapMode && inWorldView && right && !wasRight) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
                 wasLeft = left; wasRight = right;
 
                 engine.Tick();
@@ -190,7 +218,7 @@ internal static class Program
         finally
         {
             if (engineStarted) { engine!.StopAndWait(); engine.Dispose(); }
-            painter?.Dispose(); adapter?.Dispose();
+            painter?.Dispose(); worldPainter?.Dispose(); adapter?.Dispose();
             if (rendererHandle != IntPtr.Zero) Sdl.SDL_DestroyRenderer(rendererHandle);
             if (window != IntPtr.Zero) Sdl.SDL_DestroyWindow(window);
             Sdl.SDL_Quit();
@@ -262,10 +290,10 @@ internal static class Sdl
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206;
     public const uint ButtonLeftMask = 1, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    public const int ScancodeA = 4, ScancodeD = 7, ScancodeE = 8, ScancodeI = 12, ScancodeO = 18, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26;
+    public const int ScancodeA = 4, ScancodeC = 6, ScancodeD = 7, ScancodeE = 8, ScancodeG = 10, ScancodeI = 12, ScancodeM = 16, ScancodeO = 18, ScancodeR = 21, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26, ScancodeY = 28;
     public const int Scancode1 = 30, Scancode2 = 31, Scancode3 = 32, Scancode4 = 33, Scancode5 = 34;
     public const int ScancodeTab = 43, ScancodeSpace = 44, ScancodeMinus = 45, ScancodeEquals = 46, ScancodeEscape = 41;
-    public const int ScancodeF5 = 62, ScancodeF9 = 66;
+    public const int ScancodeF5 = 62, ScancodeF9 = 66, ScancodeRight = 79, ScancodeLeft = 80;
     [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();

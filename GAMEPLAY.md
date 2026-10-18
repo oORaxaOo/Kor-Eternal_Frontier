@@ -43,3 +43,18 @@ The strategic campaign and local colony are now connected through explicit logis
 - **F5 / F9** — save/load one session containing both colony and campaign state at `~/.local/share/kor-eternal-frontier/session.json` (or under `$XDG_DATA_HOME`). Legacy colony-only and campaign-only saves are not overwritten by these controls.
 
 The deterministic self-test checks import/export conservation, full-storage rejection, and unified disk save/load in addition to the existing colony and campaign checks.
+
+
+## Strategic world map and diplomacy (new vertical slice)
+
+Press **M** to move between the colony and a separate continental strategy view. The world layer contains 468 persistent territories with faction ownership, settlements/capitals, local development and supplies, explored state, and Blight pressure. Six active powers plus unclaimed frontier land are generated from a fixed seed: the Kor, Ashen Compact, Free Marches, Helion League, Verdant Covenant, and the Blight. The empire has its own Supplies/Alloy treasury; Kor-controlled territories generate strategic income each world turn. Territory ownership is visualized directly on the map; the side panel provides selected-territory intelligence and a faction legend.
+
+- Click a territory to inspect it; **Left/Right Arrow** cycles territory selection.
+- **C** claims an adjacent unclaimed territory as a Kor outpost for 40 Supplies and 25 Alloy; Kor territories generate treasury income on world turns.
+- **R** sends a diplomatic mission to improve Kor relations.
+- **Y** proposes a non-aggression pact when relations are sufficient.
+- **G** proposes a trade pact after relations improve enough.
+- **T** advances the strategic campaign turn and, while the world map is open, advances the world layer too.
+- World state is saved to `~/.local/share/kor-eternal-frontier/world-map.json` (or under `$XDG_DATA_HOME`) after diplomacy and world-turn actions.
+
+The Blight spreads across eligible neighboring territories on world turns, gradually raising pressure before consuming a territory. The current implementation is a foundation slice: territory-level diplomacy, local development and faction AI are deliberately simpler than the intended final simulation. Full treaties between every faction, wars/alliances, trade-route logistics, regional armies, settlement-to-colony transitions, and synchronized world-map saves inside the unified F5/F9 session remain follow-up work.
