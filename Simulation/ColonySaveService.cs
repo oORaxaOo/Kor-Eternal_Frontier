@@ -259,7 +259,6 @@ internal sealed class ColonySnapshot
             CheckId(order.Id, productionIds, "production order");
             if (!objectIds.Contains(order.WorkstationId) || !float.IsFinite(order.WorkRequired) ||
                 !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0 ||
-                order.WorkDone > order.WorkRequired ||
                 (order.RecipeId != null && !ProgressionCatalog.Recipes.Any(recipe => recipe.Id == order.RecipeId)))
                 throw new InvalidDataException("Colony save contains an invalid production order.");
         }
