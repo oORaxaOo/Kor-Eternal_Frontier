@@ -191,7 +191,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 2,
+            SchemaVersion = 3,
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
