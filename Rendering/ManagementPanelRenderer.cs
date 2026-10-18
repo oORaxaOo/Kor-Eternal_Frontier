@@ -85,7 +85,8 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 foreach (var worker in colony.Workers)
                 {
                     string task = worker.Task?.Kind.ToString() ?? "Idle";
-                    string cargo = worker.CarriedResource.HasValue ? $"{worker.CarriedResource} x{worker.CarriedAmount}" : "Empty";
+                    string cargo = worker.CarriedResource.HasValue ? $"{worker.CarriedResource} x{worker.CarriedAmount}" :
+                        worker.CarriedMaterialId != null ? $"{worker.CarriedMaterialId} x{worker.CarriedAmount}" : "Empty";
                     Row(c, $"{worker.Name}  •  {(colony.SelectedWorkerId == worker.Id ? "SELECTED" : "Worker #" + worker.Id)}",
                         $"Hunger {worker.Hunger:0}%  |  {task}  |  {cargo}", 254, wy);
                     wy += 48;
@@ -118,6 +119,16 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Storage used", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 670, 300);
                 Pair(c, "Storage available", colony.InventoryFreeCapacity.ToString(), 670, 326);
                 Note(c, "Storage is shared by legacy resources and every stable-ID industry material.", 670, 372, 365);
+                Section(c, "Raw-material sites • click on map to extract", 670, 420);
+                int rawY = 450;
+                var rawNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
+                foreach (var deposit in colony.MaterialDeposits.Where(item => item.Amount > 0).Take(5))
+                {
+                    Row(c, rawNames.GetValueOrDefault(deposit.MaterialId, deposit.MaterialId),
+                        $"{deposit.Amount} remaining • tile {deposit.Cell.X},{deposit.Cell.Y}", 670, rawY);
+                    rawY += 35;
+                }
+                Note(c, "Select a colonist, then click a marked raw-material site on the map. Workers haul up to five units per trip.", 670, 632, 365);
                 break;
             case 4:
                 Section(c, "Construction & blueprints", 254, 164);
