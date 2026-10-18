@@ -304,6 +304,28 @@ internal sealed class ColonySimulation
 
     public int ResourceCount(ResourceKind resource) => _inventory.TryGetValue(resource, out int amount) ? amount : 0;
 
+    /// <summary>Accepts external deliveries without bypassing the colony's real storage limit.</summary>
+    public int AddExternalResource(ResourceKind resource, int requested)
+    {
+        if (requested <= 0 || !Enum.IsDefined(resource)) return 0;
+        int accepted = Math.Min(requested, InventoryFreeCapacity);
+        if (accepted <= 0) return 0;
+        AddResource(resource, accepted);
+        Message = $"External logistics delivered {accepted} {resource}.";
+        return accepted;
+    }
+
+    /// <summary>Withdraws only resources actually present in colony inventory.</summary>
+    public int RemoveExternalResource(ResourceKind resource, int requested)
+    {
+        if (requested <= 0 || !Enum.IsDefined(resource)) return 0;
+        int removed = Math.Min(requested, ResourceCount(resource));
+        if (removed <= 0) return 0;
+        if (!TryTake(resource, removed)) return 0;
+        Message = $"External logistics collected {removed} {resource}.";
+        return removed;
+    }
+
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
 
     public ResourceDeposit? DepositAt(int x, int y) =>
