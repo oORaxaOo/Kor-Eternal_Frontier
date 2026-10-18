@@ -17,10 +17,17 @@ One canonical application exists at the root, targeting .NET 8. Gondwana is the 
              +-- tiles, construction, objects, colonists, deposits,
                  hauling, inventory, production, needs and persistence
 
-    CampaignSimulation / CampaignState / CampaignSaveService
+    CampaignSimulation / CampaignState
+             |                 ^
+             v                 |
+    CampaignColonyBridge ------+
              |
-             +-- deterministic strategic model
-                 (currently tested separately from the local colony)
+             +-- explicit Supplies↔Food and Alloy↔Alloy transfers
+                 with local capacity checks and exact debits
+
+    GameSessionService
+             |
+             +-- validated atomic session envelope containing both save schemas
 
 The projection layer owns screen/world mapping. Gameplay APIs receive logical world coordinates. Rendering reads state but does not decide simulation rules.
 
@@ -56,3 +63,12 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Saved data must have explicit schema version and validated references.
 - Deterministic tests must cover actual mechanics, not only application startup.
 - Graphics remain minimal until integrated mechanics are legible.
+
+
+## Alpha integration contract
+
+- Campaign Supplies map to local Food; strategic Alloy maps to local Alloy. Energy and Knowledge stay strategic-only until corresponding local resources and consumers exist.
+- Imports are capped per order and limited by local free storage. Strategic balances are reduced only by accepted local deliveries.
+- Exports are capped per order and limited by real local inventory. Local balances are reduced before the strategic balances are credited.
+- F5/F9 use `GameSessionService`, which validates both existing subsystem save formats and writes a single temporary file before atomic replacement.
+- IntegrationChecks exercise resource conservation, full-storage rejection, and save/load of both systems.
