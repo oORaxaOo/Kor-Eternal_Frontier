@@ -71,6 +71,7 @@ The command UI now provides mouse-accessible menus and nested submenus; keyboard
 - **Empire**: advance the strategic turn, open logistics, or claim a selected frontier territory while on the world map.
 - **Empire → Logistics**: import strategic supplies or export colony resources.
 - **Diplomacy**: improve relations, offer a non-aggression pact, or propose trade while on the strategic world map.
+- **Orders**: select a colonist, open Orders → Move / gather order mode, then left-click the destination or a resource deposit. Right-click remains an optional shortcut.
 - **Game**: save or load the combined colony/campaign session.
 - **Mouse interaction**: left-click to select a colonist, inspect a territory, or place a selected construction/blueprint; right-click a colony tile to issue a movement/gather order to the selected colonist.
 
