@@ -108,6 +108,7 @@ internal sealed class ColonySimulation
     private ColonyEcosystem _ecosystem = null!;
     private readonly Dictionary<int, CitizenAgent> _citizensByWorker = [];
     private readonly Dictionary<int, int> _gardenJobsByObject = [];
+    private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -342,6 +343,7 @@ internal sealed class ColonySimulation
         _ecosystem = new ColonyEcosystem(Width, Height);
         _citizensByWorker.Clear();
         _gardenJobsByObject.Clear();
+        _storageZonesByObject.Clear();
 
         // The starter stockpile occupies six map tiles. The first runtime bridge maps its
         // pooled capacity to the grid's bounded stacks while the legacy construction scheduler
@@ -351,6 +353,7 @@ internal sealed class ColonySimulation
             new CellPosition(18, 8), new CellPosition(19, 8), new CellPosition(20, 8),
             new CellPosition(18, 9), new CellPosition(19, 9), new CellPosition(20, 9)
         ]);
+        RegisterBuiltStorageRacks();
         int initialFood = ResourceCount(ResourceKind.Food);
         if (initialFood > 0 && !_ecosystem.Grid.TryAdd(ResourceKind.Food, initialFood))
             throw new InvalidOperationException("Could not migrate starter food into grid storage.");
@@ -362,8 +365,26 @@ internal sealed class ColonySimulation
         }
     }
 
+    private void RegisterBuiltStorageRacks()
+    {
+        foreach (var rack in _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).OrderBy(item => item.Id))
+        {
+            if (_storageZonesByObject.Contains(rack.Id)) continue;
+            int tileCount = checked(rack.Width * rack.Height);
+            if (tileCount <= 0 || StorageRackCapacity % tileCount != 0)
+                throw new InvalidOperationException("Storage rack capacity must divide evenly across its footprint.");
+            var cells = new List<CellPosition>(tileCount);
+            for (int y = rack.Origin.Y; y < rack.Origin.Y + rack.Height; y++)
+            for (int x = rack.Origin.X; x < rack.Origin.X + rack.Width; x++)
+                cells.Add(new CellPosition(x, y));
+            _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food, cells, StorageRackCapacity / tileCount);
+            _storageZonesByObject.Add(rack.Id);
+        }
+    }
+
     private void StepEcosystem(float deltaSeconds)
     {
+        RegisterBuiltStorageRacks();
         var grid = _ecosystem.Grid;
         int inventoryFood = ResourceCount(ResourceKind.Food);
         int gridFood = grid.ResourceCount(ResourceKind.Food);
@@ -638,9 +659,13 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (worker.Task != null) continue;
-            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) &&
-                citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working)
-                continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
+            {
+                if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working)
+                    continue;
+                if (citizen.Hunger < 30f || citizen.Fatigue < 60f)
+                    continue;
+            }
 
             if (worker.CarriedResource.HasValue)
             {
