@@ -14,7 +14,7 @@ internal sealed class MouseMenuRenderer : IDisposable
     private static readonly (string Label, float X, float Width, int Id)[] TopMenus =
     [
         ("Colony", 10, 100, 1), ("Build", 118, 100, 2), ("Empire", 226, 100, 3),
-        ("Diplomacy", 334, 120, 4), ("Game", 462, 100, 5)
+        ("Diplomacy", 334, 120, 4), ("Game", 462, 100, 5), ("Orders", 570, 100, 10)
     ];
     private static readonly string[] ColonyItems = ["Strategic World Map", "Pause / Resume", "Camera controls  ›"];
     private static readonly string[] BuildItems = ["Architecture  ›", "Buildings & objects  ›", "Cancel current placement"];
@@ -25,6 +25,7 @@ internal sealed class MouseMenuRenderer : IDisposable
     private static readonly string[] ObjectItems = ["Workbench", "Sleeping Pod", "Storage Rack", "Generator", "Garden", "Back"];
     private static readonly string[] CameraItems = ["Pan left", "Pan right", "Pan up", "Pan down", "Zoom in", "Zoom out", "Back"];
     private static readonly string[] LogisticsItems = ["Import strategic supplies", "Export colony resources", "Back"];
+    private static readonly string[] OrdersItems = ["Move / gather order mode", "Cancel order mode"];
     private readonly SKPaint _fill = new() { IsAntialias = true };
     private readonly SKPaint _line = new() { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
     private readonly SKFont _font = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 13);
@@ -33,12 +34,12 @@ internal sealed class MouseMenuRenderer : IDisposable
     public static string[] ItemsFor(int menu) => menu switch
     {
         1 => ColonyItems, 2 => BuildItems, 3 => EmpireItems, 4 => DiplomacyItems, 5 => GameItems,
-        6 => ArchitectureItems, 7 => ObjectItems, 8 => CameraItems, 9 => LogisticsItems, _ => []
+        6 => ArchitectureItems, 7 => ObjectItems, 8 => CameraItems, 9 => LogisticsItems, 10 => OrdersItems, _ => []
     };
 
     public static float MenuX(int menu) => menu switch
     {
-        1 => 10, 2 => 118, 3 => 226, 4 => 334, 5 => 462, 6 => 118, 7 => 118, 8 => 10, 9 => 226, _ => 10
+        1 => 10, 2 => 118, 3 => 226, 4 => 334, 5 => 462, 6 => 118, 7 => 118, 8 => 10, 9 => 226, 10 => 570, _ => 10
     };
 
     public void Draw(SKCanvas canvas, int activeMenu, bool worldMapMode, ArchitectureKind architectureMode,
@@ -58,25 +59,27 @@ internal sealed class MouseMenuRenderer : IDisposable
             DrawText(canvas, item.Label, item.X + 12, Top + 25, _font, new SKColor(235, 231, 216));
         }
 
-        if (activeMenu <= 0) return;
-        string[] items = ItemsFor(activeMenu);
-        float x = MenuX(activeMenu), width = MenuWidth;
-        _fill.Color = new SKColor(17, 22, 23, 252);
-        canvas.DrawRoundRect(new SKRect(x, MenuTop, x + width, MenuTop + items.Length * RowHeight + 10), 7, 7, _fill);
-        _line.Color = new SKColor(110, 83, 62);
-        canvas.DrawRoundRect(new SKRect(x, MenuTop, x + width, MenuTop + items.Length * RowHeight + 10), 7, 7, _line);
-        for (int i = 0; i < items.Length; i++)
+        if (activeMenu > 0)
         {
-            float y = MenuTop + 5 + i * RowHeight;
-            _fill.Color = new SKColor(34, 42, 41);
-            canvas.DrawRoundRect(new SKRect(x + 6, y, x + width - 6, y + RowHeight - 3), 4, 4, _fill);
-            DrawText(canvas, items[i], x + 15, y + 19, _small, new SKColor(230, 229, 216));
+            string[] items = ItemsFor(activeMenu);
+            float x = MenuX(activeMenu), width = MenuWidth;
+            _fill.Color = new SKColor(17, 22, 23, 252);
+            canvas.DrawRoundRect(new SKRect(x, MenuTop, x + width, MenuTop + items.Length * RowHeight + 10), 7, 7, _fill);
+            _line.Color = new SKColor(110, 83, 62);
+            canvas.DrawRoundRect(new SKRect(x, MenuTop, x + width, MenuTop + items.Length * RowHeight + 10), 7, 7, _line);
+            for (int i = 0; i < items.Length; i++)
+            {
+                float y = MenuTop + 5 + i * RowHeight;
+                _fill.Color = new SKColor(34, 42, 41);
+                canvas.DrawRoundRect(new SKRect(x + 6, y, x + width - 6, y + RowHeight - 3), 4, 4, _fill);
+                DrawText(canvas, items[i], x + 15, y + 19, _small, new SKColor(230, 229, 216));
+            }
         }
 
         // Persistent contextual hint: all core play can be completed with the mouse.
         string hint = worldMapMode
             ? "Mouse: select territory  •  menus: claim land, diplomacy, turns and saves"
-            : $"Left-click: select/place  •  right-click: issue orders  •  { (paused ? "Paused" : "Simulation running") }";
+            : $"Left-click: select/place  •  Orders menu: click destination  •  { (paused ? "Paused" : "Simulation running") }";
         _fill.Color = new SKColor(12, 16, 16, 225);
         canvas.DrawRoundRect(new SKRect(18, 662, 1082, 708), 5, 5, _fill);
         DrawText(canvas, hint, 30, 690, _small, new SKColor(201, 207, 193));
