@@ -13,7 +13,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
     private static readonly string[] Pages =
     [
         "Overview", "Population", "Resources", "Construction", "Production",
-        "Research", "Statistics", "Diplomacy", "Territories"
+        "Research", "Statistics", "Diplomacy", "Territories", "Industry & Tech"
     ];
 
     private readonly SKPaint _fill = new() { IsAntialias = true };
@@ -199,6 +199,45 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 ActionRow(c, "Claim selected frontier territory", 670, 274, 365);
                 ActionRow(c, "Advance strategic turn", 670, 319, 365);
                 Note(c, "Select a tile on the strategic map first. Claiming requires adjacent Kor territory and 40 Supplies / 25 Alloy.", 670, 380, 365);
+                break;
+            case 10:
+                Section(c, "Industrial progression catalogue", 254, 164);
+                Pair(c, "Resource definitions", ProgressionCatalog.Resources.Count.ToString(), 254, 190);
+                Pair(c, "Research nodes", ProgressionCatalog.Research.Count.ToString(), 254, 216);
+                Pair(c, "Building variants", ProgressionCatalog.Buildings.Count.ToString(), 254, 242);
+                Pair(c, "Unit variants", ProgressionCatalog.Units.Count.ToString(), 254, 268);
+                Pair(c, "Production recipes", ProgressionCatalog.Recipes.Count.ToString(), 254, 294);
+                Pair(c, "Total linked definitions", ProgressionCatalog.TotalDefinitions.ToString(), 254, 320);
+                Note(c, "Large data catalogue foundation; entries are not yet wired into live inventory, queues or save migration.", 254, 362, 385);
+                Section(c, "Starter production chains", 670, 164);
+                int chainY = 194;
+                var materialNames = ProgressionCatalog.Resources.ToDictionary(r => r.Id, r => r.Name, StringComparer.Ordinal);
+                foreach (var recipe in ProgressionCatalog.Recipes.Where(r => r.Stage == 0).Take(5))
+                {
+                    string inputs = string.Join(" + ", recipe.Inputs.Select(p => $"{p.Value} {materialNames.GetValueOrDefault(p.Key, p.Key)}"));
+                    string outputs = string.Join(" + ", recipe.Outputs.Select(p => $"{p.Value} {materialNames.GetValueOrDefault(p.Key, p.Key)}"));
+                    Row(c, recipe.Industry, $"{inputs} → {outputs}", 670, chainY);
+                    chainY += 39;
+                }
+                Section(c, "Research frontier • Era I", 254, 424);
+                int researchY = 450;
+                foreach (var node in ProgressionCatalog.Research.Where(r => r.Era == 0).Take(5))
+                {
+                    Row(c, node.Name, $"{node.CostKnowledge} Knowledge • {node.CostEnergy} Energy • unlock: {node.UnlockKind}", 254, researchY);
+                    researchY += 39;
+                }
+                Section(c, "First infrastructure & units", 670, 424);
+                int assetsY = 450;
+                foreach (var item in ProgressionCatalog.Buildings.Where(b => b.Era == 0).Take(3))
+                {
+                    Row(c, item.Name, $"Footprint {item.Footprint} tiles • work {item.Work} • upkeep: {item.Upkeep}", 670, assetsY);
+                    assetsY += 39;
+                }
+                foreach (var item in ProgressionCatalog.Units.Where(u => u.Era == 0).Take(2))
+                {
+                    Row(c, item.Name, $"Cost {item.SupplyCost} supplies / {item.AlloyCost} alloy • upkeep {item.Upkeep}", 670, assetsY);
+                    assetsY += 39;
+                }
                 break;
         }
     }
