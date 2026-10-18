@@ -1,0 +1,782 @@
+{
+  "schemaVersion": 1,
+  "projection": {
+    "type": "2.5D isometric",
+    "tileWidth": 54,
+    "tileHeight": 27,
+    "anchorConvention": "bottom-center ground contact; terrain diamonds centered"
+  },
+  "palette": {
+    "crimson": "#A42730",
+    "industrialRed": "#962B2D",
+    "charcoal": "#0C0F11",
+    "graphite": "#292F2C",
+    "weatheredSteel": "#777C70",
+    "concrete": "#555B55",
+    "warmGold": "#D9AB4F",
+    "terrain": "weathered olive, stone, and earth",
+    "blight": "dark crimson and organic red"
+  },
+  "directionOrder": [
+    "N",
+    "NE",
+    "E",
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW"
+  ],
+  "assets": [
+    {
+      "assetId": "alloy-outcrop",
+      "file": "Assets/Art/alloy-outcrop.png",
+      "category": "resource",
+      "width": 256,
+      "height": 256,
+      "anchor": [
+        128.0,
+        238
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "blight-stalker",
+      "file": "Assets/Art/blight-stalker.png",
+      "category": "blight",
+      "width": 320,
+      "height": 260,
+      "anchor": [
+        160.0,
+        242
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-0",
+      "file": "Assets/Art/ground-0.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-1",
+      "file": "Assets/Art/ground-1.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-2",
+      "file": "Assets/Art/ground-2.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-3",
+      "file": "Assets/Art/ground-3.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-4",
+      "file": "Assets/Art/ground-4.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-5",
+      "file": "Assets/Art/ground-5.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "ground-blight",
+      "file": "Assets/Art/ground-blight.png",
+      "category": "terrain",
+      "width": 256,
+      "height": 128,
+      "anchor": [
+        128.0,
+        64.0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-barracks",
+      "file": "Assets/Art/kor-barracks.png",
+      "category": "kor",
+      "width": 420,
+      "height": 330,
+      "anchor": [
+        210.0,
+        312
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-button-red",
+      "file": "Assets/Art/kor-button-red.png",
+      "category": "kor",
+      "width": 760,
+      "height": 160,
+      "anchor": [
+        0,
+        0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-button-steel",
+      "file": "Assets/Art/kor-button-steel.png",
+      "category": "kor",
+      "width": 760,
+      "height": 160,
+      "anchor": [
+        0,
+        0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-command-habitat",
+      "file": "Assets/Art/kor-command-habitat.png",
+      "category": "kor",
+      "width": 560,
+      "height": 400,
+      "anchor": [
+        280.0,
+        382
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-engineer",
+      "file": "Assets/Art/kor-engineer.png",
+      "category": "kor",
+      "width": 280,
+      "height": 340,
+      "anchor": [
+        140.0,
+        322
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-extractor",
+      "file": "Assets/Art/kor-extractor.png",
+      "category": "kor",
+      "width": 420,
+      "height": 330,
+      "anchor": [
+        210.0,
+        312
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-generator",
+      "file": "Assets/Art/kor-generator.png",
+      "category": "kor",
+      "width": 420,
+      "height": 330,
+      "anchor": [
+        210.0,
+        312
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-guardian",
+      "file": "Assets/Art/kor-guardian.png",
+      "category": "kor",
+      "width": 288,
+      "height": 336,
+      "anchor": [
+        144.0,
+        318
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-hud-metal",
+      "file": "Assets/Art/kor-hud-metal.png",
+      "category": "kor",
+      "width": 2048,
+      "height": 256,
+      "anchor": [
+        0,
+        0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-light-carrier",
+      "file": "Assets/Art/kor-light-carrier.png",
+      "category": "kor",
+      "width": 420,
+      "height": 300,
+      "anchor": [
+        210.0,
+        282
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-pioneer",
+      "file": "Assets/Art/kor-pioneer.png",
+      "category": "kor",
+      "width": 256,
+      "height": 320,
+      "anchor": [
+        128.0,
+        302
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-purifier",
+      "file": "Assets/Art/kor-purifier.png",
+      "category": "kor",
+      "width": 320,
+      "height": 320,
+      "anchor": [
+        160.0,
+        302
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "kor-sentinel-tank",
+      "file": "Assets/Art/kor-sentinel-tank.png",
+      "category": "kor",
+      "width": 896,
+      "height": 640,
+      "anchor": [
+        448.0,
+        622
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "menu-foundry-2560",
+      "file": "Assets/Art/menu-foundry-2560.png",
+      "category": "interface",
+      "width": 2560,
+      "height": 1440,
+      "anchor": [
+        0,
+        0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "region-archive",
+      "file": "Assets/Art/region-archive.png",
+      "category": "strategic-map",
+      "width": 320,
+      "height": 320,
+      "anchor": [
+        160.0,
+        302
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "region-granary",
+      "file": "Assets/Art/region-granary.png",
+      "category": "strategic-map",
+      "width": 320,
+      "height": 320,
+      "anchor": [
+        160.0,
+        302
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "region-mine",
+      "file": "Assets/Art/region-mine.png",
+      "category": "strategic-map",
+      "width": 320,
+      "height": 320,
+      "anchor": [
+        160.0,
+        302
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "region-solar-field",
+      "file": "Assets/Art/region-solar-field.png",
+      "category": "strategic-map",
+      "width": 320,
+      "height": 320,
+      "anchor": [
+        160.0,
+        302
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "strategic-map",
+      "file": "Assets/Art/strategic-map.png",
+      "category": "strategic-map",
+      "width": 1200,
+      "height": 1000,
+      "anchor": [
+        0,
+        0
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "supply-cache",
+      "file": "Assets/Art/supply-cache.png",
+      "category": "resource",
+      "width": 280,
+      "height": 220,
+      "anchor": [
+        140.0,
+        202
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    },
+    {
+      "assetId": "terrain-rocks",
+      "file": "Assets/Art/terrain-rocks.png",
+      "category": "environment",
+      "width": 300,
+      "height": 190,
+      "anchor": [
+        150.0,
+        172
+      ],
+      "directions": [
+        "SE"
+      ],
+      "animations": [
+        {
+          "name": "idle",
+          "frames": [
+            0
+          ],
+          "frameDurationMs": 1000,
+          "loop": true
+        }
+      ],
+      "provenance": "Original Kor-Eternal Frontier artwork generated from Tools/generate_art.py"
+    }
+  ]
+}

@@ -1,29 +1,21 @@
-# Gameplay pillars
+# Gameplay: current campaign slice
 
-## The Kor Dynasty
-The Kor are the primary playable faction. Their identity is a community that grows through logistics, research, protection and collective resilience. The visual palette is crimson, black and gold.
+## Campaign layer
 
-## Core loop
-1. Establish the command core and keep Pioneers alive.
-2. Expand the resource economy with Solar Collectors, Extractors and Knowledge Archives.
-3. Place construction sites, then keep one or more Pioneers within working distance to complete them.
-4. Use research to improve the settlement and unlock later strategic systems.
-5. Defend the perimeter from the Blight, whose entities attack Kor forces and spread over time.
-6. Save the frontier and continue expanding instead of ending at a fixed campaign victory screen.
+The title screen accepts a seed. The same seed and current generator produce the same nine regions. Kor starts at Morrow Reach with an army; nearby land is known and the Blight region is a visible threat. Other regions are unexplored until revealed by the initial frontier or campaign expansion.
 
-## Current prototype
-The Unity build uses generated terrain and primitive meshes so that the game systems can be iterated without waiting for final art. Resource counters, construction sites with Pioneer work, multi-unit selection, research prerequisites, movement, simple combat, nearest-target Blight pursuit and local JSON save/load are implemented in the runtime controller.
+Select a region to inspect its owner, terrain, production, development, and infection. Establish an outpost in an adjacent neutral region for 80 supplies and 50 alloy. Upgrade a Kor settlement for 45 supplies and 35 alloy. A developed Kor region adds its configured resource yield each turn. The campaign also provides a small baseline income. The army consumes supplies each turn; if the treasury cannot cover that upkeep, readiness falls.
 
-## Controls and persistence
-- Drag a rectangle to select multiple Kor units.
-- Shift + click or Shift + drag adds units to the current selection.
-- F5 saves and F9 loads from Unity's persistent data directory.
-- Save files include resource totals, research, entities, positions, hit points, destinations and in-progress construction work.
+Ward Protocol costs 30 knowledge and 20 energy. It improves Guardian damage in later battles and slows strategic Blight spread. End Turn advances production, upkeep, an army march order, and Blight response. A pending march is saved with the campaign.
 
-## Next milestones
-- A* pathfinding, drag selection, attack-move, unit formations and line-of-sight.
-- Seed selection and world presets; larger streamed maps.
-- Expand the initial research chain into a multi-branch tree with stronger unlocks and UI feedback.
-- Blight ecology with nests, spread pressure, evolving threats and countermeasures.
-- Production-ready Kor models, animation, audio, UI and Linux player builds.
-- A deeper 4X layer: territory, logistics, settlement policies, diplomacy and long-term world events.
+## Battles and strategic consequences
+
+The starter Blight threat is in region 3. The Kor army must move to an adjacent region before it can attack. Select the Blight region and choose **Enter Real-Time Battle** when the action is enabled. Campaign supplies and alloy transfer into the battle stockpile, and campaign turns pause.
+
+The tactical mission is an isometric settlement defense/containment encounter. Select the worker or Guardian with the left mouse button. Right-click to move; sending the worker to a marked deposit gathers supplies or alloy. Press **B** and click open ground to place a purifier. The worker must reach its foundation and build it. Two completed purifiers satisfy the containment objective. The Guardian automatically attacks nearby Blight while the enemy pressures the command shelter. Space pauses tactical simulation.
+
+On return, victory transfers control of the region and moves the army there. Defeat costs army strength and readiness. The remaining tactical resources return to the campaign. The campaign save preserves the strategic battle result. Tactical saves during an unfinished encounter are not implemented.
+
+## Current scope and missing systems
+
+The present prototype has one playable Kor faction, a small fixed topology with seeded names/terrain/yields, a basic resource loop, one technology, one army, and one tactical mission template. The world generation is reproducible, but this is not a large-scale procedural map. The campaign has no rival faction AI, diplomacy, trade, tactical production, or broad technology tree. There are no campaign victory/defeat conditions; it can be continued as a small sandbox. Blight behavior is bounded to one-region spread events on the strategic map and the fixed tactical scenario.
