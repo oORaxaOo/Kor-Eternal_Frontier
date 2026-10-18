@@ -1,21 +1,35 @@
-# Gameplay: current campaign slice
+# Gameplay scope and current implementation
 
-## Campaign layer
+## Long-term direction
 
-The title screen accepts a seed. The same seed and current generator produce the same nine regions. Kor starts at Morrow Reach with an army; nearby land is known and the Blight region is a visible threat. Other regions are unexplored until revealed by the initial frontier or campaign expansion.
+Kor Eternal Frontier is a colony, civilization, and world simulation. Population, construction, work, transport, inventory, production, research, regional development, and The Blight should influence one another.
 
-Select a region to inspect its owner, terrain, production, development, and infection. Establish an outpost in an adjacent neutral region for 80 supplies and 50 alloy. Upgrade a Kor settlement for 45 supplies and 35 alloy. A developed Kor region adds its configured resource yield each turn. The campaign also provides a small baseline income. The army consumes supplies each turn; if the treasury cannot cover that upkeep, readiness falls.
+The local map uses orthogonal 2D square tiles. Placeholder symbols prioritize readability: people are dots, buildings and vehicles are squares, and hostile creatures use triangle markers.
 
-Ward Protocol costs 30 knowledge and 20 energy. It improves Guardian damage in later battles and slows strategic Blight spread. End Turn advances production, upkeep, an army march order, and Blight response. A pending march is saved with the campaign.
+Architectural features such as walls, floors, doors, paths, and conduits are designated per tile. Furniture, workstations, storage, and machines are placed as independent footprint-based objects. Both workflows need shared material accounting and worker tasks without conflating placement semantics.
 
-## Battles and strategic consequences
+## Currently implemented
 
-The starter Blight threat is in region 3. The Kor army must move to an adjacent region before it can attack. Select the Blight region and choose **Enter Real-Time Battle** when the action is enabled. Campaign supplies and alloy transfer into the battle stockpile, and campaign turns pause.
+- A 40 x 26 square tile map.
+- Three colonists with independent position, movement task, cargo state, and hunger.
+- Finite resource deposits.
+- Real gather/carry/deliver trips that transfer resource from source deposit to inventory.
+- Individual per-tile architecture construction orders with costs, work progress, and completion state.
+- Footprint-based multi-tile object blueprints that remain unfinished until workers complete construction.
+- Inventory-based construction and production costs.
+- A functional production recipe: a completed workbench consumes alloy and wood and creates a component only after worker labor.
+- Minimal orthogonal top-down rendering.
+- Versioned local colony saves with structural validation and round-trip tests.
+- A separate deterministic strategic campaign model with regional development, research, turns, battle reconciliation, and save/load tests.
 
-The tactical mission is an isometric settlement defense/containment encounter. Select the worker or Guardian with the left mouse button. Right-click to move; sending the worker to a marked deposit gathers supplies or alloy. Press **B** and click open ground to place a purifier. The worker must reach its foundation and build it. Two completed purifiers satisfy the containment objective. The Guardian automatically attacks nearby Blight while the enemy pressures the command shelter. Space pauses tactical simulation.
+## Known gaps
 
-On return, victory transfers control of the region and moves the army there. Defeat costs army strength and readiness. The remaining tactical resources return to the campaign. The campaign save preserves the strategic battle result. Tactical saves during an unfinished encounter are not implemented.
+The strategic campaign model is not yet connected to the local colony screen flow or to colony population/resources. The colony still needs shared job ownership, job/material reservations, capacity-aware stockpiles, multiple recipe definitions and production chains, fuller needs/workplace simulation, save migration beyond the initial schema, and research that unlocks local mechanics. The world map is currently the separate nine-region campaign model, not a large connected civilization simulation. The Blight is still a simple local spread-and-cleanse model.
 
-## Current scope and missing systems
+## Implementation priority
 
-The present prototype has one playable Kor faction, a small fixed topology with seeded names/terrain/yields, a basic resource loop, one technology, one army, and one tactical mission template. The world generation is reproducible, but this is not a large-scale procedural map. The campaign has no rival faction AI, diplomacy, trade, tactical production, or broad technology tree. There are no campaign victory/defeat conditions; it can be continued as a small sandbox. Blight behavior is bounded to one-region spread events on the strategic map and the fixed tactical scenario.
+1. Extract central job assignment and resource reservations without changing verified gameplay behavior.
+2. Generalize production definitions, workplace queues, stockpile capacity and delivery rules.
+3. Add research projects that unlock actual buildings and recipes.
+4. Connect strategic regions to real local settlement state and resource/person flows.
+5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.

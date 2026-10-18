@@ -1,16 +1,29 @@
-# Project notes for coding agents
+# Kor Eternal Frontier — agent instructions
 
-- This folder is the standalone C#/.NET 8, Gondwana 2.6.1, SDL3, and SkiaSharp game. Do not modify the adjacent Unity project when working here.
-- Build: `dotnet build GondwanaGame.csproj --configuration Release`.
-- Simulation checks: `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test`.
-- Application smoke check: `SDL_VIDEODRIVER=offscreen dotnet run --project GondwanaGame.csproj --configuration Release -- --smoke-test` (does not verify visual output or input).
-- `Campaign/` owns strategic state, deterministic map generation, turn rules, campaign persistence, and battle setup/reconciliation. `Simulation/OutpostSimulation.cs` owns tactical battle rules. `Rendering/` must remain presentation-only. `Program.cs` maps input to campaign/simulation APIs and selects screens.
-- The app uses a 1280x720 16:9 adapter with a 2560x1440 Gondwana backbuffer. Painters use 1100x720 design coordinates scaled to 16:9. Pointer coordinates must be inverse-transformed by both scale factors before hit testing.
-- Campaign saves use schema version 1 JSON under the XDG user data directory. Update validation and round-trip checks when changing persisted state. Never serialize SDL, Gondwana, or Skia handles.
-- Campaign turns are discrete. Tactical simulation advances at a fixed 0.1-second step and pauses with Space. Do not advance strategic state inside rendering.
-- Battle resource stock transfers to the tactical mission once at battle start. Resolve that active battle once; transfer only remaining tactical stocks and apply casualties/ownership before clearing the active encounter.
-- Keep world generation reproducible for a seed. Separate presentation randomness from simulation randomness.
-- Edit balance in `Data/Balance/scenario.json` where supported. Campaign costs and yields are still C# constants; document that when changing them.
-- Original game images live in `Assets/Art/`; `Tools/generate_art.py` rebuilds the raster set with Python/Pillow. The project copies these assets to builds. Keep third-party art out unless its license and provenance have been reviewed.
-- Preserve existing worktree changes. Do not clean generated files destructively, commit, or publish unless explicitly asked in the current task.
-- Report which checks actually ran and whether the UI had a real display backend.
+## Canonical project
+- The only active application is the root .NET 8 project.
+- The Unity prototype and duplicate nested Gondwana project have been removed. Do not recreate them.
+- The active simulation lives in Simulation/ColonySimulation.cs; strategic state lives under Campaign/.
+- Rendering/input may translate screen positions into world coordinates. Simulation APIs must not depend on SDL, Gondwana, SkiaSharp, windows, camera offsets, or screen pixels.
+- The local view is orthogonal top-down with square tiles. People are dots; objects use square footprints; hostile creatures use triangle markers. No isometric projection or polished art pipeline is active.
+
+## Commands
+- Build: dotnet build GondwanaGame.csproj --configuration Release
+- Rules and campaign checks: dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test
+- Linux package: ./build-linux.sh
+
+## Engineering rules
+- Simulation systems must be testable and fixed-step behavior independent of frame rate.
+- Keep resource accounting explicit; never create or duplicate inventory implicitly.
+- A blueprint is not a completed building.
+- Keep per-tile architecture orders distinct from placeable furniture/machine objects with footprints.
+- A worker gathering a resource must reduce the source amount, carry it, and deliver it before inventory increases.
+- Built stockpiles and storage racks provide explicit capacity; gathering must stop at full capacity, partial delivery must preserve cargo, and production may only commit outputs when space exists.
+- Production must commit inputs and add outputs only when work completes.
+- Saved data must have schema versioning, structural validation, and round-trip tests.
+- Preserve deterministic behavior where practical; separate presentation concerns from simulation rules.
+- Self-test must execute colony and campaign checks.
+- Prefer small, tested changes over replacing unrelated working code.
+- Do not commit generated build output, temporary files, downloaded assets, or Python caches.
+- Work on feature branches. Preserve unrelated changes and avoid destructive history rewrites.
+- Never claim a build, graphical launch, or test succeeded without running it and observing the result.

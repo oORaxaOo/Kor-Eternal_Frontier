@@ -1,15 +1,19 @@
-[Ll]ibrary/
-[Tt]emp/
-[Oo]bj/
-[Bb]uild/
-[Bb]uilds/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/
-MemoryCaptures/
-*.csproj
-!GondwanaGame/GondwanaGame.csproj
-*.sln
-*.suo
+# .NET build products
+**/bin/
+**/obj/
+.vs/
 *.user
-*.userprefs
+*.suo
+*.cache
+
+# Published packages
+artifacts/
+
+# Python build/cache products
+__pycache__/
+*.py[cod]
+
+# Editor / OS noise
+.idea/
 .DS_Store
+Thumbs.db

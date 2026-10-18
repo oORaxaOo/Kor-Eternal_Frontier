@@ -1,48 +1,63 @@
-# KOR: Eternal Frontier — Unity Edition
+# KOR ETERNAL FRONTIER
 
-An original Kor RTS / settlement-builder / 4X prototype with a crimson, black and gold visual identity. No copied game assets are included.
+Kor Eternal Frontier is a developing colony, civilization, and world simulation. The intended game centers on autonomous population, construction, logistics, production, research, regional development, and the evolving Blight ecosystem—not conventional RTS unit combat.
 
-## Open and play on NyarchLinux
+## Current foundation
 
-1. Install Unity Hub and a Unity 6 editor (baseline: `6000.0.0f1`).
-2. In Unity Hub choose **Add project from disk** and select this repository folder.
-3. Wait for import. The editor bootstrap creates `Assets/Scenes/KorFrontier.unity` on first load.
-4. Open that scene if needed and press **Play**.
-5. For a native Linux build, select the Linux target under **File → Build Profiles** and include the KorFrontier scene.
+The canonical application is the root .NET 8 project. The Unity prototype, duplicate nested project, legacy isometric artwork pipeline, duplicated art/metadata folders, and checked-in build output have been removed from the active source tree.
 
-This repository contains Unity source code, not a precompiled Linux executable. The project has not yet been compiled or run inside the Unity Editor in this environment; treat first import as an integration test.
+The local map is a 40 by 26 orthogonal square grid. The current simulation foundation has:
+
+- Three independently simulated colonists with movement, carrying, tasks, and hunger.
+- Finite resource deposits and real gather/carry/deliver trips that conserve resource quantities.
+- Capacity-limited colony inventory: the completed starter stockpile provides 120 units; each completed storage rack adds 80. Gathering pauses when no space remains, and workers retain undelivered cargo until space becomes available.
+- Tile-by-tile architecture design with an independent construction state and work order per tile.
+- Separate placeable-object blueprints with multi-tile footprints and real construction work.
+- Inventory-based material costs for both construction workflows.
+- A workstation recipe that consumes alloy and wood when queued; a worker performs the job before a component is added to inventory.
+- A minimal symbolic renderer: square tiles and buildings, colonists as dots, resource markers as squares.
+- Versioned colony save/load for terrain, architecture orders, objects, colonists, cargo, tasks/routes, deposits, inventory, production orders, IDs, selection, and simulation time.
+- A retained deterministic campaign model with regional development, research, turns, battle reconciliation, and save/load checks. The campaign model is tested but is not yet connected to the local colony screen.
+
+This is a playable foundation, not the complete game. A reusable central job board, material reservations, capacity-aware stockpiles, multiple production chains, fuller population simulation, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
+
+## Run on Linux
+
+Install the .NET 8 SDK and the native runtime dependencies required by Gondwana/SDL3. From the repository root:
+
+    dotnet build GondwanaGame.csproj --configuration Release
+    dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test
+    ./build-linux.sh
+    ./launch-kor.sh
+
+The build script publishes a self-contained linux-x64 package under artifacts/linux-x64/. Generated output is ignored by Git. If the graphical application fails to start, launch it from a terminal to see the SDL/runtime error.
 
 ## Controls
 
-- WASD / arrow keys: move camera; mouse wheel: zoom; hold Shift for faster camera movement.
-- Left-click: select a Kor unit or place the active building.
-- Drag with the left mouse button: select multiple Kor units.
-- Shift + left-click or Shift + drag: add/remove or extend the current selection.
-- Right-click: move selected units or issue an attack order against a hostile.
-- B: Solar Collector build mode; Space: pause.
-- F5 or **SAVE**: save the current frontier; F9 or **LOAD**: restore it.
-- Use the right command panel for buildings and research.
+- W/A/S/D: move camera.
+- + / -: zoom.
+- Left click: place selected tile architecture/object or select a colonist.
+- Right click: move the selected colonist; right-click a resource deposit to gather and deliver.
+- 1: wall, 2: floor, 3: path, 4: door, 5: conduit.
+- O: toggle object placement; Tab: cycle object type.
+- Space: pause/resume simulation.
+- F5: save colony to `~/.local/share/kor-eternal-frontier/colony.json` (or `$XDG_DATA_HOME/kor-eternal-frontier/colony.json`).
+- F9: load the colony save.
+- The HUD shows used storage versus available capacity; complete storage racks to expand it.
+- Esc: cancel placement mode.
 
-Save data is written to Unity's `Application.persistentDataPath` as `kor-frontier-save.json`. Saves include resources, research, unit/building positions, hit points, destinations and construction progress.
+## Source map
 
-## Prototype systems
+- Program.cs: SDL startup, input mapping, simulation stepping.
+- Simulation/ColonySimulation.cs: current colony state and rules.
+- Simulation/ColonySaveService.cs: validated versioned JSON persistence.
+- Campaign/: deterministic strategic model and campaign save data.
+- Rendering/ColonyRenderer.cs: presentation-only square-grid view.
+- Rendering/OrthogonalGridProjection.cs: screen/world coordinate conversion.
+- Tests/: automated colony and campaign checks.
+- build-linux.sh and launch-kor.sh: Linux package and launch scripts.
+- .github/workflows/gondwana-game.yml: canonical build, tests, and Linux packaging.
 
-- Seeded terrain generation and resource deposits, Kor command core and starting units.
-- Supplies, alloy, energy and knowledge economy.
-- Solar Collectors, Ore Extractors, Knowledge Archives, Guardian Barracks, Defence Turrets and Relay Beacons.
-- Research directives with prerequisite chains, automatic defence fire, combat and Blight expansion.
-- Blight pursuit AI: hostiles seek Kor forces and close distance before attacking.
-- Pioneer-driven construction: place a construction site, then move a Pioneer close enough to work on it. Structures cannot be placed overlapping nearby buildings.
-- Drag-box unit selection, additive selection and group orders.
-- Multi-unit selection and group movement/attack orders.
-- Persistent local save/load; the sandbox can continue without a forced victory screen.
+## Engineering direction
 
-## Roadmap
-
-The current build is an early systems prototype, not a finished commercial-scale game. It uses generated primitive models and materials. A* pathfinding, animated art, deeper logistics, diplomacy, more advanced faction AI, audio and a more complete 4X simulation remain planned. Blight pursuit is currently simple nearest-target behavior rather than strategic pathfinding.
-
-The Kor Dynasty is the primary playable faction. The goal is classic RTS readability with settlement growth, research progression and a persistent procedural frontier. References to other games are inspirations only; this repository uses original code and placeholder art.
-
-## License
-
-MIT. See `LICENSE`.
+Keep simulation logic independent of rendering and input. Extend the game through tested slices: material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, real research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
