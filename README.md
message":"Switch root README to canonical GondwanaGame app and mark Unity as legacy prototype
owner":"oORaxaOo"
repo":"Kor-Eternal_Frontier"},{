@@ -1,0 +1,41 @@
+# KOR: Eternal Frontier
+
+This repository's active game is the standalone .NET/Gondwana implementation in `GondwanaGame/`. The Unity project and editor-bound assets are legacy prototype material and are not required for the actual game build or development workflow.
+
+## Canonical app
+
+The real application is the C#/.NET 8 project in `GondwanaGame/` with its own SDL3 + SkiaSharp runtime and deterministic scenario checks.
+
+## Quick start (Linux)
+
+Prerequisites:
+- .NET 8 SDK
+- SDL3 runtime (`libSDL3.so.0`)
+- a desktop session for graphical play
+
+From the repository root:
+
+```bash
+./build-linux.sh
+./launch-kor.sh
+```
+
+Development / verification commands:
+
+```bash
+cd GondwanaGame
+dotnet build GondwanaGame.csproj --configuration Release
+dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test
+SDL_VIDEODRIVER=offscreen dotnet run --project GondwanaGame.csproj --configuration Release -- --smoke-test
+dotnet publish GondwanaGame.csproj --configuration Release --runtime linux-x64 --self-contained true --output GondwanaGame/artifacts/linux-x64
+```
+
+## Legacy status
+
+The Unity files in `Assets/`, `ProjectSettings/`, and related root directories are retained only for historical reference. They are not part of the active build, launch, or test path.
+
+## Notes
+
+- The canonical build and self-test path is `GondwanaGame/`.
+- The root wrapper scripts target the same canonical project so the repository has a single active application entry point.
+- Builds and tests are validated against the Linux target, not against the Unity editor workflow.
