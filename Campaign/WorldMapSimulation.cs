@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace KorTheBlight.Campaign;
 
-internal enum WorldFactionKind { Kor, AshenCompact, FreeMarches, HelionLeague, VerdantCovenant, Blight }
+internal enum WorldFactionKind { Kor, AshenCompact, FreeMarches, HelionLeague, VerdantCovenant, Blight, Neutral }
 internal enum DiplomaticStatus { Hostile, Wary, Neutral, Friendly, NonAggression, TradePact }
 
 internal sealed class WorldTerritory
@@ -23,6 +23,8 @@ internal sealed class WorldMapState
     public int SchemaVersion { get; set; } = 1;
     public int Seed { get; set; }
     public int Turn { get; set; } = 1;
+    public int EmpireSupplies { get; set; } = 400;
+    public int EmpireAlloy { get; set; } = 220;
     public int SelectedTerritoryId { get; set; }
     public List<WorldTerritory> Territories { get; set; } = [];
     public Dictionary<string, int> Relations { get; set; } = new();
@@ -43,7 +45,7 @@ internal sealed class WorldMapSimulation
     public IReadOnlyList<WorldTerritory> Territories => State.Territories;
     public WorldTerritory Selected => State.Territories[Math.Clamp(State.SelectedTerritoryId, 0, State.Territories.Count - 1)];
     public string Message => State.LastEvent;
-    public string SelectedOwnerName => FactionName(Selected.Owner);
+    public string SelectedOwnerName => FactionName(Selected.Owner);\n    public bool CanClaimSelected => Selected.Owner == WorldFactionKind.Neutral && State.EmpireSupplies >= 40 && State.EmpireAlloy >= 25 && Neighbours(Selected.X, Selected.Y).Any(t => t.Owner == WorldFactionKind.Kor);
 
     public WorldMapSimulation(int seed)
     {
@@ -71,7 +73,7 @@ internal sealed class WorldMapSimulation
 
     public DiplomaticStatus RelationTo(WorldFactionKind faction)
     {
-        if (faction is WorldFactionKind.Kor or WorldFactionKind.Blight) return faction == WorldFactionKind.Blight ? DiplomaticStatus.Hostile : DiplomaticStatus.Friendly;
+        if (faction is WorldFactionKind.Kor or WorldFactionKind.Blight or WorldFactionKind.Neutral) return faction == WorldFactionKind.Blight ? DiplomaticStatus.Hostile : DiplomaticStatus.Friendly;
         int score = State.Relations.GetValueOrDefault(Key(WorldFactionKind.Kor, faction), 0);
         if (score >= 70) return DiplomaticStatus.TradePact;
         if (score >= 40) return DiplomaticStatus.NonAggression;
@@ -83,7 +85,7 @@ internal sealed class WorldMapSimulation
 
     public bool OfferNonAggression()
     {
-        if (Selected.Owner is WorldFactionKind.Kor or WorldFactionKind.Blight) return false;
+        if (Selected.Owner is WorldFactionKind.Kor or WorldFactionKind.Blight or WorldFactionKind.Neutral) return false;
         string key = Key(WorldFactionKind.Kor, Selected.Owner);
         int score = State.Relations.GetValueOrDefault(key, 0);
         if (score < -25) { State.LastEvent = $"{FactionName(Selected.Owner)} rejected the pact. Relations are too poor."; return false; }
@@ -178,12 +180,12 @@ internal sealed class WorldMapSimulation
             int capitalIndex = Array.FindIndex(capitals, p => p.x == x && p.y == y);
             if (capitalIndex >= 0) ownerIndex = capitalIndex;
             else if (ranked[0].distance - ranked[1].distance < 1.5 && rng.NextDouble() < .72) ownerIndex = -1;
-            var owner = ownerIndex < 0 ? WorldFactionKind.FreeMarches : Factions[ownerIndex];
+            var owner = ownerIndex < 0 ? WorldFactionKind.Neutral : Factions[ownerIndex];
             bool settlement = capitalIndex >= 0;
             state.Territories.Add(new WorldTerritory { Id = id, X = x, Y = y, Owner = owner, Development = settlement ? 3 : rng.Next(0, 2), Supplies = rng.Next(4, 18), BlightPressure = owner == WorldFactionKind.Blight ? 2 : 0, Explored = owner == WorldFactionKind.Kor || owner == WorldFactionKind.Blight, HasSettlement = settlement });
         }
         // Ensure the Kor capital and a readable Blight front exist.
-        foreach (var t in state.Territories.Where(t => t.Owner == WorldFactionKind.Kor)) t.Explored = true;
+        foreach (var t in state.Territories.Where(t => t.Owner == WorldFactionKind.Kor)) t.Explored = true;\n        var korCapital = state.Territories.Single(t => t.X == capitals[0].x && t.Y == capitals[0].y);\n        var frontier = state.Territories.Single(t => t.X == capitals[0].x + 1 && t.Y == capitals[0].y);\n        frontier.Owner = WorldFactionKind.Neutral; frontier.HasSettlement = false; frontier.Development = 0;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.AshenCompact)] = 12;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.FreeMarches)] = 8;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.HelionLeague)] = -8;
