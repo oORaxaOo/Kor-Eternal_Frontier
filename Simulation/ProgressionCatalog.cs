@@ -281,7 +281,32 @@ internal static class ProgressionCatalog
         foreach (var recipe in Recipes)
             if (!researchIds.Contains(recipe.UnlockResearchId))
             {
-                error = $"Recipe {recipe.Id} has an unknown research unlock.";
+                error = $"Recipe {recipe.Id} has an unknown research unlock."; 
+                return false;
+            }
+
+        var buildingIds = Buildings.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var unitIds = Units.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var recipeIds = Recipes.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var node in Research)
+        {
+            bool targetExists = node.UnlockKind switch
+            {
+                "building" => buildingIds.Contains(node.UnlockId),
+                "unit" => unitIds.Contains(node.UnlockId),
+                "recipe" => recipeIds.Contains(node.UnlockId),
+                _ => !string.IsNullOrWhiteSpace(node.UnlockId)
+            };
+            if (!targetExists)
+            {
+                error = $"Research node {node.Id} references an unknown unlock target."; 
+                return false;
+            }
+        }
+        foreach (var building in Buildings)
+            if (!resourceIds.Contains(building.Upkeep))
+            {
+                error = $"Building {building.Id} has an unknown upkeep resource."; 
                 return false;
             }
 
