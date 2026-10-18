@@ -80,9 +80,10 @@ internal sealed class GridManager
     /// Defines a zone only when all cells are valid, unused ground and form one connected group.
     /// A tile belongs to one resource-specific zone so its stack can never mix resource types.
     /// </summary>
-    public int DefineStockpileZone(ResourceKind resource, IReadOnlyCollection<CellPosition> cells)
+    public int DefineStockpileZone(ResourceKind resource, IReadOnlyCollection<CellPosition> cells, int? maxStackSize = null)
     {
         ArgumentNullException.ThrowIfNull(cells);
+        if (maxStackSize is <= 0) throw new ArgumentOutOfRangeException(nameof(maxStackSize));
         if (!Enum.IsDefined(resource) || cells.Count == 0)
             throw new ArgumentException("A stockpile zone needs a valid resource and at least one tile.", nameof(cells));
 
@@ -123,6 +124,7 @@ internal sealed class GridManager
             ref var tile = ref _tiles[index];
             tile.Kind = GridTileKind.Stockpile;
             tile.ZoneId = zoneId;
+            if (maxStackSize.HasValue) tile.MaxStackSize = maxStackSize.Value;
         }
         _zones.Add(new StockpileZone(zoneId, resource, indices));
         return zoneId;
