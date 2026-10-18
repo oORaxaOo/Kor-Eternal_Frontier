@@ -35,7 +35,13 @@ The strategic campaign and local colony are now connected through explicit logis
 5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
 
 
-## Live colony ecosystem integration (migration slice)\n\n`Simulation/ColonyEcosystem.cs` is now stepped by the active `ColonySimulation`. Every visible colonist has a corresponding citizen agent; citizen hunger is synchronized with the existing save-compatible worker model, food is consumed from bounded grid storage, and citizen mood/state are shown in the HUD. Completed Garden objects register capacity-limited food-production jobs with the live job broker. Garden output reserves grid storage before work begins and is reconciled with the colony's existing pooled inventory capacity.\n\nThis is an incremental migration, not a wholesale replacement of the established construction/gathering scheduler: non-food materials and construction/recipe jobs still use the legacy inventory and task pipeline. The food grid currently maps the starter stockpile footprint to bounded storage slots; expanded storage and all-resource grid ownership remain follow-up work. Existing save schemas are unchanged; the runtime ecosystem is rebuilt from restored worker and inventory state. See `docs/colony-systems.md` for core contracts and migration boundaries.\n\n## Integrated alpha controls
+## Live colony ecosystem integration (migration slice)
+
+`Simulation/ColonyEcosystem.cs` is now stepped by the active `ColonySimulation`. Every visible colonist has a corresponding citizen agent; citizen hunger is synchronized with the existing save-compatible worker model, food is consumed from bounded grid storage, and citizen mood/state are shown in the HUD. Completed Garden objects register capacity-limited food-production jobs with the live job broker. Garden output reserves grid storage before work begins and is reconciled with the colony's existing pooled inventory capacity.
+
+This is an incremental migration, not a wholesale replacement of the established construction/gathering scheduler: non-food materials and construction/recipe jobs still use the legacy inventory and task pipeline. The food grid currently maps the starter stockpile footprint to bounded storage slots; expanded storage and all-resource grid ownership remain follow-up work. Existing save schemas are unchanged; the runtime ecosystem is rebuilt from restored worker and inventory state. See `docs/colony-systems.md` for core contracts and migration boundaries.
+
+## Integrated alpha controls
 
 - **T** — advance one strategic campaign turn. Regional production, army orders, upkeep, research effects, and Blight spread are resolved by the campaign model.
 - **I** — import up to 20 strategic Supplies as local Food and up to 10 strategic Alloy, limited by available local storage. Only accepted deliveries are charged to the campaign.
