@@ -55,6 +55,7 @@ internal static class Program
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, paused = false, worldMapMode = false;
             int activeMenu = 0;
+            bool commandMode = false;
             host.RenderBackbufferPostScene += canvas =>
             {
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
@@ -192,10 +193,10 @@ internal static class Program
                 {
                     bool menuClick = false;
                     if (logicalMouse.Y >= MouseMenuRenderer.Top && logicalMouse.Y <= MouseMenuRenderer.Top + MouseMenuRenderer.ButtonHeight &&
-                        logicalMouse.X >= 10 && logicalMouse.X < 562)
+                        logicalMouse.X >= 10 && logicalMouse.X < 670)
                     {
                         int chosen = logicalMouse.X < 110 ? 1 : logicalMouse.X < 218 ? 2 :
-                            logicalMouse.X < 326 ? 3 : logicalMouse.X < 458 ? 4 : 5;
+                            logicalMouse.X < 326 ? 3 : logicalMouse.X < 458 ? 4 : logicalMouse.X < 562 ? 5 : 10;
                         activeMenu = activeMenu == chosen ? 0 : chosen;
                         menuClick = true;
                     }
@@ -258,6 +259,10 @@ internal static class Program
                                         else if (index == 1) { try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Export unavailable: no Food or Alloy."); } catch (Exception ex) { simulation.SetMessage($"Export failed: {ex.Message}"); } }
                                         else activeMenu = 3;
                                         break;
+                                    case 10:
+                                        if (index == 0) { commandMode = true; activeMenu = 0; simulation.SetMessage("Order mode active: left-click a destination or resource deposit."); }
+                                        else { commandMode = false; activeMenu = 0; simulation.SetMessage("Order mode cancelled."); }
+                                        break;
                                 }
                                 menuClick = true;
                             }
@@ -275,14 +280,18 @@ internal static class Program
                         else if (!worldMapMode && inWorldView)
                         {
                             int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
-                            if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
+                            if (commandMode) { simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y); commandMode = false; }
+                            else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                             else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
                             else simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                         }
                     }
                 }
                 if (!worldMapMode && activeMenu == 0 && inWorldView && right && !wasRight)
+                {
                     simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
+                    commandMode = false;
+                }
                 wasLeft = left; wasRight = right;
 
                 engine.Tick();
