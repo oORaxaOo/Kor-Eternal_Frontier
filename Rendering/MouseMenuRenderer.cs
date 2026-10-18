@@ -22,7 +22,7 @@ internal sealed class MouseMenuRenderer : IDisposable
     private static readonly string[] DiplomacyItems = ["Improve relations", "Offer non-aggression pact", "Propose trade agreement"];
     private static readonly string[] GameItems = ["Save session", "Load session", "Close menu"];
     private static readonly string[] ArchitectureItems = ["Wall", "Floor", "Path", "Door", "Conduit", "Back"];
-    private static readonly string[] ObjectItems = ["Workbench", "Sleeping Pod", "Storage Rack", "Generator", "Garden", "Back"];
+    private static readonly string[] ObjectItems = ["Workbench", "Sleeping Pod", "Storage Rack", "Generator", "Garden", "Habitat", "Stockpile", "Back"];
     private static readonly string[] CameraItems = ["Pan left", "Pan right", "Pan up", "Pan down", "Zoom in", "Zoom out", "Back"];
     private static readonly string[] LogisticsItems = ["Import strategic supplies", "Export colony resources", "Back"];
     private static readonly string[] OrdersItems = ["Move / gather order mode", "Cancel order mode"];
