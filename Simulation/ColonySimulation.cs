@@ -76,11 +76,12 @@ internal sealed class WorkerTask(ColonyTaskKind kind, CellPosition target, List<
     public int DepositId { get; set; }
 }
 
-internal sealed class ProductionOrder(int id, int workstationId, float workRequired)
+internal sealed class ProductionOrder(int id, int workstationId, float workRequired, string? recipeId = null)
 {
     public int Id { get; } = id;
     public int WorkstationId { get; } = workstationId;
     public float WorkRequired { get; } = workRequired;
+    public string? RecipeId { get; } = recipeId;
     public float WorkDone { get; internal set; }
     public bool Complete { get; internal set; }
     public bool Assigned { get; internal set; }
@@ -105,6 +106,8 @@ internal sealed class ColonySimulation
     private readonly List<ColonyWorker> _workers = [];
     private readonly List<ProductionOrder> _productionOrders = [];
     private readonly Dictionary<ResourceKind, int> _inventory = Enum.GetValues<ResourceKind>().ToDictionary(k => k, _ => 0);
+    // Industry materials use catalogue-stable IDs; legacy five-resource APIs remain compatible.
+    private readonly Dictionary<string, int> _industryInventory = new(StringComparer.Ordinal);
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -114,6 +117,8 @@ internal sealed class ColonySimulation
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
+    public IReadOnlyList<ProductionOrder> ProductionOrders => _productionOrders;
+    public IReadOnlyDictionary<string, int> IndustryInventory => _industryInventory;
     public string Message { get; private set; } = "Colony ready. Design architecture per tile or place an object blueprint.";
     public void SetMessage(string message) => Message = message;
     public int? SelectedWorkerId { get; private set; }
@@ -123,7 +128,7 @@ internal sealed class ColonySimulation
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _objects.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _productionOrders.Count(x => !x.Complete);
-    public int InventoryUsed => _inventory.Values.Sum();
+    public int InventoryUsed => _inventory.Values.Sum() + _industryInventory.Values.Sum();
     public int InventoryCapacity =>
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
@@ -166,7 +171,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 1,
+            SchemaVersion = 2,
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -180,6 +185,7 @@ internal sealed class ColonySimulation
             Deposits = [],
             Workers = [],
             Inventory = [],
+            Materials = [],
             ProductionOrders = []
         };
 
@@ -226,10 +232,15 @@ internal sealed class ColonySimulation
         {
             Resource = item.Key, Amount = item.Value
         }));
+        snapshot.Materials.AddRange(_industryInventory.Select(item => new MaterialStackSnapshot
+        {
+            MaterialId = item.Key, Amount = item.Value
+        }));
         snapshot.ProductionOrders.AddRange(_productionOrders.Select(order => new ProductionOrderSnapshot
         {
-            Id = order.Id, WorkstationId = order.WorkstationId, WorkRequired = order.WorkRequired,
-            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
+            Id = order.Id, WorkstationId = order.WorkstationId, RecipeId = order.RecipeId,
+            WorkRequired = order.WorkRequired, WorkDone = order.WorkDone,
+            Complete = order.Complete, Assigned = order.Assigned
         }));
         return snapshot;
     }
@@ -285,9 +296,11 @@ internal sealed class ColonySimulation
 
         simulation._inventory.Clear();
         foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
+        simulation._industryInventory.Clear();
+        foreach (var item in snapshot.Materials) simulation._industryInventory.Add(item.MaterialId, item.Amount);
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
-            order.Id, order.WorkstationId, order.WorkRequired)
+            order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
         {
             WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
         }));
@@ -303,6 +316,71 @@ internal sealed class ColonySimulation
     }
 
     public int ResourceCount(ResourceKind resource) => _inventory.TryGetValue(resource, out int amount) ? amount : 0;
+
+    public int MaterialCount(string materialId)
+    {
+        if (TryMapLegacyMaterial(materialId, out var legacy)) return ResourceCount(legacy);
+        return _industryInventory.TryGetValue(materialId, out int amount) ? amount : 0;
+    }
+
+    public bool CanQueueRecipe(string recipeId, out string reason)
+    {
+        var recipe = ProgressionCatalog.Recipes.FirstOrDefault(item => item.Id == recipeId);
+        if (recipe == null)
+        {
+            reason = "Unknown production recipe.";
+            return false;
+        }
+
+        foreach (var input in recipe.Inputs)
+        {
+            if (input.Value <= 0)
+            {
+                reason = "Recipe has an invalid input quantity.";
+                return false;
+            }
+            int available = MaterialCount(input.Key);
+            if (available < input.Value)
+            {
+                string name = ProgressionCatalog.Resources.FirstOrDefault(r => r.Id == input.Key)?.Name ?? input.Key;
+                reason = $"Needs {input.Value} {name}; stock has {available}.";
+                return false;
+            }
+        }
+
+        int inputTotal = recipe.Inputs.Values.Sum();
+        int outputTotal = recipe.Outputs.Values.Sum();
+        int pendingReserved = PendingProductionOutputCapacity;
+        if (InventoryFreeCapacity + inputTotal - pendingReserved < outputTotal)
+        {
+            reason = "Insufficient free storage for this recipe output.";
+            return false;
+        }
+
+        reason = "Ready to queue.";
+        return true;
+    }
+
+    internal IReadOnlyList<ProgressionCatalog.RecipeDef> ManagementRecipes
+    {
+        get
+        {
+            var recipes = ProgressionCatalog.Recipes;
+            var readyFollowUps = recipes
+                .Where(recipe => recipe.Stage > 0 && recipe.Inputs.All(input => MaterialCount(input.Key) >= input.Value))
+                .OrderBy(recipe => recipe.Stage)
+                .ThenBy(recipe => recipe.Industry, StringComparer.Ordinal)
+                .Take(4);
+            var readyStarters = recipes
+                .Where(recipe => recipe.Stage == 0 && recipe.Inputs.All(input => MaterialCount(input.Key) >= input.Value))
+                .Take(4);
+            var unavailableStarters = recipes
+                .Where(recipe => recipe.Stage == 0 && recipe.Inputs.Any(input => MaterialCount(input.Key) < input.Value))
+                .Take(2);
+            return readyFollowUps.Concat(readyStarters).Concat(unavailableStarters)
+                .DistinctBy(recipe => recipe.Id).Take(8).ToArray();
+        }
+    }
 
     /// <summary>Accepts external deliveries without bypassing the colony's real storage limit.</summary>
     public int AddExternalResource(ResourceKind resource, int requested)
@@ -416,7 +494,14 @@ internal sealed class ColonySimulation
             Message = "Component production requires a completed workbench.";
             return false;
         }
-        if (!TryConsume(new Dictionary<ResourceKind, int> { [ResourceKind.Alloy] = 2, [ResourceKind.Wood] = 1 }))
+        var inputs = new Dictionary<ResourceKind, int> { [ResourceKind.Alloy] = 2, [ResourceKind.Wood] = 1 };
+        int inputTotal = inputs.Values.Sum();
+        if (InventoryFreeCapacity + inputTotal - PendingProductionOutputCapacity < 1)
+        {
+            Message = "Component production has no reserved room for its finished output.";
+            return false;
+        }
+        if (!TryConsume(inputs))
         {
             Message = "Component production needs 2 alloy and 1 wood in the inventory.";
             return false;
@@ -424,6 +509,36 @@ internal sealed class ColonySimulation
 
         _productionOrders.Add(new ProductionOrder(_nextProductionId++, workstationId, 6f));
         Message = "Component production queued; 2 alloy and 1 wood are committed to the order.";
+        return true;
+    }
+
+    public bool QueueRecipeProduction(int workstationId, string recipeId)
+    {
+        var station = _objects.FirstOrDefault(o => o.Id == workstationId && o.Kind == PlaceableKind.Workbench && o.IsBuilt);
+        if (station == null)
+        {
+            Message = "Catalog recipes require a completed workbench.";
+            return false;
+        }
+        var recipe = ProgressionCatalog.Recipes.FirstOrDefault(item => item.Id == recipeId);
+        if (recipe == null)
+        {
+            Message = "That production recipe does not exist in the catalogue.";
+            return false;
+        }
+        if (!CanQueueRecipe(recipeId, out string reason))
+        {
+            Message = reason;
+            return false;
+        }
+        if (!TryConsumeMaterials(recipe.Inputs))
+        {
+            Message = "Production inputs changed before the order could reserve them.";
+            return false;
+        }
+
+        _productionOrders.Add(new ProductionOrder(_nextProductionId++, workstationId, recipe.Work, recipe.Id));
+        Message = $"{recipe.Name} queued at Workbench #{workstationId}; inputs are reserved.";
         return true;
     }
 
@@ -785,18 +900,28 @@ internal sealed class ColonySimulation
             return;
         }
         float workRate = worker.Hungry ? 0.5f : 1f;
-        if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < 1)
+        int outputCapacity = order.RecipeId == null ? 1 :
+            ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Outputs.Values.Sum() ?? 0;
+        if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < outputCapacity)
         {
-            Message = "Production is waiting for storage space before it can deliver the completed component.";
+            Message = "Production is waiting for storage space before it can deliver the finished goods.";
             return;
         }
         order.WorkDone += deltaSeconds * workRate;
         if (order.WorkDone < order.WorkRequired) return;
         order.Complete = true;
         order.Assigned = false;
-        AddResource(ResourceKind.Components, 1);
+        if (order.RecipeId == null)
+            AddResource(ResourceKind.Components, 1);
+        else
+        {
+            var recipe = ProgressionCatalog.Recipes.First(item => item.Id == order.RecipeId);
+            foreach (var output in recipe.Outputs) AddMaterial(output.Key, output.Value);
+        }
         worker.Task = null;
-        Message = "Workbench production completed: 1 component produced from committed materials.";
+        Message = order.RecipeId == null
+            ? "Workbench production completed: 1 component produced from committed materials."
+            : $"Production completed: {ProgressionCatalog.Recipes.First(item => item.Id == order.RecipeId).Name}.";
     }
 
     private CellPosition? FindWorkCell(ColonyWorker worker, CellPosition origin, int width, int height)
@@ -889,6 +1014,55 @@ internal sealed class ColonySimulation
         if (costs.Any(x => x.Value < 0 || ResourceCount(x.Key) < x.Value)) return false;
         foreach (var (resource, amount) in costs) _inventory[resource] -= amount;
         return true;
+    }
+
+    private bool TryConsumeMaterials(IReadOnlyDictionary<string, int> costs)
+    {
+        if (costs.Any(item => item.Value <= 0 || MaterialCount(item.Key) < item.Value)) return false;
+        foreach (var (materialId, amount) in costs)
+        {
+            if (TryMapLegacyMaterial(materialId, out var legacy))
+                _inventory[legacy] -= amount;
+            else
+            {
+                int remaining = MaterialCount(materialId) - amount;
+                if (remaining == 0) _industryInventory.Remove(materialId);
+                else _industryInventory[materialId] = remaining;
+            }
+        }
+        return true;
+    }
+
+    private void AddMaterial(string materialId, int amount)
+    {
+        if (amount <= 0) return;
+        if (!ProgressionCatalog.Resources.Any(item => item.Id == materialId))
+            throw new InvalidOperationException($"Unknown catalogue material ID: {materialId}");
+        if (TryMapLegacyMaterial(materialId, out var legacy))
+            AddResource(legacy, amount);
+        else
+            _industryInventory[materialId] = checked(MaterialCount(materialId) + amount);
+    }
+
+    private int PendingProductionOutputCapacity => _productionOrders
+        .Where(order => !order.Complete)
+        .Sum(order => order.RecipeId == null ? 1 :
+            ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Outputs.Values.Sum() ?? 0);
+
+    internal static bool IsLegacyMaterialId(string materialId) => TryMapLegacyMaterial(materialId, out _);
+
+    private static bool TryMapLegacyMaterial(string materialId, out ResourceKind resource)
+    {
+        resource = materialId switch
+        {
+            "wood" => ResourceKind.Wood,
+            "stone" => ResourceKind.Stone,
+            "food" => ResourceKind.Food,
+            "alloy" => ResourceKind.Alloy,
+            "components" => ResourceKind.Components,
+            _ => (ResourceKind)(-1)
+        };
+        return Enum.IsDefined(resource);
     }
 
     private bool TryTake(ResourceKind resource, int amount)
