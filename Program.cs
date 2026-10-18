@@ -64,7 +64,7 @@ internal static class Program
             engine.StartTimerDriven(context);
             engineStarted = true;
 
-            bool running = true, wasLeft = false, wasRight = false, wasEscape = false;
+            bool running = true, wasLeft = false, wasRight = false, wasEscape = false, wasLeftArrow = false, wasRightArrow = false;
             bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
             bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
             bool wasT = false, wasI = false, wasE = false, wasM = false, wasY = false, wasG = false, wasR = false;
@@ -133,8 +133,8 @@ internal static class Program
                 }
                 if (escapeDown && !wasEscape) { architectureMode = ArchitectureKind.None; placingObject = false; }
                 if (mDown && !wasM) worldMapMode = !worldMapMode;
-                if (worldMapMode && leftDown && !wasLeft) worldMap.SelectNext(-1);
-                if (worldMapMode && rightDown && !wasRight) worldMap.SelectNext(1);
+                if (worldMapMode && leftDown && !wasLeftArrow) worldMap.SelectNext(-1);
+                if (worldMapMode && rightDown && !wasRightArrow) worldMap.SelectNext(1);
                 if (worldMapMode && yDown && !wasY) worldMap.OfferNonAggression();
                 if (worldMapMode && gDown && !wasG) worldMap.OfferTradePact();
                 if (worldMapMode && rDown && !wasR) worldMap.ImproveRelations();
@@ -171,6 +171,7 @@ internal static class Program
                     catch (Exception ex) { simulation.SetMessage($"Session load failed: {ex.Message}"); }
                 }
 
+                wasLeftArrow = leftDown; wasRightArrow = rightDown;
                 was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
                 wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
                 wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
