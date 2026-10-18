@@ -101,6 +101,34 @@ internal static class ColonyChecks
             if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
 
+        var validationColony = new ColonySimulation();
+        Check(validationColony.DesignTileConstruction(5, 5, ArchitectureKind.Wall),
+            "validation fixture should contain a tile construction order");
+
+        var danglingReference = validationColony.CaptureSnapshot();
+        danglingReference.Tiles.Single(tile => tile.X == 5 && tile.Y == 5).ConstructionOrderId = 999999;
+        bool danglingReferenceRejected = false;
+        try { ColonySimulation.RestoreSnapshot(danglingReference); }
+        catch (InvalidDataException) { danglingReferenceRejected = true; }
+        Check(danglingReferenceRejected,
+            "save validation must reject a tile that references a missing construction order");
+
+        var detachedOrder = validationColony.CaptureSnapshot();
+        detachedOrder.Tiles.Single(tile => tile.X == 5 && tile.Y == 5).ConstructionOrderId = null;
+        bool detachedOrderRejected = false;
+        try { ColonySimulation.RestoreSnapshot(detachedOrder); }
+        catch (InvalidDataException) { detachedOrderRejected = true; }
+        Check(detachedOrderRejected,
+            "save validation must reject a live construction order detached from its tile");
+
+        var completedWithoutTile = validationColony.CaptureSnapshot();
+        completedWithoutTile.TileOrders.Single(order => order.X == 5 && order.Y == 5).Status = ConstructionStatus.Complete;
+        bool inconsistentCompletionRejected = false;
+        try { ColonySimulation.RestoreSnapshot(completedWithoutTile); }
+        catch (InvalidDataException) { inconsistentCompletionRejected = true; }
+        Check(inconsistentCompletionRejected,
+            "save validation must reject a completed construction order whose tile has not been completed");
+
         bool versionRejected = false;
         try { ColonySaveService.Deserialize("{\"SchemaVersion\":99}"); }
         catch (InvalidDataException) { versionRejected = true; }
