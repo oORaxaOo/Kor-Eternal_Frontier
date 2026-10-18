@@ -1,4 +1,5 @@
 using KorTheBlight.Campaign;
+using KorTheBlight.Simulation;
 
 namespace KorTheBlight.Tests;
 
