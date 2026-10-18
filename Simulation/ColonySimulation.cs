@@ -509,7 +509,9 @@ internal sealed class ColonySimulation
             if (worker.CarriedResource.HasValue)
             {
                 AssignDelivery(worker);
-                if (worker.Task != null) continue;
+                // Carrying cargo is an outstanding logistics obligation. Never assign unrelated
+                // work while the worker is waiting for storage capacity or a reachable drop-off.
+                continue;
             }
 
             if (TryAssignTileBuild(worker)) continue;
@@ -705,8 +707,9 @@ internal sealed class ColonySimulation
 
         if (worker.CarriedAmount == 0)
         {
+            ResourceKind deliveredResource = worker.CarriedResource.Value;
             worker.CarriedResource = null;
-            Message = $"{worker.Name} delivered {delivered} {worker.CarriedResource?.ToString() ?? "resources"}.";
+            Message = $"{worker.Name} delivered {delivered} {deliveredResource}.";
         }
         else
         {
