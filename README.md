@@ -10,6 +10,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 
 - Three independently simulated colonists with movement, carrying, tasks, and hunger.
 - Finite resource deposits and real gather/carry/deliver trips that conserve resource quantities.
+- Capacity-limited colony inventory: the completed starter stockpile provides 120 units; each completed storage rack adds 80. Gathering pauses when no space remains, and workers retain undelivered cargo until space becomes available.
 - Tile-by-tile architecture design with an independent construction state and work order per tile.
 - Separate placeable-object blueprints with multi-tile footprints and real construction work.
 - Inventory-based material costs for both construction workflows.
@@ -42,6 +43,7 @@ The build script publishes a self-contained linux-x64 package under artifacts/li
 - Space: pause/resume simulation.
 - F5: save colony to `~/.local/share/kor-eternal-frontier/colony.json` (or `$XDG_DATA_HOME/kor-eternal-frontier/colony.json`).
 - F9: load the colony save.
+- The HUD shows used storage versus available capacity; complete storage racks to expand it.
 - Esc: cancel placement mode.
 
 ## Source map
