@@ -1,5 +1,3 @@
-using System.Collections.ObjectModel;
-
 namespace KorTheBlight.Simulation;
 
 /// <summary>Logical tile categories used by the high-throughput storage grid.</summary>
@@ -551,7 +549,7 @@ internal sealed class ColonyEcosystem
         citizen.Route = route;
         citizen.RouteIndex = 0;
         citizen.MovementProgress = 0;
-        citizen.State = route.Count == 0 ? state : state;
+        citizen.State = state;
         return true;
     }
 
