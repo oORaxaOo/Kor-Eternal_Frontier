@@ -233,6 +233,7 @@ internal static class Program
                                     case 5:
                                         if (index == 0) { try { GameSessionService.Save(simulation, campaign); simulation.SetMessage("Campaign and colony session saved."); } catch (Exception ex) { simulation.SetMessage($"Save failed: {ex.Message}"); } }
                                         else if (index == 1) { try { var loaded = GameSessionService.Load(); simulation = loaded.Colony; campaign = loaded.Campaign; simulation.SetMessage("Campaign and colony session loaded."); } catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); } }
+                                        else if (index == 2) activeMenu = 0;
                                         break;
                                     case 6:
                                         if (index < 5) { architectureMode = index switch { 0 => ArchitectureKind.Wall, 1 => ArchitectureKind.Floor, 2 => ArchitectureKind.Path, 3 => ArchitectureKind.Door, _ => ArchitectureKind.Conduit }; placingObject = false; activeMenu = 0; }
