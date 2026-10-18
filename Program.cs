@@ -216,9 +216,10 @@ internal static class Program
                         }
                         menuClick = true;
                     }
-                    else if (managementOpen && logicalMouse.Y >= 120)
+                    else if (managementOpen)
                     {
-                        if (logicalMouse.X >= 18 && logicalMouse.X <= 214 && logicalMouse.Y >= 128)
+                        if (logicalMouse.Y < 120) { menuClick = true; }
+                        else if (logicalMouse.X >= 18 && logicalMouse.X <= 214 && logicalMouse.Y >= 128)
                         {
                             managementPage = Math.Clamp((int)((logicalMouse.Y - 128) / 48) + 1, 1, ManagementPanelRenderer.PageNames.Length);
                         }
@@ -260,8 +261,8 @@ internal static class Program
                                     if (logicalMouse.X >= 670 && logicalMouse.X <= 1035)
                                     {
                                         int index = Math.Max(0, (int)((logicalMouse.Y - 194) / 48));
-                                        var benches = simulation.Objects.Where(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt).ToList();
-                                        if (index < benches.Count)
+                                        var benches = simulation.Objects.Where(o => o.Kind == PlaceableKind.Workbench).ToList();
+                                        if (index < benches.Count && benches[index].IsBuilt)
                                         {
                                             bool queued = simulation.QueueComponentProduction(benches[index].Id);
                                             simulation.SetMessage(queued ? "Component production queued." : "Production could not be queued; check materials and workstation.");
@@ -273,12 +274,15 @@ internal static class Program
                                         simulation.SetMessage(campaign.ResearchWard() ? campaign.Message : "Research unavailable: need 30 Knowledge and 20 Energy, or project already complete.");
                                     break;
                                 case 8:
-                                    if (!worldMapMode) worldMapMode = true;
-                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035)
+                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
+                                        ((logicalMouse.Y >= 274 && logicalMouse.Y < 309) ||
+                                         (logicalMouse.Y >= 319 && logicalMouse.Y < 354) ||
+                                         (logicalMouse.Y >= 364 && logicalMouse.Y < 399)))
                                     {
-                                        if (logicalMouse.Y >= 274 && logicalMouse.Y < 309) worldMap.ImproveRelations();
-                                        else if (logicalMouse.Y >= 319 && logicalMouse.Y < 354) worldMap.OfferNonAggression();
-                                        else if (logicalMouse.Y >= 364 && logicalMouse.Y < 399) worldMap.OfferTradePact();
+                                        worldMapMode = true;
+                                        if (logicalMouse.Y < 309) worldMap.ImproveRelations();
+                                        else if (logicalMouse.Y < 354) worldMap.OfferNonAggression();
+                                        else worldMap.OfferTradePact();
                                     }
                                     break;
                                 case 9:
