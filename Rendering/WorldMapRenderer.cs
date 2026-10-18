@@ -34,6 +34,7 @@ internal sealed class WorldMapRenderer : IDisposable
                 WorldFactionKind.FreeMarches => new SKColor(95, 117, 132),
                 WorldFactionKind.HelionLeague => new SKColor(173, 143, 70),
                 WorldFactionKind.VerdantCovenant => new SKColor(64, 115, 77),
+                WorldFactionKind.Neutral => new SKColor(96, 105, 104),
                 _ => new SKColor(157, 24, 38)
             };
             if (!t.Explored && t.Owner != WorldFactionKind.Kor) _fill.Color = new SKColor(35, 42, 43);
@@ -100,6 +101,7 @@ internal sealed class WorldMapRenderer : IDisposable
         WorldFactionKind.FreeMarches => new SKColor(95, 117, 132),
         WorldFactionKind.HelionLeague => new SKColor(173, 143, 70),
         WorldFactionKind.VerdantCovenant => new SKColor(64, 115, 77),
+        WorldFactionKind.Neutral => new SKColor(96, 105, 104),
         _ => new SKColor(157, 24, 38)
     };
     private static SKRect Inset(SKRect r, float a) => new(r.Left - a, r.Top - a, r.Right + a, r.Bottom + a);
