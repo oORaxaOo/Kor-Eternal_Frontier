@@ -306,6 +306,7 @@ internal sealed class CitizenAgent(int id, string name, CellPosition position)
     public float Fatigue { get; internal set; } = 100f;
     public float Happiness => (Hunger + Fatigue) * 0.5f;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
+    public bool CanReceiveJob { get; internal set; } = true;
     public int? JobId { get; internal set; }
     public float WorkProgress { get; internal set; }
     public float MovementProgress { get; internal set; }
@@ -443,7 +444,7 @@ internal sealed class ColonyEcosystem
 
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
-            if (citizen.Hunger < 30f && citizen.State != CitizenState.MovingToStorage)
+            if (citizen.Hunger < 30f && citizen.CanReceiveJob && citizen.State != CitizenState.MovingToStorage)
             {
                 ReleaseAssignment(citizen);
                 var food = Grid.FindNearestResource(ResourceKind.Food, citizen.Position);
@@ -496,7 +497,7 @@ internal sealed class ColonyEcosystem
                 citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 8f);
                 continue;
             }
-            if (citizen.Hunger < 30f) continue;
+            if (citizen.Hunger < 30f || !citizen.CanReceiveJob) continue;
 
             var job = JobBroker.AssignNext(citizen);
             if (job == null) continue;
