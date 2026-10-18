@@ -175,9 +175,11 @@ internal sealed class WorldMapSimulation
             var ranked = capitals.Select((p, i) => (i, distance: Math.Abs(p.x - x) + Math.Abs(p.y - y) + rng.NextDouble() * 3.5))
                 .OrderBy(v => v.distance).ToArray();
             int ownerIndex = ranked[0].i;
-            if (ranked[0].distance - ranked[1].distance < 1.5 && rng.NextDouble() < .72) ownerIndex = -1;
+            int capitalIndex = Array.FindIndex(capitals, p => p.x == x && p.y == y);
+            if (capitalIndex >= 0) ownerIndex = capitalIndex;
+            else if (ranked[0].distance - ranked[1].distance < 1.5 && rng.NextDouble() < .72) ownerIndex = -1;
             var owner = ownerIndex < 0 ? WorldFactionKind.FreeMarches : Factions[ownerIndex];
-            bool settlement = (x, y) == capitals[Math.Max(0, ownerIndex)];
+            bool settlement = capitalIndex >= 0;
             state.Territories.Add(new WorldTerritory { Id = id, X = x, Y = y, Owner = owner, Development = settlement ? 3 : rng.Next(0, 2), Supplies = rng.Next(4, 18), BlightPressure = owner == WorldFactionKind.Blight ? 2 : 0, Explored = owner == WorldFactionKind.Kor || owner == WorldFactionKind.Blight, HasSettlement = settlement });
         }
         // Ensure the Kor capital and a readable Blight front exist.
