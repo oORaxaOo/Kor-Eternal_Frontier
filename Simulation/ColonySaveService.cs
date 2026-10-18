@@ -81,7 +81,7 @@ internal sealed class ColonySnapshot
     public int SchemaVersion { get; set; } = 1;
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
-    public double ElapsedSeconds { get; set; }
+    public float ElapsedSeconds { get; set; }
     public string Message { get; set; } = string.Empty;
     public int? SelectedWorkerId { get; set; }
     public int NextOrderId { get; set; }
@@ -101,7 +101,7 @@ internal sealed class ColonySnapshot
         if (SchemaVersion != 1) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
-        if (!double.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
+        if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
             throw new InvalidDataException("Colony save contains an invalid simulation clock.");
         if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
