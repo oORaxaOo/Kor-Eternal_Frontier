@@ -432,10 +432,14 @@ internal sealed class ColonyEcosystem
         foreach (var citizen in _citizens)
         {
             citizen.Hunger = Math.Max(0, citizen.Hunger - deltaSeconds * 0.30f);
-            if (citizen.State == CitizenState.Working)
-                citizen.Fatigue = Math.Max(0, citizen.Fatigue - deltaSeconds * 0.24f);
-            else if (citizen.State == CitizenState.MovingToJob)
-                citizen.Fatigue = Math.Max(0, citizen.Fatigue - deltaSeconds * 0.12f);
+            // Rest satisfaction declines slowly at baseline and faster during travel/work.
+            float fatigueDrain = citizen.State switch
+            {
+                CitizenState.Working => 0.24f,
+                CitizenState.MovingToJob => 0.12f,
+                _ => 0.04f
+            };
+            citizen.Fatigue = Math.Max(0, citizen.Fatigue - deltaSeconds * fatigueDrain);
 
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
