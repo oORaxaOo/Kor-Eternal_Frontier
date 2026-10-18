@@ -45,7 +45,8 @@ internal sealed class WorldMapSimulation
     public IReadOnlyList<WorldTerritory> Territories => State.Territories;
     public WorldTerritory Selected => State.Territories[Math.Clamp(State.SelectedTerritoryId, 0, State.Territories.Count - 1)];
     public string Message => State.LastEvent;
-    public string SelectedOwnerName => FactionName(Selected.Owner);\n    public bool CanClaimSelected => Selected.Owner == WorldFactionKind.Neutral && State.EmpireSupplies >= 40 && State.EmpireAlloy >= 25 && Neighbours(Selected.X, Selected.Y).Any(t => t.Owner == WorldFactionKind.Kor);
+    public string SelectedOwnerName => FactionName(Selected.Owner);
+    public bool CanClaimSelected => Selected.Owner == WorldFactionKind.Neutral && State.EmpireSupplies >= 40 && State.EmpireAlloy >= 25 && Neighbours(Selected.X, Selected.Y).Any(t => t.Owner == WorldFactionKind.Kor);
 
     public WorldMapSimulation(int seed)
     {
