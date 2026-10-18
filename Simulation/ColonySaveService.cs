@@ -129,10 +129,41 @@ internal sealed class ColonySnapshot
             CheckCell(order.X, order.Y, "tile construction order");
             if (!Enum.IsDefined(order.Target) || order.Target == ArchitectureKind.None || !Enum.IsDefined(order.Status))
                 throw new InvalidDataException("Colony save contains an invalid tile construction state.");
-            if (order.WorkRequired <= 0 || !float.IsFinite(order.WorkDone) || order.WorkDone < 0)
-                throw new InvalidDataException("Colony save contains invalid tile construction work values.");
+            if (order.WorkRequired <= 0 || !float.IsFinite(order.WorkDone) || order.WorkDone < 0 ||
+                (order.Status == ConstructionStatus.Complete && order.WorkDone < order.WorkRequired) ||
+                (order.Status != ConstructionStatus.Complete && order.WorkDone >= order.WorkRequired))
+                throw new InvalidDataException("Colony save contains invalid tile construction work values or progress.");
             if (!tileOrderCells.Add((order.X, order.Y)))
                 throw new InvalidDataException("More than one construction order targets the same tile.");
+        }
+
+        var tilesByCell = Tiles.ToDictionary(tile => (tile.X, tile.Y));
+        var tileOrdersById = TileOrders.ToDictionary(order => order.Id);
+        foreach (var tile in Tiles)
+        {
+            if (!tile.ConstructionOrderId.HasValue) continue;
+            if (!tileOrdersById.TryGetValue(tile.ConstructionOrderId.Value, out var linkedOrder))
+                throw new InvalidDataException("Tile references a missing construction order.");
+            if (linkedOrder.X != tile.X || linkedOrder.Y != tile.Y)
+                throw new InvalidDataException("Tile construction reference points to an order for another tile.");
+            if (linkedOrder.Status == ConstructionStatus.Complete || tile.Architecture != ArchitectureKind.None)
+                throw new InvalidDataException("Tile has an active construction reference despite being completed.");
+        }
+
+        foreach (var order in TileOrders)
+        {
+            var tile = tilesByCell[(order.X, order.Y)];
+            if (order.Status == ConstructionStatus.Complete)
+            {
+                if (tile.ConstructionOrderId.HasValue || tile.Architecture != order.Target ||
+                    order.WorkDone < order.WorkRequired)
+                    throw new InvalidDataException("Completed tile construction does not match the tile state or work progress.");
+            }
+            else if (tile.ConstructionOrderId != order.Id || tile.Architecture != ArchitectureKind.None ||
+                     order.WorkDone >= order.WorkRequired)
+            {
+                throw new InvalidDataException("Unfinished tile construction is detached from its tile or has inconsistent progress.");
+            }
         }
 
         var objectIds = new HashSet<int>();
@@ -143,12 +174,21 @@ internal sealed class ColonySnapshot
             if (!Enum.IsDefined(item.Kind) || !Enum.IsDefined(item.Status) || item.Width <= 0 || item.Height <= 0 ||
                 item.X < 0 || item.Y < 0 || item.X + item.Width > Width || item.Y + item.Height > Height)
                 throw new InvalidDataException("Colony save contains an invalid placeable object footprint.");
-            if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0)
-                throw new InvalidDataException("Colony save contains invalid placeable object work values.");
+            if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0 ||
+                (item.Status != ConstructionStatus.Complete && item.WorkRequired == 0) ||
+                (item.Status == ConstructionStatus.Complete && item.WorkDone < item.WorkRequired) ||
+                (item.Status != ConstructionStatus.Complete && item.WorkDone >= item.WorkRequired))
+                throw new InvalidDataException("Colony save contains invalid placeable object work values or progress.");
             for (int y = item.Y; y < item.Y + item.Height; y++)
             for (int x = item.X; x < item.X + item.Width; x++)
+            {
                 if (!occupied.Add((x, y)))
                     throw new InvalidDataException("Colony save contains overlapping placeable object footprints.");
+                var tile = tilesByCell[(x, y)];
+                if (tile.Terrain != TerrainKind.Ground || tile.Architecture == ArchitectureKind.Wall ||
+                    tile.ConstructionOrderId.HasValue)
+                    throw new InvalidDataException("Placeable object footprint conflicts with terrain, a wall, or tile construction.");
+            }
         }
 
         var depositIds = new HashSet<int>();
