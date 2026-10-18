@@ -117,11 +117,11 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Completed objects", colony.CompletedObjects.ToString(), 254, 268);
                 Pair(c, "Awaiting work / materials", colony.PendingJobs.ToString(), 254, 294);
                 Section(c, "Choose placement", 670, 164);
-                string[] buildActions = ["Wall", "Floor", "Path", "Door", "Conduit", "Workbench", "Sleeping Pod", "Storage Rack", "Generator", "Garden"];
+                string[] buildActions = ["Wall", "Floor", "Path", "Door", "Conduit", "Workbench", "Sleep Pod", "Storage", "Generator", "Garden", "Habitat", "Stockpile"];
                 for (int i = 0; i < buildActions.Length; i++)
                 {
-                    int col = i < 5 ? 0 : 1, row = i % 5;
-                    ActionRow(c, buildActions[i], 670 + col * 190, 194 + row * 43, 176);
+                    int col = i % 3, row = i / 3;
+                    ActionRow(c, buildActions[i], 670 + col * 125, 194 + row * 43, 116);
                 }
                 Section(c, "Recent orders", 254, 354);
                 int oy = 380;
