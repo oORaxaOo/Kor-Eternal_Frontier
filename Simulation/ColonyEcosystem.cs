@@ -354,6 +354,12 @@ internal sealed class JobBroker
 
     public WorkplaceJob? FindJob(int jobId) => _jobs.FirstOrDefault(job => job.Id == jobId);
 
+    public bool RemoveWorkplace(int jobId)
+    {
+        var job = FindJob(jobId);
+        return job != null && _jobs.Remove(job);
+    }
+
     public WorkplaceJob? AssignNext(CitizenAgent citizen)
     {
         ArgumentNullException.ThrowIfNull(citizen);
@@ -404,6 +410,21 @@ internal sealed class ColonyEcosystem
         var citizen = new CitizenAgent(_citizens.Count == 0 ? 1 : _citizens.Max(item => item.Id) + 1, name, position);
         _citizens.Add(citizen);
         return citizen;
+    }
+
+    /// <summary>Removing a workplace immediately releases every assigned citizen and storage reservation.</summary>
+    public bool RemoveWorkplace(int jobId)
+    {
+        var job = JobBroker.FindJob(jobId);
+        if (job == null) return false;
+        foreach (var citizen in _citizens.Where(citizen => citizen.JobId == jobId).ToArray())
+        {
+            ReleaseAssignment(citizen);
+            citizen.State = CitizenState.Idle;
+        }
+        bool removed = JobBroker.RemoveWorkplace(jobId);
+        if (removed) LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
+        return removed;
     }
 
     public void Step(float deltaSeconds)
