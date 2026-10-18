@@ -105,6 +105,9 @@ internal sealed class ColonySimulation
     private readonly List<ColonyWorker> _workers = [];
     private readonly List<ProductionOrder> _productionOrders = [];
     private readonly Dictionary<ResourceKind, int> _inventory = Enum.GetValues<ResourceKind>().ToDictionary(k => k, _ => 0);
+    private ColonyEcosystem _ecosystem = null!;
+    private readonly Dictionary<int, CitizenAgent> _citizensByWorker = [];
+    private readonly Dictionary<int, int> _gardenJobsByObject = [];
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -160,6 +163,7 @@ internal sealed class ColonySimulation
         AddDeposit(new CellPosition(27, 12), ResourceKind.Stone, 90);
         AddDeposit(new CellPosition(14, 21), ResourceKind.Food, 100);
         AddDeposit(new CellPosition(34, 20), ResourceKind.Alloy, 45);
+        InitializeEcosystem();
     }
 
     internal ColonySnapshot CaptureSnapshot()
@@ -299,6 +303,7 @@ internal sealed class ColonySimulation
         simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
+        simulation.InitializeEcosystem();
         return simulation;
     }
 
@@ -327,6 +332,100 @@ internal sealed class ColonySimulation
     }
 
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
+
+    /// <summary>Live citizen/job state from the shared colony ecosystem.</summary>
+    public CitizenAgent? CitizenForWorker(int workerId) =>
+        _citizensByWorker.TryGetValue(workerId, out var citizen) ? citizen : null;
+
+    private void InitializeEcosystem()
+    {
+        _ecosystem = new ColonyEcosystem(Width, Height);
+        _citizensByWorker.Clear();
+        _gardenJobsByObject.Clear();
+
+        // The starter stockpile occupies six map tiles. The first runtime bridge maps its
+        // pooled capacity to the grid's bounded stacks while the legacy construction scheduler
+        // continues to own non-food materials during this migration slice.
+        _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food,
+        [
+            new CellPosition(18, 8), new CellPosition(19, 8), new CellPosition(20, 8),
+            new CellPosition(18, 9), new CellPosition(19, 9), new CellPosition(20, 9)
+        ]);
+        int initialFood = ResourceCount(ResourceKind.Food);
+        if (initialFood > 0 && !_ecosystem.Grid.TryAdd(ResourceKind.Food, initialFood))
+            throw new InvalidOperationException("Could not migrate starter food into grid storage.");
+
+        foreach (var worker in _workers)
+        {
+            var cell = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker.Name, cell);
+        }
+    }
+
+    private void StepEcosystem(float deltaSeconds)
+    {
+        var grid = _ecosystem.Grid;
+        int inventoryFood = ResourceCount(ResourceKind.Food);
+        int gridFood = grid.ResourceCount(ResourceKind.Food);
+        if (inventoryFood > gridFood)
+        {
+            if (!grid.TryAdd(ResourceKind.Food, inventoryFood - gridFood))
+                throw new InvalidOperationException("Grid food storage could not accept the current colony inventory.");
+        }
+        else if (gridFood > inventoryFood)
+        {
+            grid.TryTake(ResourceKind.Food, gridFood - inventoryFood);
+        }
+
+        foreach (var worker in _workers)
+        {
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            if (citizen.State != CitizenState.MovingToStorage)
+                citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
+        }
+
+        // Completed gardens become real food-producing workplaces. Their output is reserved
+        // against the grid before work starts; pause/remove them when pooled legacy inventory
+        // has no free room so this bridge cannot silently overfill the colony.
+        foreach (var garden in _objects.Where(item => item.Kind == PlaceableKind.Garden && item.IsBuilt))
+        {
+            if (_gardenJobsByObject.ContainsKey(garden.Id)) continue;
+            if (InventoryFreeCapacity <= grid.ReservedCount(ResourceKind.Food)) continue;
+            int jobId = _ecosystem.JobBroker.RegisterWorkplace(
+                $"Garden #{garden.Id}", garden.Origin, workerCapacity: 1,
+                outputResource: ResourceKind.Food, outputAmount: 1, workSeconds: 8f);
+            _gardenJobsByObject.Add(garden.Id, jobId);
+        }
+        foreach (var pair in _gardenJobsByObject.ToArray())
+        {
+            if (InventoryFreeCapacity > grid.ReservedCount(ResourceKind.Food)) continue;
+            _ecosystem.RemoveWorkplace(pair.Value);
+            _gardenJobsByObject.Remove(pair.Key);
+        }
+
+        int beforeFood = grid.ResourceCount(ResourceKind.Food);
+        _ecosystem.Step(deltaSeconds);
+        int afterFood = grid.ResourceCount(ResourceKind.Food);
+        if (afterFood < beforeFood)
+        {
+            int consumed = beforeFood - afterFood;
+            _inventory[ResourceKind.Food] = Math.Max(0, ResourceCount(ResourceKind.Food) - consumed);
+        }
+        else if (afterFood > beforeFood)
+        {
+            int produced = afterFood - beforeFood;
+            int accepted = Math.Min(produced, InventoryFreeCapacity);
+            if (accepted > 0) _inventory[ResourceKind.Food] = checked(ResourceCount(ResourceKind.Food) + accepted);
+            if (accepted < produced) grid.TryTake(ResourceKind.Food, produced - accepted);
+        }
+
+        foreach (var worker in _workers)
+        {
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
+                worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
+        }
+    }
 
     public ResourceDeposit? DepositAt(int x, int y) =>
         _deposits.FirstOrDefault(d => d.Cell.X == x && d.Cell.Y == y && d.Amount > 0);
@@ -499,7 +598,7 @@ internal sealed class ColonySimulation
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
-        UpdateNeeds(deltaSeconds);
+        StepEcosystem(deltaSeconds);
         AssignJobs();
 
         foreach (var worker in _workers)
