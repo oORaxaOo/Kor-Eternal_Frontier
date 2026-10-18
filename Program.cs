@@ -5,6 +5,7 @@ using Gondwana;
 using Gondwana.Rendering;
 using Gondwana.Rendering.Backbuffers;
 using Gondwana.Scenes;
+using KorTheBlight.Campaign;
 using KorTheBlight.Rendering;
 using KorTheBlight.Simulation;
 using KorTheBlight.Tests;
@@ -35,6 +36,7 @@ internal static class Program
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
 
             var simulation = new ColonySimulation();
+            var campaign = new CampaignSimulation(70241);
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
@@ -47,7 +49,7 @@ internal static class Program
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, paused = false;
-            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused);
+            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
             engine = Engine.Instance;
             engine.Initialize();
             engine.Configuration.TargetFPS = 60;
@@ -58,6 +60,7 @@ internal static class Program
             bool running = true, wasLeft = false, wasRight = false, wasEscape = false;
             bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
             bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
+            bool wasT = false, wasI = false, wasE = false;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -98,6 +101,9 @@ internal static class Program
                 bool spaceDown = IsDown(keys, Sdl.ScancodeSpace);
                 bool f5Down = IsDown(keys, Sdl.ScancodeF5);
                 bool f9Down = IsDown(keys, Sdl.ScancodeF9);
+                bool tDown = IsDown(keys, Sdl.ScancodeT);
+                bool iDown = IsDown(keys, Sdl.ScancodeI);
+                bool eDown = IsDown(keys, Sdl.ScancodeE);
                 bool escapeDown = IsDown(keys, Sdl.ScancodeEscape);
 
                 if (oneDown && !was1) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
@@ -114,20 +120,42 @@ internal static class Program
                 }
                 if (escapeDown && !wasEscape) { architectureMode = ArchitectureKind.None; placingObject = false; }
                 if (spaceDown && !wasSpace) paused = !paused;
+                if (tDown && !wasT)
+                {
+                    try { campaign.EndTurn(); simulation.SetMessage(campaign.Message); }
+                    catch (Exception ex) { simulation.SetMessage($"Campaign turn failed: {ex.Message}"); }
+                }
+                if (iDown && !wasI)
+                {
+                    try { int moved = CampaignColonyBridge.ImportToColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Resupply unavailable: colony storage may be full."); }
+                    catch (Exception ex) { simulation.SetMessage($"Import failed: {ex.Message}"); }
+                }
+                if (eDown && !wasE)
+                {
+                    try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Export unavailable: no Food or Alloy in colony stores."); }
+                    catch (Exception ex) { simulation.SetMessage($"Export failed: {ex.Message}"); }
+                }
                 if (f5Down && !wasF5)
                 {
-                    try { ColonySaveService.Save(simulation); simulation.SetMessage("Colony saved."); }
-                    catch (Exception ex) { simulation.SetMessage($"Save failed: {ex.Message}"); }
+                    try { GameSessionService.Save(simulation, campaign); simulation.SetMessage("Campaign and colony session saved."); }
+                    catch (Exception ex) { simulation.SetMessage($"Session save failed: {ex.Message}"); }
                 }
                 if (f9Down && !wasF9)
                 {
-                    try { simulation = ColonySaveService.Load(); simulation.SetMessage("Colony save loaded."); }
-                    catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); }
+                    try
+                    {
+                        var loaded = GameSessionService.Load();
+                        simulation = loaded.Colony;
+                        campaign = loaded.Campaign;
+                        simulation.SetMessage("Campaign and colony session loaded.");
+                    }
+                    catch (Exception ex) { simulation.SetMessage($"Session load failed: {ex.Message}"); }
                 }
 
                 was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
                 wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
                 wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
+                wasT = tDown; wasI = iDown; wasE = eDown;
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
