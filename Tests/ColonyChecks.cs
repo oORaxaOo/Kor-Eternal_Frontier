@@ -108,8 +108,8 @@ internal static class ColonyChecks
         legacySnapshot.Materials.Clear();
         foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
         string legacyJson = JsonSerializer.Serialize(legacySnapshot)
-            .Replace("\\"Materials\\":[],", "", StringComparison.Ordinal)
-            .Replace("\\"RecipeId\\":null,", "", StringComparison.Ordinal);
+            .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
+            .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
         var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
         Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0,
