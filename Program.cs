@@ -262,7 +262,7 @@ internal static class Sdl
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206;
     public const uint ButtonLeftMask = 1, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    public const int ScancodeA = 4, ScancodeD = 7, ScancodeO = 18, ScancodeS = 22, ScancodeW = 26;
+    public const int ScancodeA = 4, ScancodeD = 7, ScancodeE = 8, ScancodeI = 12, ScancodeO = 18, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26;
     public const int Scancode1 = 30, Scancode2 = 31, Scancode3 = 32, Scancode4 = 33, Scancode5 = 34;
     public const int ScancodeTab = 43, ScancodeSpace = 44, ScancodeMinus = 45, ScancodeEquals = 46, ScancodeEscape = 41;
     public const int ScancodeF5 = 62, ScancodeF9 = 66;
