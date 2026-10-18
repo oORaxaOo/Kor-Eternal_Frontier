@@ -114,6 +114,29 @@ internal static class ColonyChecks
             if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
 
+        var needsColony = new ColonySimulation();
+        var needsWorker = needsColony.Workers[0];
+        var liveCitizen = needsColony.CitizenForWorker(needsWorker.Id);
+        Check(liveCitizen != null, "each visible colonist must have a live citizen-needs agent");
+        needsWorker.Hunger = 79f;
+        int foodBeforeNeeds = needsColony.ResourceCount(ResourceKind.Food);
+        for (int i = 0; i < 400; i++) needsColony.Step(0.1f);
+        Check(needsColony.ResourceCount(ResourceKind.Food) < foodBeforeNeeds &&
+              needsWorker.Hunger < 79f,
+            "the live citizen system must move toward stockpiled food, consume it, and synchronize hunger back to the visible colonist");
+        Check(liveCitizen!.Happiness >= 0 && liveCitizen.Happiness <= 100,
+            "the live colony HUD must receive bounded citizen mood from the ecosystem");
+
+        var gardenColony = new ColonySimulation();
+        int gardenFoodBefore = gardenColony.ResourceCount(ResourceKind.Food);
+        int liveGardenId = gardenColony.PlaceObjectBlueprint(PlaceableKind.Garden, 24, 17);
+        Check(liveGardenId > 0, "the live ecosystem integration fixture should accept a garden blueprint");
+        for (int i = 0; i < 2500; i++) gardenColony.Step(0.1f);
+        Check(gardenColony.Objects.Single(item => item.Id == liveGardenId).IsBuilt,
+            "a garden must still use the existing construction scheduler before becoming operational");
+        Check(gardenColony.ResourceCount(ResourceKind.Food) > gardenFoodBefore,
+            "a completed garden must register with the live job broker and deliver reserved food output into colony inventory");
+
         var validationColony = new ColonySimulation();
         Check(validationColony.DesignTileConstruction(5, 5, ArchitectureKind.Wall),
             "validation fixture should contain a tile construction order");
