@@ -7,6 +7,7 @@
 [Uu]ser[Ss]ettings/
 MemoryCaptures/
 *.csproj
+!GondwanaGame/GondwanaGame.csproj
 *.sln
 *.suo
 *.user
