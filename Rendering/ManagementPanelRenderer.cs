@@ -104,10 +104,10 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 }
                 Section(c, "Processed industry materials", 254, 420);
                 int mi = 450;
-                var materialNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
+                var resourceMaterialNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
                 foreach (var material in colony.IndustryInventory.OrderBy(item => item.Key, StringComparer.Ordinal).Take(5))
                 {
-                    Row(c, materialNames.GetValueOrDefault(material.Key, material.Key), $"Stored {material.Value}", 254, mi);
+                    Row(c, resourceMaterialNames.GetValueOrDefault(material.Key, material.Key), $"Stored {material.Value}", 254, mi);
                     mi += 35;
                 }
                 if (colony.IndustryInventory.Count == 0)
@@ -156,13 +156,13 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 else
                     Note(c, "Build and complete a Workbench before queuing production.", 254, 350, 365);
                 Section(c, "Recent production orders", 254, 408);
-                int oy = 436;
+                int productionOrderY = 436;
                 foreach (var order in colony.ProductionOrders.TakeLast(4).Reverse())
                 {
                     string name = order.RecipeId == null ? "Components" :
                         ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Name ?? order.RecipeId;
-                    Row(c, name, order.Complete ? "COMPLETE" : $"{order.WorkDone:0.0} / {order.WorkRequired:0.0} work", 254, oy);
-                    oy += 39;
+                    Row(c, name, order.Complete ? "COMPLETE" : $"{order.WorkDone:0.0} / {order.WorkRequired:0.0} work", 254, productionOrderY);
+                    productionOrderY += 39;
                 }
                 if (colony.ProductionOrders.Count == 0)
                     Note(c, "No production orders yet. Select a recipe on the right.", 254, 438, 365);
