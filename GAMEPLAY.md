@@ -58,3 +58,38 @@ Press **M** to move between the colony and a separate continental strategy view.
 - World state is saved to `~/.local/share/kor-eternal-frontier/world-map.json` (or under `$XDG_DATA_HOME`) after diplomacy and world-turn actions.
 
 The Blight spreads across eligible neighboring territories on world turns, gradually raising pressure before consuming a territory. The current implementation is a foundation slice: territory-level diplomacy, local development and faction AI are deliberately simpler than the intended final simulation. Full treaties between every faction, wars/alliances, trade-route logistics, regional armies, settlement-to-colony transitions, and synchronized world-map saves inside the unified F5/F9 session remain follow-up work.
+
+
+## Mouse-first menus and submenus
+
+The command UI now provides mouse-accessible menus and nested submenus; keyboard shortcuts remain optional conveniences rather than requirements for the core command set.
+
+- **Colony**: switch between colony and strategic world map, pause/resume, and open camera controls.
+- **Colony → Camera controls**: pan the view and zoom in/out using clickable menu items.
+- **Build → Architecture**: choose Wall, Floor, Path, Door, or Conduit, then left-click a tile to place the construction order.
+- **Build → Buildings & objects**: choose Workbench, Sleeping Pod, Storage Rack, Generator, or Garden, then left-click a tile to place the blueprint.
+- **Empire**: advance the strategic turn, open logistics, or claim a selected frontier territory while on the world map.
+- **Empire → Logistics**: import strategic supplies or export colony resources.
+- **Diplomacy**: improve relations, offer a non-aggression pact, or propose trade while on the strategic world map.
+- **Orders**: select a colonist, open Orders → Move / gather order mode, then left-click the destination or a resource deposit. Right-click remains an optional shortcut.
+- **Game**: save or load the combined colony/campaign session.
+- **Mouse interaction**: left-click to select a colonist, inspect a territory, or place a selected construction/blueprint; right-click a colony tile to issue a movement/gather order to the selected colonist.
+
+All core management actions have visible menu paths. Context-specific actions that require the world map explain when they are unavailable from the colony view. Closing the game remains available through the operating system's window controls.
+
+## Mouse-first colony management dashboard
+
+The **Manage** command-bar entry opens a nine-section dashboard over the playfield. Its left navigation keeps management categories consistently accessible while the main area displays current simulation data.
+
+- **Overview** — local population, pending work, construction completion, storage, campaign stockpiles, controlled regions and recent simulation events.
+- **Population** — colonist roster, hunger, current task, carried cargo and selection state.
+- **Resources** — every local inventory resource, remaining resource deposits, storage capacity, plus import/export actions.
+- **Construction** — live architecture/object counts and status, recent tile orders, and direct mouse buttons for wall, floor, path, door, conduit, workbench, sleeping pod, storage rack, generator and garden placement.
+- **Production** — workstation status and direct queue buttons for the currently implemented component recipe.
+- **Research** — strategic Ward Protocol status, costs, prerequisites and a clickable research action.
+- **Statistics** — settlement activity, needs currently simulated, inventory/deposit totals, strategic holdings, army readiness and Blight metrics.
+- **Diplomacy** — faction relationship overview and clickable relation, non-aggression and trade actions.
+- **Territories** — selected world territory intelligence, Blight pressure, settlement/development, treasury and claim/turn actions.
+
+The dashboard is a first management surface built around existing simulation state, not a claim that every desired system already exists. Current implemented research is one strategic project; production has one recipe; colonists have basic hunger/task/cargo state rather than full skills, health, mood, schedules or needs; the world and regional campaign remain separate layers. Future work should expand simulation systems and add corresponding data/action pages without replacing the mouse-first navigation pattern.
+
