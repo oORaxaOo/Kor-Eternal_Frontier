@@ -6,7 +6,7 @@ namespace KorTheBlight.Rendering;
 /// <summary>
 /// Mouse-first command surface. Every keyboard shortcut has a discoverable menu equivalent.
 /// Menu IDs: 0 closed, 1 Colony, 2 Build, 3 Empire, 4 Diplomacy, 5 Game,
-/// 6 Architecture submenu, 7 Objects submenu, 8 Camera submenu, 9 Logistics submenu.
+/// 6 Architecture submenu, 7 Objects submenu, 8 Camera submenu, 9 Logistics submenu, 10 Orders, 11 Management.
 /// </summary>
 internal sealed class MouseMenuRenderer : IDisposable
 {
@@ -14,7 +14,7 @@ internal sealed class MouseMenuRenderer : IDisposable
     private static readonly (string Label, float X, float Width, int Id)[] TopMenus =
     [
         ("Colony", 10, 100, 1), ("Build", 118, 100, 2), ("Empire", 226, 100, 3),
-        ("Diplomacy", 334, 120, 4), ("Game", 462, 100, 5), ("Orders", 570, 100, 10)
+        ("Diplomacy", 334, 120, 4), ("Game", 462, 100, 5), ("Orders", 570, 100, 10), ("Manage", 680, 100, 11)
     ];
     private static readonly string[] ColonyItems = ["Strategic World Map", "Pause / Resume", "Camera controls  ›"];
     private static readonly string[] BuildItems = ["Architecture  ›", "Buildings & objects  ›", "Cancel current placement"];
