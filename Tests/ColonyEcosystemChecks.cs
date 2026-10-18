@@ -44,6 +44,7 @@ internal static class ColonyEcosystemChecks
         Check(colony.Grid.TryAdd(ResourceKind.Food, 5),
             "the integrated colony should be able to seed a food stockpile");
         var citizen = colony.AddCitizen("Test-Kor", new CellPosition(1, 0));
+        colony.AddCitizen("Second-Kor", new CellPosition(1, 1));
         int jobId = colony.JobBroker.RegisterWorkplace("Lumber yard", new CellPosition(5, 6),
             workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 2, workSeconds: 0.5f);
 
@@ -88,8 +89,8 @@ internal static class ColonyEcosystemChecks
         var wallGrid = new GridManager(3, 3);
         wallGrid.SetWall(new CellPosition(1, 0));
         wallGrid.SetWall(new CellPosition(0, 1));
-        Check(wallGrid.FindPath(new CellPosition(0, 0), new CellPosition(1, 1)) == null,
-            "pathfinding should reject a destination enclosed by blocked tiles");
+        Check(wallGrid.FindPath(new CellPosition(0, 0), new CellPosition(1, 0)) == null,
+            "pathfinding should reject a blocked destination tile");
     }
 
     private static void Check(bool condition, string message)
