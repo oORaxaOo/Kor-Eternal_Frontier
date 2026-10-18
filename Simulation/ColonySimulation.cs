@@ -133,6 +133,7 @@ internal sealed class ColonySimulation
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
     public int InventoryFreeCapacity => Math.Max(0, InventoryCapacity - InventoryUsed);
+    private int UnreservedInventoryFreeCapacity => Math.Max(0, InventoryFreeCapacity - PendingProductionOutputCapacity);
 
     public ColonySimulation()
     {
@@ -386,7 +387,7 @@ internal sealed class ColonySimulation
     public int AddExternalResource(ResourceKind resource, int requested)
     {
         if (requested <= 0 || !Enum.IsDefined(resource)) return 0;
-        int accepted = Math.Min(requested, InventoryFreeCapacity);
+        int accepted = Math.Min(requested, UnreservedInventoryFreeCapacity);
         if (accepted <= 0) return 0;
         AddResource(resource, accepted);
         Message = $"External logistics delivered {accepted} {resource}.";
@@ -585,9 +586,9 @@ internal sealed class ColonySimulation
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
-            if (InventoryFreeCapacity <= 0)
+            if (UnreservedInventoryFreeCapacity <= 0)
             {
-                Message = "Colony storage is full. Build or complete additional storage before gathering more resources.";
+                Message = "Colony storage is full or reserved for active production. Build storage or let production finish before gathering more resources.";
                 return;
             }
             if (!TryFindPath(worker, deposit.Cell, out var route))
@@ -733,7 +734,7 @@ internal sealed class ColonySimulation
 
     private void TryAssignGatherForShortage(ColonyWorker worker)
     {
-        if (InventoryFreeCapacity <= 0) return;
+        if (UnreservedInventoryFreeCapacity <= 0) return;
         var required = new HashSet<ResourceKind>();
         foreach (var order in _tileOrders.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
             foreach (var need in TileCost(order.Target))
@@ -753,7 +754,7 @@ internal sealed class ColonySimulation
 
     private void AssignDelivery(ColonyWorker worker)
     {
-        if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0 || InventoryFreeCapacity <= 0) return;
+        if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0 || UnreservedInventoryFreeCapacity <= 0) return;
         var drop = FindStockpileDropoff();
         if (!drop.HasValue || !TryFindPath(worker, drop.Value, out var route)) return;
         worker.Task = new WorkerTask(ColonyTaskKind.Deliver, drop.Value, route);
@@ -835,7 +836,7 @@ internal sealed class ColonySimulation
             return;
         }
 
-        int delivered = Math.Min(worker.CarriedAmount, InventoryFreeCapacity);
+        int delivered = Math.Min(worker.CarriedAmount, UnreservedInventoryFreeCapacity);
         if (delivered > 0)
         {
             AddResource(worker.CarriedResource.Value, delivered);
