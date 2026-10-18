@@ -1,3 +1,4 @@
+using System.Text.Json;
 using KorTheBlight.Simulation;
 using KorTheBlight.Rendering;
 
@@ -94,11 +95,25 @@ internal static class ColonyChecks
             "worker labor must create the stage-specific stable-ID output from the selected recipe");
         Check(colony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
             "completed production orders must preserve their catalogue recipe identity");
+        int legacyResourceTotal = Enum.GetValues<ResourceKind>().Sum(resource => colony.ResourceCount(resource));
+        Check(colony.InventoryUsed == legacyResourceTotal + 2,
+            "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
 
         Check(colony.DesignTileConstruction(19, 14, ArchitectureKind.Path), "a new path order should be accepted before saving");
         colony.Step(0.1f);
         string json = ColonySaveService.Serialize(colony);
         var restored = ColonySaveService.Deserialize(json);
+        var legacySnapshot = colony.CaptureSnapshot();
+        legacySnapshot.SchemaVersion = 1;
+        legacySnapshot.Materials.Clear();
+        foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
+        string legacyJson = JsonSerializer.Serialize(legacySnapshot)
+            .Replace("\\"Materials\\":[],", "", StringComparison.Ordinal)
+            .Replace("\\"RecipeId\\":null,", "", StringComparison.Ordinal);
+        var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
+        Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
+              migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0,
+            "schema v1 saves without stable-ID materials or recipe IDs must remain loadable");
         Check(restored.Workers.Count == colony.Workers.Count, "save/load must preserve the colony population");
         Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
