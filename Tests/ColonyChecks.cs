@@ -137,6 +137,20 @@ internal static class ColonyChecks
         Check(gardenColony.ResourceCount(ResourceKind.Food) > gardenFoodBefore,
             "a completed garden must register with the live job broker and deliver reserved food output into colony inventory");
 
+        var expandedStorageColony = new ColonySimulation();
+        int expandedRackId = expandedStorageColony.PlaceObjectBlueprint(PlaceableKind.StorageRack, 23, 15);
+        Check(expandedRackId > 0, "expanded-storage fixture should accept a rack blueprint");
+        for (int i = 0; i < 1200; i++) expandedStorageColony.Step(0.1f);
+        Check(expandedStorageColony.Objects.Single(item => item.Id == expandedRackId).IsBuilt,
+            "the storage rack must finish construction before its grid capacity is enabled");
+        int foodBeforeLargeImport = expandedStorageColony.ResourceCount(ResourceKind.Food);
+        int acceptedLargeImport = expandedStorageColony.AddExternalResource(ResourceKind.Food, 130);
+        Check(acceptedLargeImport > 0 && foodBeforeLargeImport + acceptedLargeImport > ColonySimulation.BaseStockpileCapacity,
+            "completed rack storage must expand bounded grid capacity beyond the starter stockpile");
+        expandedStorageColony.Step(0.1f);
+        Check(expandedStorageColony.ResourceCount(ResourceKind.Food) == foodBeforeLargeImport + acceptedLargeImport,
+            "expanded food inventory must synchronize into the grid without loss or overflow");
+
         var validationColony = new ColonySimulation();
         Check(validationColony.DesignTileConstruction(5, 5, ArchitectureKind.Wall),
             "validation fixture should contain a tile construction order");
