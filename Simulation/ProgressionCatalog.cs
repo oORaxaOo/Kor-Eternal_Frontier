@@ -57,7 +57,7 @@ internal static class ProgressionCatalog
         ("research", "Research Instruments", ["Sample Glassware", "Spectrometer", "Lab Instruments", "Sensor Array", "Precision Scanner", "Quantum Sensor", "Field Analyzer", "Anomaly Observatory"], "components", "research_parts"),
         ("water", "Water Treatment", ["Rough Filtration", "Potable Water", "Mineral Balancing", "Membrane Filtration", "Closed-Loop Water", "Molecular Purification", "Atmospheric Recovery", "Adaptive Hydrology"], "water", "treated_water"),
         ("textiles", "Technical Textiles", ["Plant Fibre", "Woven Cloth", "Reinforced Fabric", "Insulation Weave", "Smart Fabric", "Armoured Fibre", "Adaptive Textile", "Molecular Weave"], "biomass", "technical_fabric"),
-        ("glass", "Glassworks", ["Glass Cullets", "Industrial Glass", "Optical Glass", "Ceramic Glass", "Pressure Glass", "Radiation Glass", "Self-Healing Glass", "Adaptive Transparent Alloy"], "stone", "glass),
+        ("glass", "Glassworks", ["Glass Cullets", "Industrial Glass", "Optical Glass", "Ceramic Glass", "Pressure Glass", "Radiation Glass", "Self-Healing Glass", "Adaptive Transparent Alloy"], "stone", "glass"),
         ("optics", "Optics", ["Ground Lenses", "Optical Lenses", "Thermal Optics", "Sensor Optics", "Laser Optics", "Photonic Lens", "Quantum Optics", "Adaptive Optics"], "crystal", "optical_parts"),
         ("aerospace", "Aerospace Fabrication", ["Lightweight Frames", "Pressure Hulls", "Flight Controls", "Heat Shields", "High-G Structures", "Magnetic Thrusters", "Adaptive Hulls", "Field-Shift Assemblies"], "alloy", "aerospace_parts"),
         ("biochemistry", "Biochemistry", ["Culture Medium", "Enzyme Blend", "Bio-Reagents", "Synthetic Tissue", "Programmable Enzymes", "Regenerative Matrix", "Adaptive Biomass", "Closed-Loop Biocatalyst"], "biomass", "bioreagents"),
@@ -252,8 +252,22 @@ internal static class ProgressionCatalog
                 return false;
             }
 
+        var resourceIds = Resources.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var building in Buildings)
-            if (!researchIds.Contains(building.UnlockResearchId))
+            if (building.Inputs.Keys.Any(id => !resourceIds.Contains(id)))
+            {
+                error = $"Building {building.Id} references an unknown construction material."; 
+                return false;
+            }
+        foreach (var recipe in Recipes)
+            if (recipe.Inputs.Keys.Concat(recipe.Outputs.Keys).Any(id => !resourceIds.Contains(id)))
+            {
+                error = $"Recipe {recipe.Id} references an unknown material."; 
+                return false;
+            }
+
+        foreach (var building in Buildings)
+            if (!researchIds.Contains(building.UnlockResearchId)
             {
                 error = $"Building {building.Id} has an unknown research unlock.";
                 return false;
