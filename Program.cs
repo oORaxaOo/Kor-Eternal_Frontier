@@ -240,19 +240,24 @@ internal static class Program
                                     }
                                     break;
                                 case 4:
-                                    if (logicalMouse.Y >= 194 && logicalMouse.Y < 409 && logicalMouse.X >= 670 && logicalMouse.X < 1046)
+                                    if (logicalMouse.Y >= 194 && logicalMouse.Y < 366 && logicalMouse.X >= 670 && logicalMouse.X < 1046)
                                     {
-                                        int col = logicalMouse.X < 860 ? 0 : 1;
+                                        int col = Math.Clamp((int)((logicalMouse.X - 670) / 125), 0, 2);
                                         int row = (int)((logicalMouse.Y - 194) / 43);
-                                        int action = col == 0 ? row : row + 5;
+                                        int action = row * 3 + col;
                                         if (action >= 0 && action < 5)
                                         {
                                             architectureMode = action switch { 0 => ArchitectureKind.Wall, 1 => ArchitectureKind.Floor, 2 => ArchitectureKind.Path, 3 => ArchitectureKind.Door, _ => ArchitectureKind.Conduit };
                                             placingObject = false; managementOpen = false;
                                         }
-                                        else if (action >= 5 && action < 10)
+                                        else if (action >= 5 && action < 12)
                                         {
-                                            objectType = action switch { 5 => PlaceableKind.Workbench, 6 => PlaceableKind.SleepingPod, 7 => PlaceableKind.StorageRack, 8 => PlaceableKind.Generator, _ => PlaceableKind.Garden };
+                                            objectType = action switch
+                                            {
+                                                5 => PlaceableKind.Workbench, 6 => PlaceableKind.SleepingPod, 7 => PlaceableKind.StorageRack,
+                                                8 => PlaceableKind.Generator, 9 => PlaceableKind.Garden, 10 => PlaceableKind.Habitat,
+                                                _ => PlaceableKind.Stockpile
+                                            };
                                             placingObject = true; architectureMode = ArchitectureKind.None; managementOpen = false;
                                         }
                                     }
@@ -339,7 +344,7 @@ internal static class Program
                                         else activeMenu = 2;
                                         break;
                                     case 7:
-                                        if (index < 5) { objectType = index switch { 0 => PlaceableKind.Workbench, 1 => PlaceableKind.SleepingPod, 2 => PlaceableKind.StorageRack, 3 => PlaceableKind.Generator, _ => PlaceableKind.Garden }; placingObject = true; architectureMode = ArchitectureKind.None; activeMenu = 0; }
+                                        if (index < 7) { objectType = index switch { 0 => PlaceableKind.Workbench, 1 => PlaceableKind.SleepingPod, 2 => PlaceableKind.StorageRack, 3 => PlaceableKind.Generator, 4 => PlaceableKind.Garden, 5 => PlaceableKind.Habitat, _ => PlaceableKind.Stockpile }; placingObject = true; architectureMode = ArchitectureKind.None; activeMenu = 0; }
                                         else activeMenu = 2;
                                         break;
                                     case 8:
