@@ -399,7 +399,7 @@ internal sealed class ColonySimulation
         }
         foreach (var pair in _gardenJobsByObject.ToArray())
         {
-            if (InventoryFreeCapacity > grid.ReservedCount(ResourceKind.Food)) continue;
+            if (InventoryFreeCapacity > 0 && InventoryFreeCapacity >= grid.ReservedCount(ResourceKind.Food)) continue;
             _ecosystem.RemoveWorkplace(pair.Value);
             _gardenJobsByObject.Remove(pair.Key);
         }
