@@ -907,7 +907,7 @@ internal sealed class ColonySimulation
             Message = "Production is waiting for storage space before it can deliver the finished goods.";
             return;
         }
-        order.WorkDone += deltaSeconds * workRate;
+        order.WorkDone = Math.Min(order.WorkRequired, order.WorkDone + deltaSeconds * workRate);
         if (order.WorkDone < order.WorkRequired) return;
         order.Complete = true;
         order.Assigned = false;
