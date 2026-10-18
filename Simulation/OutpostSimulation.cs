@@ -4,7 +4,6 @@ namespace KorTheBlight.Simulation;
 internal sealed class OutpostSimulation
 {
     public const int Width = 13, Height = 9;
-    public const float TileWidth = 54, TileHeight = 27;
     public const int BaseX = 8, BaseY = 5;
     private readonly byte[,] _blight = new byte[Width, Height];
     private readonly bool[,] _blocked = new bool[Width, Height];
@@ -40,6 +39,7 @@ internal sealed class OutpostSimulation
     public IReadOnlyList<Purifier> Purifiers => _purifiers;
     public byte BlightAt(int x, int y) => InBounds(x, y) ? _blight[x, y] : (byte)0;
     public bool BlockedAt(int x, int y) => !InBounds(x, y) || _blocked[x, y] || (x == BaseX && y == BaseY) || _purifiers.Any(p => (int)p.X == x && (int)p.Y == y);
+    public bool RockAt(int x, int y) => InBounds(x, y) && _blocked[x, y];
     public void SetMessage(string message) => Message = message;
 
     public OutpostSimulation(ScenarioBalance? balance = null, int? startingAlloy = null, int? startingSupplies = null, int guardianDamage = 24, int seed = 0)
@@ -56,35 +56,19 @@ internal sealed class OutpostSimulation
         _hostiles.Add(new BlightEnemy(spawn.Item1, spawn.Item2));
     }
 
-    public static (float X, float Y) TileCenter(int x, int y, float cameraX = 0, float cameraY = 0, float zoom = 1)
+    public bool SelectWorker(float worldX, float worldY)
     {
-        float cx = 550 + cameraX, cy = 350 + cameraY;
-        return (cx + (x - y) * TileWidth * zoom / 2f, cy + (x + y - 8) * TileHeight * zoom / 2f);
-    }
-
-    public static (float X, float Y) ScreenToTile(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
-    {
-        float dx = (sx - 550 - cameraX) / (TileWidth * zoom / 2f);
-        float dy = (sy - 350 - cameraY) / (TileHeight * zoom / 2f);
-        return ((dx + dy) / 2f + 4f, (dy - dx) / 2f + 4f);
-    }
-
-    public bool SelectWorker(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
-    {
-        var p = WorkerScreen(cameraX, cameraY, zoom);
-        Selected = MathF.Sqrt(MathF.Pow(sx - p.X, 2) + MathF.Pow(sy - p.Y, 2)) <= 24;
+        Selected = Distance(worldX, worldY, WorkerX, WorkerY) <= 0.55f;
         _guardianSelected = false;
         if (Selected) Message = "Worker selected. Right-click a deposit to gather or ground to move.";
         return Selected;
     }
 
-    public bool SelectUnit(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
+    public bool SelectUnit(float worldX, float worldY)
     {
-        var worker = WorkerScreen(cameraX, cameraY, zoom);
-        var guardian = UnitScreen(GuardianX, GuardianY, cameraX, cameraY, zoom);
-        float workerDistance = Distance(sx, sy, worker.X, worker.Y);
-        float guardianDistance = Distance(sx, sy, guardian.X, guardian.Y);
-        if (Math.Min(workerDistance, guardianDistance) > 26)
+        float workerDistance = Distance(worldX, worldY, WorkerX, WorkerY);
+        float guardianDistance = Distance(worldX, worldY, GuardianX, GuardianY);
+        if (Math.Min(workerDistance, guardianDistance) > 0.55f)
         {
             Selected = false;
             return false;
@@ -95,25 +79,10 @@ internal sealed class OutpostSimulation
         return true;
     }
 
-    public (float X, float Y) WorkerScreen(float cameraX = 0, float cameraY = 0, float zoom = 1)
-    {
-        return UnitScreen(WorkerX, WorkerY, cameraX, cameraY, zoom);
-    }
-
-    public (float X, float Y) GuardianScreen(float cameraX = 0, float cameraY = 0, float zoom = 1) => UnitScreen(GuardianX, GuardianY, cameraX, cameraY, zoom);
-    public static (float X, float Y) WorldScreen(float x, float y, float cameraX = 0, float cameraY = 0, float zoom = 1) => UnitScreen(x, y, cameraX, cameraY, zoom);
-
-    private static (float X, float Y) UnitScreen(float x, float y, float cameraX, float cameraY, float zoom)
-    {
-        float cx = 550 + cameraX, cy = 350 + cameraY;
-        return (cx + (x - y) * TileWidth * zoom / 2f, cy + (x + y - 8) * TileHeight * zoom / 2f);
-    }
-
-    public void Command(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
+    public void Command(float worldX, float worldY)
     {
         if (!Selected || Won || Lost) return;
-        var tile = ScreenToTile(sx, sy, cameraX, cameraY, zoom);
-        int x = (int)MathF.Round(tile.X), y = (int)MathF.Round(tile.Y);
+        int x = (int)MathF.Floor(worldX), y = (int)MathF.Floor(worldY);
         if (!InBounds(x, y) || BlockedAt(x, y)) { Message = "Lilith: That route is blocked."; return; }
         if (_guardianSelected)
         {
@@ -126,11 +95,10 @@ internal sealed class OutpostSimulation
         else Message = "Worker moving to the marked tile.";
     }
 
-    public void PlacePurifier(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
+    public void PlacePurifier(float worldX, float worldY)
     {
         if (Won || Lost) return;
-        var tile = ScreenToTile(sx, sy, cameraX, cameraY, zoom);
-        int x = (int)MathF.Floor(tile.X), y = (int)MathF.Floor(tile.Y);
+        int x = (int)MathF.Floor(worldX), y = (int)MathF.Floor(worldY);
         if (!InBounds(x, y) || BlockedAt(x, y) || ((x == 2 && y == 4) || (x == 10 && y == 3)))
         { Message = "Lilith: Purifier placement is obstructed."; return; }
         if (Alloy < _balance.PurifierAlloyCost || Supplies < _balance.PurifierSuppliesCost)

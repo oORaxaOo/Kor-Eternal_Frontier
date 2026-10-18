@@ -90,13 +90,14 @@ internal static class Program
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
+                var worldMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
                 bool left = (buttons & Sdl.ButtonLeftMask) != 0, right = (buttons & Sdl.ButtonRightMask) != 0;
                 if (left && !wasLeft)
                 {
-                    if (buildMode) { simulation.PlacePurifier(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom); buildMode = false; }
-                    else simulation.SelectUnit(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                    if (buildMode) { simulation.PlacePurifier(worldMouse.X, worldMouse.Y); buildMode = false; }
+                    else simulation.SelectUnit(worldMouse.X, worldMouse.Y);
                 }
-                if (right && !wasRight) simulation.Command(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                if (right && !wasRight) simulation.Command(worldMouse.X, worldMouse.Y);
                 wasLeft = left; wasRight = right;
 
                 engine.Tick();

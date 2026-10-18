@@ -1,5 +1,6 @@
 using KorTheBlight.Simulation;
 using KorTheBlight.Campaign;
+using KorTheBlight.Rendering;
 
 namespace KorTheBlight.Tests;
 
@@ -22,6 +23,15 @@ internal static class ScenarioChecks
         }
         finally { File.Delete(invalidConfig); }
 
+        var screenCenter = OrthogonalGridProjection.TileCenter(5, 3);
+        var worldCenter = OrthogonalGridProjection.ScreenToWorld(screenCenter.X, screenCenter.Y);
+        Require(MathF.Abs(worldCenter.X - 5.5f) < 0.001f && MathF.Abs(worldCenter.Y - 3.5f) < 0.001f,
+            "top-down tile centers must map back to the center of the same grid cell");
+        var eastCenter = OrthogonalGridProjection.TileCenter(6, 3);
+        Require(MathF.Abs((eastCenter.X - screenCenter.X) - OrthogonalGridProjection.TileSize) < 0.001f &&
+                MathF.Abs(eastCenter.Y - screenCenter.Y) < 0.001f,
+            "moving one tile east must move by one horizontal square tile only");
+
         var first = new OutpostSimulation();
         var second = new OutpostSimulation();
         for (int i = 0; i < 1800; i++) { first.Step(.1f); second.Step(.1f); }
@@ -35,30 +45,29 @@ internal static class ScenarioChecks
 
         var uncontrolled = new OutpostSimulation();
         var contained = new OutpostSimulation();
-        var purifierSite = OutpostSimulation.TileCenter(2, 6);
+        var purifierSite = (X: 2.5f, Y: 6.5f);
         contained.PlacePurifier(purifierSite.X, purifierSite.Y);
         for (int i = 0; i < 250; i++) { uncontrolled.Step(.1f); contained.Step(.1f); }
         Require(contained.BlightAt(1, 7) < uncontrolled.BlightAt(1, 7), "completed purifier should cleanse nearby infected terrain");
 
         var economy = new OutpostSimulation();
-        var worker = economy.WorkerScreen();
-        Require(economy.SelectWorker(worker.X, worker.Y), "worker must be selectable at its starting position");
-        var deposit = OutpostSimulation.TileCenter(2, 4);
+        Require(economy.SelectWorker(economy.WorkerX, economy.WorkerY), "worker must be selectable at its starting position");
+        var deposit = (X: 2.5f, Y: 4.5f);
         economy.Command(deposit.X, deposit.Y);
         for (int i = 0; i < 40; i++) economy.Step(.1f);
         Require(economy.Alloy > 140, "worker should gather alloy at the salvage deposit");
 
         int alloyBefore = economy.Alloy, suppliesBefore = economy.Supplies;
-        var commandSite = OutpostSimulation.TileCenter(OutpostSimulation.BaseX, OutpostSimulation.BaseY);
+        var commandSite = (X: OutpostSimulation.BaseX + 0.5f, Y: OutpostSimulation.BaseY + 0.5f);
         economy.PlacePurifier(commandSite.X, commandSite.Y);
         Require(economy.Alloy == alloyBefore && economy.Supplies == suppliesBefore, "blocked placement must not charge resources");
 
-        var buildSite = OutpostSimulation.TileCenter(2, 6);
+        var buildSite = (X: 2.5f, Y: 6.5f);
         economy.PlacePurifier(buildSite.X, buildSite.Y);
         Require(economy.Alloy == alloyBefore - 80 && economy.Supplies == suppliesBefore - 40, "valid construction should charge its cost");
         for (int i = 0; i < 250; i++) economy.Step(.1f);
         Require(economy.CompletedPurifiers == 1, "worker should complete a purifier when sent to its foundation");
-        var secondSite = OutpostSimulation.TileCenter(3, 6);
+        var secondSite = (X: 3.5f, Y: 6.5f);
         economy.PlacePurifier(secondSite.X, secondSite.Y);
         for (int i = 0; i < 250; i++) economy.Step(.1f);
         Require(economy.Won, "two completed purifiers should satisfy the containment objective");
