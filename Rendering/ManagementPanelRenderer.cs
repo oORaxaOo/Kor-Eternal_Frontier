@@ -102,12 +102,22 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     Row(c, resource.ToString(), $"Stored {colony.ResourceCount(resource)}  |  Nearby deposits {deposits}", 254, ry);
                     ry += 39;
                 }
+                Section(c, "Processed industry materials", 254, 420);
+                int mi = 450;
+                var materialNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
+                foreach (var material in colony.IndustryInventory.OrderBy(item => item.Key, StringComparer.Ordinal).Take(5))
+                {
+                    Row(c, materialNames.GetValueOrDefault(material.Key, material.Key), $"Stored {material.Value}", 254, mi);
+                    mi += 35;
+                }
+                if (colony.IndustryInventory.Count == 0)
+                    Note(c, "Processed materials will appear here as recipes finish.", 254, 450, 380);
                 Section(c, "Logistics actions", 670, 164);
                 ActionRow(c, "Import strategic supplies → local Food / Alloy", 670, 194);
                 ActionRow(c, "Export local Food / Alloy → empire stock", 670, 239);
                 Pair(c, "Storage used", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 670, 300);
                 Pair(c, "Storage available", colony.InventoryFreeCapacity.ToString(), 670, 326);
-                Note(c, "Storage capacity comes from completed Stockpile and Storage Rack objects.", 670, 372, 365);
+                Note(c, "Storage is shared by legacy resources and every stable-ID industry material.", 670, 372, 365);
                 break;
             case 4:
                 Section(c, "Construction & blueprints", 254, 164);
@@ -132,17 +142,47 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 }
                 break;
             case 5:
-                Section(c, "Workstations", 254, 164);
+                Section(c, "Workstations & orders", 254, 164);
                 int py = 194;
-                foreach (var bench in colony.Objects.Where(o => o.Kind == PlaceableKind.Workbench))
+                foreach (var bench in colony.Objects.Where(o => o.Kind == PlaceableKind.Workbench).Take(3))
                 {
-                    Row(c, $"Workbench #{bench.Id} • {bench.Status}", $"Position {bench.Origin.X},{bench.Origin.Y} • {(bench.IsBuilt ? "Ready" : "Construction required")}", 254, py);
-                    if (bench.IsBuilt) ActionRow(c, $"Queue component production at #{bench.Id}", 670, py, 365);
-                    py += 48;
+                    Row(c, $"Workbench #{bench.Id} • {bench.Status}",
+                        $"Position {bench.Origin.X},{bench.Origin.Y} • {(bench.IsBuilt ? "Ready" : "Construction required")}", 254, py);
+                    py += 42;
                 }
-                if (!colony.Objects.Any(o => o.Kind == PlaceableKind.Workbench))
-                    Note(c, "No workbench blueprint exists yet. Use Construction to place one.", 254, 198, 760);
-                Note(c, "Current recipe: alloy + wood → components, completed by colonist labor. Recipe queues and other chains are future work.", 254, Math.Max(py + 14, 350), 790);
+                var firstBench = colony.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
+                if (firstBench != null)
+                    ActionRow(c, $"Queue legacy component batch at #{firstBench.Id}", 254, 350, 365);
+                else
+                    Note(c, "Build and complete a Workbench before queuing production.", 254, 350, 365);
+                Section(c, "Recent production orders", 254, 408);
+                int oy = 436;
+                foreach (var order in colony.ProductionOrders.TakeLast(4).Reverse())
+                {
+                    string name = order.RecipeId == null ? "Components" :
+                        ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Name ?? order.RecipeId;
+                    Row(c, name, order.Complete ? "COMPLETE" : $"{order.WorkDone:0.0} / {order.WorkRequired:0.0} work", 254, oy);
+                    oy += 39;
+                }
+                if (colony.ProductionOrders.Count == 0)
+                    Note(c, "No production orders yet. Select a recipe on the right.", 254, 438, 365);
+
+                Section(c, "Recipe queue • click to manufacture", 670, 164);
+                int recipeY = 194;
+                var names = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
+                foreach (var recipe in colony.ManagementRecipes)
+                {
+                    bool canQueue = colony.CanQueueRecipe(recipe.Id, out _);
+                    string inputs = string.Join(" + ", recipe.Inputs.Select(item =>
+                        $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
+                    string outputs = string.Join(" + ", recipe.Outputs.Select(item =>
+                        $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
+                    ActionRow(c, recipe.Name, 670, recipeY, 365);
+                    Note(c, $"{inputs} → {outputs} • {(canQueue ? "READY" : "MISSING INPUTS / STORAGE")}",
+                        670, recipeY + 27, 365);
+                    recipeY += 50;
+                }
+                Note(c, "Inputs are reserved when queued; colonists must walk to the Workbench and perform the work.", 670, 602, 365);
                 break;
             case 6:
                 Section(c, "Research projects", 254, 164);
@@ -208,7 +248,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Unit variants", ProgressionCatalog.Units.Count.ToString(), 254, 268);
                 Pair(c, "Production recipes", ProgressionCatalog.Recipes.Count.ToString(), 254, 294);
                 Pair(c, "Total linked definitions", ProgressionCatalog.TotalDefinitions.ToString(), 254, 320);
-                Note(c, "Large data catalogue foundation; entries are not yet wired into live inventory, queues or save migration.", 254, 362, 385);
+                Note(c, "Stable-ID material stock, live recipe queues and save/load support are now connected. Research unlocks and advanced extraction remain next.", 254, 362, 385);
                 Section(c, "Starter production chains", 670, 164);
                 int chainY = 194;
                 var materialNames = ProgressionCatalog.Resources.ToDictionary(r => r.Id, r => r.Name, StringComparer.Ordinal);
