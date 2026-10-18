@@ -49,7 +49,14 @@ internal static class CoreRules
         if (needs.Needs[NeedType.Food] != 1 || needs.Needs[NeedType.Work] != 1)
             throw new InvalidOperationException("Population needs should update deterministically on each simulation tick.");
 
-        Console.WriteLine("Core rules checks passed: inventory, reservations, transfers, jobs, production, and needs model.");
+        var schedulerWorker = colony.AddColonist("Scheduler", 5, 5);
+        var schedulerJob = colony.EnqueueJob(JobType.Build, "Build storage", 7, "alloy", 1);
+        if (JobScheduler.SelectBestJob(colony, schedulerWorker) is null)
+            throw new InvalidOperationException("The scheduler must pick a valid pending job for an eligible worker.");
+        if (schedulerJob.State != JobState.Reserved || schedulerWorker.CurrentJobId != schedulerJob.Id)
+            throw new InvalidOperationException("The scheduler should assign the selected job and mark the worker as occupied.");
+
+        Console.WriteLine("Core rules checks passed: inventory, reservations, transfers, jobs, production, scheduler, and needs model.");
         return 0;
     }
 }
