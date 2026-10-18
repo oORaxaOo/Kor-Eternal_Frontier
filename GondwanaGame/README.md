@@ -6,7 +6,7 @@ KOR-ETERNAL FRONTIER is a small single-player RTS scenario prototype built with 
 
 The scenario includes an isometric battlefield, a worker and Guardian, right-click movement, deposit gathering, construction, automatic Guardian combat, a Blight creature that attacks the shelter, and a containment objective. Both units route around blocked tiles with a grid search. This remains a single-mission RTS prototype, not a full C&C-scale campaign or unit roster.
 
-The visuals use original Skia-drawn Kor structures, a worker, terrain, Blight, and a command-style resource and mission HUD. This is an early playable slice, not a finished campaign or a feature-complete RTS.
+The visuals use original SkiaSharp-drawn Kor structures, a worker, terrain, Blight, and a command-style resource and mission HUD. The wireframe foundation uses dark engineered surfaces, crimson structural contours, restrained gold highlights, and branching organic Blight lines. This is an early playable slice, not a finished colony simulation or a feature-complete RTS. The current wireframe change has passed the automated Release build and deterministic scenario checks; visual appearance still requires a desktop playtest.
 
 ## Platform and requirements
 
