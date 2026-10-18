@@ -1,3 +1,4 @@
+using KorTheBlight.Campaign;
 using KorTheBlight.Simulation;
 using SkiaSharp;
 
@@ -27,14 +28,14 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused)
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, CampaignSimulation campaign)
     {
         canvas.Clear(Background);
         DrawMap(canvas, simulation, cameraX, cameraY, zoom);
         DrawDeposits(canvas, simulation, cameraX, cameraY, zoom);
         DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
         DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, campaign);
     }
 
     private void DrawMap(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom)
@@ -186,7 +187,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool paused)
+        PlaceableKind objectType, bool placingObject, bool paused, CampaignSimulation campaign)
     {
         _fill.Color = Background;
         canvas.DrawRect(new SKRect(0, 0, 1100, 62), _fill);
@@ -225,8 +226,14 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"Storage: {simulation.InventoryUsed}/{simulation.InventoryCapacity}", 790, 263, SKTextAlign.Left, _normalFont, _text);
 
         _text.Color = Gold;
-        canvas.DrawText("POPULATION", 790, 277, SKTextAlign.Left, _headingFont, _text);
-        int row = 304;
+        canvas.DrawText("STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
+        _text.Color = TextColor;
+        canvas.DrawText($"Turn {campaign.State.Turn} | S {campaign.State.Supplies} A {campaign.State.Alloy}", 790, 309, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText($"E {campaign.State.Energy} | K {campaign.State.Knowledge} | Blight {campaign.State.Regions.Count(region => region.Owner == "Blight")}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+
+        _text.Color = Gold;
+        canvas.DrawText("POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
+        int row = 376;
         foreach (var worker in simulation.Workers)
         {
             _text.Color = simulation.SelectedWorkerId == worker.Id ? Gold : TextColor;
@@ -238,7 +245,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText("BUILD CONTROLS", 790, 447, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText("BUILD / CAMPAIGN", 790, 470, SKTextAlign.Left, _headingFont, _text);
         _text.Color = TextColor;
         canvas.DrawText("1 Wall  2 Floor  3 Path", 790, 472, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("4 Door  5 Conduit", 790, 491, SKTextAlign.Left, _smallFont, _text);
@@ -247,8 +254,9 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText("Left click design/select", 790, 548, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("Right click move/gather", 790, 567, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("WASD camera  +/- zoom", 790, 586, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Space pause  Esc cancel", 790, 605, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("F5 save  F9 load", 790, 624, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("Space pause  Esc cancel", 790, 585, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("T end turn  I import  E export", 790, 604, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("F5 save session  F9 load", 790, 623, SKTextAlign.Left, _smallFont, _text);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
