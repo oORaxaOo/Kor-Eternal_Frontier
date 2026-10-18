@@ -95,6 +95,8 @@ internal sealed class ColonySimulation
 {
     public const int Width = 40;
     public const int Height = 26;
+    public const int BaseStockpileCapacity = 120;
+    public const int StorageRackCapacity = 80;
     private const int CarryCapacity = 5;
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
@@ -121,6 +123,11 @@ internal sealed class ColonySimulation
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _objects.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _productionOrders.Count(x => !x.Complete);
+    public int InventoryUsed => _inventory.Values.Sum();
+    public int InventoryCapacity =>
+        _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
+        _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
+    public int InventoryFreeCapacity => Math.Max(0, InventoryCapacity - InventoryUsed);
 
     public ColonySimulation()
     {
@@ -441,6 +448,11 @@ internal sealed class ColonySimulation
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
+            if (InventoryFreeCapacity <= 0)
+            {
+                Message = "Colony storage is full. Build or complete additional storage before gathering more resources.";
+                return;
+            }
             if (!TryFindPath(worker, deposit.Cell, out var route))
             {
                 Message = "No route to that resource deposit.";
@@ -582,6 +594,7 @@ internal sealed class ColonySimulation
 
     private void TryAssignGatherForShortage(ColonyWorker worker)
     {
+        if (InventoryFreeCapacity <= 0) return;
         var required = new HashSet<ResourceKind>();
         foreach (var order in _tileOrders.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
             foreach (var need in TileCost(order.Target))
@@ -601,6 +614,7 @@ internal sealed class ColonySimulation
 
     private void AssignDelivery(ColonyWorker worker)
     {
+        if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0 || InventoryFreeCapacity <= 0) return;
         var drop = FindStockpileDropoff();
         if (!drop.HasValue || !TryFindPath(worker, drop.Value, out var route)) return;
         worker.Task = new WorkerTask(ColonyTaskKind.Deliver, drop.Value, route);
@@ -676,13 +690,30 @@ internal sealed class ColonySimulation
 
     private void CompleteDelivery(ColonyWorker worker)
     {
-        if (worker.CarriedResource.HasValue && worker.CarriedAmount > 0)
+        if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0)
         {
-            AddResource(worker.CarriedResource.Value, worker.CarriedAmount);
-            Message = $"{worker.Name} delivered {worker.CarriedAmount} {worker.CarriedResource.Value}.";
+            worker.Task = null;
+            return;
         }
-        worker.CarriedResource = null;
-        worker.CarriedAmount = 0;
+
+        int delivered = Math.Min(worker.CarriedAmount, InventoryFreeCapacity);
+        if (delivered > 0)
+        {
+            AddResource(worker.CarriedResource.Value, delivered);
+            worker.CarriedAmount -= delivered;
+        }
+
+        if (worker.CarriedAmount == 0)
+        {
+            worker.CarriedResource = null;
+            Message = $"{worker.Name} delivered {delivered} {worker.CarriedResource?.ToString() ?? "resources"}.";
+        }
+        else
+        {
+            Message = delivered == 0
+                ? "Colony storage is full; carried resources are waiting for storage space."
+                : $"{worker.Name} delivered {delivered}; {worker.CarriedAmount} remain carried until storage space is available.";
+        }
         worker.Task = null;
     }
 
@@ -728,7 +759,13 @@ internal sealed class ColonySimulation
             worker.Task = null;
             return;
         }
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        float workRate = worker.Hungry ? 0.5f : 1f;
+        if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < 1)
+        {
+            Message = "Production is waiting for storage space before it can deliver the completed component.";
+            return;
+        }
+        order.WorkDone += deltaSeconds * workRate;
         if (order.WorkDone < order.WorkRequired) return;
         order.Complete = true;
         order.Assigned = false;
