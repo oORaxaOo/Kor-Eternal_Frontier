@@ -16,21 +16,23 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - Real gather/carry/deliver trips that transfer resource from source deposit to inventory.
 - Individual per-tile architecture construction orders with costs, work progress, and completion state.
 - Footprint-based multi-tile object blueprints that remain unfinished until workers complete construction.
-- Inventory-based construction and production costs.
-- A functional production recipe: a completed workbench consumes alloy and wood and creates a component only after worker labor.
+- Inventory-based construction and production costs with shared storage capacity across legacy resources and stable-ID industry materials.
+- Live catalogue-driven recipe queues: a completed workbench reserves actual inputs, workers travel to the station, perform recipe work, and add stage-specific outputs.
+- Multi-stage intermediate material IDs persist through save/load; recipes reject missing inputs instead of generating free goods.
+- The original component recipe remains available alongside the catalogue recipes.
 - Minimal orthogonal top-down rendering.
 - Versioned local colony saves with structural validation and round-trip tests.
 - A separate deterministic strategic campaign model with regional development, research, turns, battle reconciliation, and save/load tests.
 
 ## Known gaps
 
-The strategic campaign and local colony are now connected through explicit logistics orders and a unified session save. Strategic Supplies transfer to local Food; Alloy transfers directly. Imports obey colony storage capacity and debit campaign stock only for accepted deliveries. Exports remove actual local Food/Alloy and credit strategic Supplies/Alloy. Strategic Energy and Knowledge remain campaign-only until the local simulation has matching consumers. The current integration is a first functional bridge, not yet a full regional settlement simulation. The colony still needs shared job ownership, job/material reservations, capacity-aware stockpiles, multiple recipe definitions and production chains, fuller needs/workplace simulation, save migration beyond the initial schema, and research that unlocks local mechanics. The world map is currently the separate nine-region campaign model, not a large connected civilization simulation. The Blight is still a simple local spread-and-cleanse model.
+The strategic campaign and local colony are connected through explicit logistics orders and a unified session save. Strategic Supplies transfer to local Food; Alloy transfers directly. Imports obey colony storage capacity and debit campaign stock only for accepted deliveries. Exports remove actual local Food/Alloy and credit strategic Supplies/Alloy. Strategic Energy and Knowledge remain campaign-only. The colony now supports stable-ID industry material stock alongside its five legacy resource types; both share storage capacity, and catalogue recipe orders consume real inputs and persist their recipe identity. Still missing are research-backed local unlocks, extraction sources for every catalogue raw material, power/workstation throughput, automatic supply balancing, advanced building/unit deployment and fuller needs/workplace simulation. The world map remains a separate strategic layer rather than a fully connected civilization simulation, and The Blight is still a simplified spread-and-cleanse model.
 
 ## Implementation priority
 
 1. Extract central job assignment and resource reservations without changing verified gameplay behavior.
-2. Generalize production definitions, workplace queues, stockpile capacity and delivery rules.
-3. Add research projects that unlock actual buildings and recipes.
+2. Add raw-material extraction and logistics coverage for the full stable-ID material catalogue; make production throughput depend on workstation and energy capacity.
+3. Persist local research, prerequisites and unlocks so technologies gate recipes, buildings and units.
 4. Connect strategic regions to real local settlement state and resource/person flows.
 5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
 
@@ -84,7 +86,7 @@ The mouse-first **Industry & Tech** page introduces a data-first content catalog
 
 Production content is organised as twenty-one multi-stage industries, including timber, stoneworks, metallurgy, chemistry, electronics, power equipment, food processing, pharmaceuticals, construction components, vehicles, defence manufacturing, research instruments, water treatment, technical textiles, glassworks, optics, aerospace, biochemistry, waste recovery, robotics, and Blight containment. Each stage has its own stable material ID, so intermediate goods form real catalog-level chains instead of repeatedly producing the same generic output. Resource definitions carry groups, baseline values, and renewability; recipes define inputs, outputs, work requirements and an unlock; buildings define footprint, construction work, material requirements and upkeep; units define recruitment costs and recurring upkeep. Research prerequisites form cross-linked era ladders so higher tiers become progressively more expensive and require both discipline progress and logistics infrastructure.
 
-**Important implementation boundary:** this commit adds and validates the catalogue and exposes a mouse-visible overview page. It does not yet replace the live colony inventory, current single component recipe, Ward Protocol research action, unit recruitment or save format. The next integration slices must migrate live inventory/jobs to stable resource IDs, route all recipe queues through the catalogue, persist research/unlocks, and apply building/unit upkeep to the simulation. This boundary is deliberate: showing hundreds of entries must not be mistaken for hundreds of already playable mechanics.
+**Implementation boundary:** the stable-ID material ledger, shared storage accounting, live catalogue recipe queue, worker-driven production, and save/load persistence are now connected to the colony. The legacy component batch remains supported. However, this is only the first runtime integration slice: not every catalogue resource has a local extraction source, research prerequisites do not yet gate recipes, and the catalogue's hundreds of buildings and units are not yet deployable systems. Each of those still needs simulation rules, action controls, persistence and scenario tests.
 
 ### Intended pressure loop
 
@@ -103,13 +105,13 @@ The **Manage** command-bar entry opens a nine-section dashboard over the playfie
 
 - **Overview** — local population, pending work, construction completion, storage, campaign stockpiles, controlled regions and recent simulation events.
 - **Population** — colonist roster, hunger, current task, carried cargo and selection state.
-- **Resources** — every local inventory resource, remaining resource deposits, storage capacity, plus import/export actions.
+- **Resources** — every legacy resource, produced stable-ID materials, remaining deposits, shared storage capacity, plus import/export actions.
 - **Construction** — live architecture/object counts and status, recent tile orders, and direct mouse buttons for wall, floor, path, door, conduit, workbench, sleeping pod, storage rack, generator and garden placement.
-- **Production** — workstation status and direct queue buttons for the currently implemented component recipe.
+- **Production** — workstation status, the legacy component batch, catalogue recipe selection, input/output details, shortage feedback and completed/pending recipe orders.
 - **Research** — strategic Ward Protocol status, costs, prerequisites and a clickable research action.
 - **Statistics** — settlement activity, needs currently simulated, inventory/deposit totals, strategic holdings, army readiness and Blight metrics.
 - **Diplomacy** — faction relationship overview and clickable relation, non-aggression and trade actions.
 - **Territories** — selected world territory intelligence, Blight pressure, settlement/development, treasury and claim/turn actions.
 
-The dashboard is a first management surface built around existing simulation state, not a claim that every desired system already exists. Current implemented research is one strategic project; production has one recipe; colonists have basic hunger/task/cargo state rather than full skills, health, mood, schedules or needs; the world and regional campaign remain separate layers. Future work should expand simulation systems and add corresponding data/action pages without replacing the mouse-first navigation pattern.
+The dashboard is a first management surface built around live simulation state, not a claim that every desired system already exists. Local colony production now supports catalogue recipes with stable-ID intermediates, but the strategic Ward Protocol remains the only implemented research action; research-linked local unlocks are not yet active. Colonists have basic hunger/task/cargo state rather than full skills, health, mood, schedules or needs, and the world and regional campaign remain separate layers. Future work should expand the simulation and preserve mouse-first controls.
 
