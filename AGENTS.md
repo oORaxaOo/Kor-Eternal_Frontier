@@ -18,6 +18,7 @@
 - A blueprint is not a completed building.
 - Keep per-tile architecture orders distinct from placeable furniture/machine objects with footprints.
 - A worker gathering a resource must reduce the source amount, carry it, and deliver it before inventory increases.
+- Built stockpiles and storage racks provide explicit capacity; gathering must stop at full capacity, partial delivery must preserve cargo, and production may only commit outputs when space exists.
 - Production must commit inputs and add outputs only when work completes.
 - Saved data must have schema versioning, structural validation, and round-trip tests.
 - Preserve deterministic behavior where practical; separate presentation concerns from simulation rules.
