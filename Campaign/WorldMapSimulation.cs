@@ -97,7 +97,7 @@ internal sealed class WorldMapSimulation
 
     public bool OfferTradePact()
     {
-        if (Selected.Owner is WorldFactionKind.Kor or WorldFactionKind.Blight) return false;
+        if (Selected.Owner is WorldFactionKind.Kor or WorldFactionKind.Blight or WorldFactionKind.Neutral) return false;
         string key = Key(WorldFactionKind.Kor, Selected.Owner);
         int score = State.Relations.GetValueOrDefault(key, 0);
         if (score < 35) { State.LastEvent = $"{FactionName(Selected.Owner)} requires better relations before trade."; return false; }
@@ -199,7 +199,7 @@ internal sealed class WorldMapSimulation
 
     private static void Validate(WorldMapState state)
     {
-        if (state.SchemaVersion != 1 || state.Territories.Count != Width * Height ||
+        if (state.SchemaVersion != 1 || state.EmpireSupplies < 0 || state.EmpireAlloy < 0 || state.SelectedTerritoryId < 0 || state.SelectedTerritoryId >= Width * Height || state.Territories.Count != Width * Height ||
             state.Territories.Select(t => t.Id).Distinct().Count() != Width * Height ||
             state.Territories.Any(t => t.Id < 0 || t.Id >= Width * Height || t.X < 0 || t.X >= Width || t.Y < 0 || t.Y >= Height || t.BlightPressure is < 0 or > 3))
             throw new InvalidDataException("World map save contains invalid territory data.");
