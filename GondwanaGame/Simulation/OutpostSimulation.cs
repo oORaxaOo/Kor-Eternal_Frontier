@@ -9,6 +9,7 @@ internal sealed class OutpostSimulation
     private readonly byte[,] _blight = new byte[Width, Height];
     private readonly bool[,] _blocked = new bool[Width, Height];
     private readonly List<Purifier> _purifiers = [];
+    private readonly List<(int X, int Y)> _route = [];
     private readonly ScenarioBalance _balance;
     private double _spreadClock, _workClock, _damageClock, _cleanseClock;
     private int _spreadTurns;
@@ -73,7 +74,7 @@ internal sealed class OutpostSimulation
         var tile = ScreenToTile(sx, sy, cameraX, cameraY, zoom);
         int x = (int)MathF.Round(tile.X), y = (int)MathF.Round(tile.Y);
         if (!InBounds(x, y) || BlockedAt(x, y)) { Message = "Lilith: That route is blocked."; return; }
-        TargetX = x + .5f; TargetY = y + .5f;
+        if (!SetRouteTo(x, y)) return;
         if ((x == 2 && y == 4) || (x == 10 && y == 3))
             Message = x == 2 ? "Worker en route to alloy salvage." : "Worker en route to supply cache.";
         else Message = "Worker moving to the marked tile.";
@@ -90,20 +91,38 @@ internal sealed class OutpostSimulation
         { Message = $"Lilith: A purifier costs {_balance.PurifierAlloyCost} alloy and {_balance.PurifierSuppliesCost} supplies."; return; }
         Alloy -= _balance.PurifierAlloyCost; Supplies -= _balance.PurifierSuppliesCost;
         _purifiers.Add(new Purifier(x + .5f, y + .5f));
-        TargetX = x + .5f; TargetY = y + .5f;
+        var workTiles = new[] { (x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y) }
+            .Where(tile => InBounds(tile.Item1, tile.Item2) && !BlockedAt(tile.Item1, tile.Item2)).ToArray();
+        if (workTiles.Length == 0)
+        {
+            _purifiers.RemoveAt(_purifiers.Count - 1);
+            Alloy += _balance.PurifierAlloyCost; Supplies += _balance.PurifierSuppliesCost;
+            Message = "Lilith: No clear approach for the worker. Choose another site.";
+            return;
+        }
+        var workTile = workTiles[0];
+        if (!SetRouteTo(workTile.Item1, workTile.Item2))
+        {
+            _purifiers.RemoveAt(_purifiers.Count - 1);
+            Alloy += _balance.PurifierAlloyCost; Supplies += _balance.PurifierSuppliesCost;
+            Message = "Lilith: The worker cannot reach that construction site.";
+            return;
+        }
         Message = "Purifier foundation placed. Keep the worker nearby to build.";
     }
 
     public void Step(float deltaSeconds)
     {
         if (Won || Lost) return;
-        float dx = TargetX - WorkerX, dy = TargetY - WorkerY, distance = MathF.Sqrt(dx * dx + dy * dy);
-        if (distance > .035f)
+        while (_route.Count > 0)
         {
+            var waypoint = _route[0];
+            float dx = waypoint.X + .5f - WorkerX, dy = waypoint.Y + .5f - WorkerY;
+            float distance = MathF.Sqrt(dx * dx + dy * dy);
+            if (distance <= .035f) { WorkerX = waypoint.X + .5f; WorkerY = waypoint.Y + .5f; _route.RemoveAt(0); continue; }
             float move = Math.Min(distance, _balance.WorkerSpeed * deltaSeconds);
-            float nx = WorkerX + dx / distance * move, ny = WorkerY + dy / distance * move;
-            if (BlockedAt((int)nx, (int)ny)) { TargetX = WorkerX; TargetY = WorkerY; Message = "Lilith: Worker route blocked; issue a new order."; }
-            else { WorkerX = nx; WorkerY = ny; }
+            WorkerX += dx / distance * move; WorkerY += dy / distance * move;
+            break;
         }
 
         _workClock += deltaSeconds;
@@ -164,6 +183,42 @@ internal sealed class OutpostSimulation
         }
         Array.Copy(next, _blight, _blight.Length);
         if (_blight.Cast<byte>().Any(value => value > 0)) Message = "Lilith: The Blight is probing for new ground.";
+    }
+
+    private bool SetRouteTo(int goalX, int goalY)
+    {
+        _route.Clear();
+        int startX = Math.Clamp((int)WorkerX, 0, Width - 1), startY = Math.Clamp((int)WorkerY, 0, Height - 1);
+        var previous = new (int X, int Y)?[Width, Height];
+        var visited = new bool[Width, Height];
+        var queue = new Queue<(int X, int Y)>();
+        queue.Enqueue((startX, startY)); visited[startX, startY] = true;
+        (int X, int Y)[] directions = [(0, -1), (1, 0), (0, 1), (-1, 0)];
+        while (queue.Count > 0 && !visited[goalX, goalY])
+        {
+            var current = queue.Dequeue();
+            foreach (var direction in directions)
+            {
+                int nx = current.X + direction.X, ny = current.Y + direction.Y;
+                if (!InBounds(nx, ny) || visited[nx, ny] || BlockedAt(nx, ny)) continue;
+                visited[nx, ny] = true; previous[nx, ny] = current; queue.Enqueue((nx, ny));
+            }
+        }
+        if (!visited[goalX, goalY])
+        {
+            TargetX = WorkerX; TargetY = WorkerY;
+            Message = "Lilith: No clear route to that location.";
+            return false;
+        }
+        var cursor = (X: goalX, Y: goalY);
+        while (cursor.X != startX || cursor.Y != startY)
+        {
+            _route.Add(cursor);
+            cursor = previous[cursor.X, cursor.Y]!.Value;
+        }
+        _route.Reverse();
+        TargetX = goalX + .5f; TargetY = goalY + .5f;
+        return true;
     }
 
     private static float Distance(float x1, float y1, float x2, float y2) => MathF.Sqrt(MathF.Pow(x1 - x2, 2) + MathF.Pow(y1 - y2, 2));
