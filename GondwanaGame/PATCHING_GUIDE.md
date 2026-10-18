@@ -43,7 +43,18 @@ Other useful values:
 
 The game checks values at startup and explains invalid values. Restore the original scenario values by reversing only your intended JSON edits in your text editor.
 
-Starting map dimensions, fixed deposit and rock locations, the objective, and visual colors are currently defined in C# (`OutpostSimulation.cs` and `OutpostRenderer.cs`). There is no technology tree yet; adding technologies requires a future gameplay implementation, not a balance-file entry.
+Starting map dimensions, fixed deposit and rock locations, the objective, and visual colors are currently defined in C# (`OutpostSimulation.cs` and `OutpostRenderer.cs`). The current wireframe palette is declared near the top of `Rendering/OutpostRenderer.cs`:
+
+- `Charcoal`: background.
+- `Crimson` and `KorWire`: Kor accent and structural outlines.
+- `TerrainWire`: terrain tile outlines.
+- `Gold`: selection and important feedback.
+- `BlightWire`: Blight creature contours.
+- `PanelEdge`: interface panel borders.
+
+Change one value at a time, build the project, and inspect it at the normal gameplay zoom. Many secondary highlight colors are still local to drawing methods and have not yet been moved into a separate art configuration file.
+
+There is no technology tree yet; adding technologies requires a future gameplay implementation, not a balance-file entry.
 
 ## Build, test, and package
 
