@@ -118,9 +118,29 @@ internal sealed class WorldMapSimulation
         return true;
     }
 
+    public bool ClaimSelected()
+    {
+        if (!CanClaimSelected)
+        {
+            State.LastEvent = "Outpost unavailable: select unclaimed territory bordering Kor territory and ensure 40 supplies / 25 alloy.";
+            return false;
+        }
+        State.EmpireSupplies -= 40;
+        State.EmpireAlloy -= 25;
+        Selected.Owner = WorldFactionKind.Kor;
+        Selected.Development = 1;
+        Selected.HasSettlement = true;
+        Selected.Explored = true;
+        State.LastEvent = $"Kor outpost founded at {Selected.X + 1},{Selected.Y + 1}. Territory secured; frontier logistics expanded.";
+        Save();
+        return true;
+    }
+
     public void EndTurn()
     {
         State.Turn++;
+        State.EmpireSupplies += Territories.Where(t => t.Owner == WorldFactionKind.Kor).Sum(t => 2 + t.Development);
+        State.EmpireAlloy += Territories.Where(t => t.Owner == WorldFactionKind.Kor).Sum(t => 1 + t.Development / 2);
         foreach (var t in Territories.Where(t => t.Owner != WorldFactionKind.Blight && t.Owner != WorldFactionKind.Kor))
             t.Supplies += 1 + t.Development;
         SpreadBlight();
@@ -162,7 +182,8 @@ internal sealed class WorldMapSimulation
         WorldFactionKind.FreeMarches => "Free Marches",
         WorldFactionKind.HelionLeague => "Helion League",
         WorldFactionKind.VerdantCovenant => "Verdant Covenant",
-        _ => "THE BLIGHT"
+        WorldFactionKind.Blight => "THE BLIGHT",
+        _ => "Unclaimed Frontier"
     };
 
     private static string Key(WorldFactionKind a, WorldFactionKind b) => $"{(int)a}:{(int)b}";
@@ -186,7 +207,10 @@ internal sealed class WorldMapSimulation
             state.Territories.Add(new WorldTerritory { Id = id, X = x, Y = y, Owner = owner, Development = settlement ? 3 : rng.Next(0, 2), Supplies = rng.Next(4, 18), BlightPressure = owner == WorldFactionKind.Blight ? 2 : 0, Explored = owner == WorldFactionKind.Kor || owner == WorldFactionKind.Blight, HasSettlement = settlement });
         }
         // Ensure the Kor capital and a readable Blight front exist.
-        foreach (var t in state.Territories.Where(t => t.Owner == WorldFactionKind.Kor)) t.Explored = true;\n        var korCapital = state.Territories.Single(t => t.X == capitals[0].x && t.Y == capitals[0].y);\n        var frontier = state.Territories.Single(t => t.X == capitals[0].x + 1 && t.Y == capitals[0].y);\n        frontier.Owner = WorldFactionKind.Neutral; frontier.HasSettlement = false; frontier.Development = 0;
+        foreach (var t in state.Territories.Where(t => t.Owner == WorldFactionKind.Kor)) t.Explored = true;
+        var korCapital = state.Territories.Single(t => t.X == capitals[0].x && t.Y == capitals[0].y);
+        var frontier = state.Territories.Single(t => t.X == capitals[0].x + 1 && t.Y == capitals[0].y);
+        frontier.Owner = WorldFactionKind.Neutral; frontier.HasSettlement = false; frontier.Development = 0;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.AshenCompact)] = 12;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.FreeMarches)] = 8;
         state.Relations[Key(WorldFactionKind.Kor, WorldFactionKind.HelionLeague)] = -8;
