@@ -380,8 +380,9 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
-            if (citizen.State != CitizenState.MovingToStorage)
+            if (citizen.State == CitizenState.Idle || worker.Task != null)
                 citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            citizen.CanReceiveJob = worker.Task == null;
             citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
         }
 
@@ -422,8 +423,13 @@ internal sealed class ColonySimulation
 
         foreach (var worker in _workers)
         {
-            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
-                worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
+            if (worker.Task == null)
+            {
+                worker.X = citizen.Position.X + 0.5f;
+                worker.Y = citizen.Position.Y + 0.5f;
+            }
         }
     }
 
@@ -565,6 +571,12 @@ internal sealed class ColonySimulation
             Message = $"{worker.Name} is committed to a construction or production task and cannot abandon its material/work reservation.";
             return;
         }
+        if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) &&
+            citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working)
+        {
+            Message = $"{worker.Name} is committed to a citizen need or workplace task and cannot take a conflicting order.";
+            return;
+        }
 
         var deposit = DepositAt(x, y);
         if (deposit != null)
@@ -626,6 +638,9 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (worker.Task != null) continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) &&
+                citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working)
+                continue;
 
             if (worker.CarriedResource.HasValue)
             {
