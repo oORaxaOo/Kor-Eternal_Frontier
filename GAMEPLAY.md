@@ -58,3 +58,20 @@ Press **M** to move between the colony and a separate continental strategy view.
 - World state is saved to `~/.local/share/kor-eternal-frontier/world-map.json` (or under `$XDG_DATA_HOME`) after diplomacy and world-turn actions.
 
 The Blight spreads across eligible neighboring territories on world turns, gradually raising pressure before consuming a territory. The current implementation is a foundation slice: territory-level diplomacy, local development and faction AI are deliberately simpler than the intended final simulation. Full treaties between every faction, wars/alliances, trade-route logistics, regional armies, settlement-to-colony transitions, and synchronized world-map saves inside the unified F5/F9 session remain follow-up work.
+
+
+## Mouse-first menus and submenus
+
+The command UI now provides mouse-accessible menus and nested submenus; keyboard shortcuts remain optional conveniences rather than requirements for the core command set.
+
+- **Colony**: switch between colony and strategic world map, pause/resume, and open camera controls.
+- **Colony → Camera controls**: pan the view and zoom in/out using clickable menu items.
+- **Build → Architecture**: choose Wall, Floor, Path, Door, or Conduit, then left-click a tile to place the construction order.
+- **Build → Buildings & objects**: choose Workbench, Sleeping Pod, Storage Rack, Generator, or Garden, then left-click a tile to place the blueprint.
+- **Empire**: advance the strategic turn, open logistics, or claim a selected frontier territory while on the world map.
+- **Empire → Logistics**: import strategic supplies or export colony resources.
+- **Diplomacy**: improve relations, offer a non-aggression pact, or propose trade while on the strategic world map.
+- **Game**: save or load the combined colony/campaign session.
+- **Mouse interaction**: left-click to select a colonist, inspect a territory, or place a selected construction/blueprint; right-click a colony tile to issue a movement/gather order to the selected colonist.
+
+All core management actions have visible menu paths. Context-specific actions that require the world map explain when they are unavailable from the colony view. Closing the game remains available through the operating system's window controls.
