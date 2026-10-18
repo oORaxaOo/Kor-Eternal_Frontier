@@ -80,9 +80,10 @@ internal sealed class GridManager
     /// Defines a zone only when all cells are valid, unused ground and form one connected group.
     /// A tile belongs to one resource-specific zone so its stack can never mix resource types.
     /// </summary>
-    public int DefineStockpileZone(ResourceKind resource, IReadOnlyCollection<CellPosition> cells)
+    public int DefineStockpileZone(ResourceKind resource, IReadOnlyCollection<CellPosition> cells, int? maxStackSize = null)
     {
         ArgumentNullException.ThrowIfNull(cells);
+        if (maxStackSize is <= 0) throw new ArgumentOutOfRangeException(nameof(maxStackSize));
         if (!Enum.IsDefined(resource) || cells.Count == 0)
             throw new ArgumentException("A stockpile zone needs a valid resource and at least one tile.", nameof(cells));
 
@@ -123,6 +124,7 @@ internal sealed class GridManager
             ref var tile = ref _tiles[index];
             tile.Kind = GridTileKind.Stockpile;
             tile.ZoneId = zoneId;
+            if (maxStackSize.HasValue) tile.MaxStackSize = maxStackSize.Value;
         }
         _zones.Add(new StockpileZone(zoneId, resource, indices));
         return zoneId;
@@ -306,6 +308,7 @@ internal sealed class CitizenAgent(int id, string name, CellPosition position)
     public float Fatigue { get; internal set; } = 100f;
     public float Happiness => (Hunger + Fatigue) * 0.5f;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
+    public bool CanReceiveJob { get; internal set; } = true;
     public int? JobId { get; internal set; }
     public float WorkProgress { get; internal set; }
     public float MovementProgress { get; internal set; }
@@ -443,7 +446,7 @@ internal sealed class ColonyEcosystem
 
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
-            if (citizen.Hunger < 30f && citizen.State != CitizenState.MovingToStorage)
+            if (citizen.Hunger < 30f && citizen.CanReceiveJob && citizen.State != CitizenState.MovingToStorage)
             {
                 ReleaseAssignment(citizen);
                 var food = Grid.FindNearestResource(ResourceKind.Food, citizen.Position);
@@ -496,7 +499,7 @@ internal sealed class ColonyEcosystem
                 citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 8f);
                 continue;
             }
-            if (citizen.Hunger < 30f) continue;
+            if (citizen.Hunger < 30f || !citizen.CanReceiveJob) continue;
 
             var job = JobBroker.AssignNext(citizen);
             if (job == null) continue;

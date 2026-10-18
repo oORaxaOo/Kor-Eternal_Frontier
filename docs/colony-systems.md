@@ -37,8 +37,10 @@ This module is the first deterministic core for the next colony-simulation slice
 - Worker capacity is enforced, and removing a workplace releases its citizens and storage reservations.
 - Movement cannot path into a blocked destination.
 
-## Integration boundary
+## Live integration boundary
 
-The existing playable colony still uses ColonySimulation's established gather/carry/build/production scheduler and central inventory. This module is tested and available as a separate core, but it is **not yet the live source of truth for the visible map or legacy worker scheduler**. The next integration step is a controlled migration adapter that maps built stockpile/object footprints and existing colonists into this core, then retires duplicate inventory/job rules without breaking save compatibility. Until that adapter lands, do not claim these new stockpile zones or jobs are visible in the running game.
+The active `ColonySimulation.Step` now advances a `ColonyEcosystem` alongside the established construction/gather/carry scheduler. Each visible worker has a corresponding `CitizenAgent`; citizen hunger is synchronized with the save-compatible worker state, food withdrawals are reconciled against the existing inventory, citizen mood/state is available to the HUD, and completed Garden objects register food-producing workplaces with reserved output storage.
 
-Save serialization for this new module is also intentionally deferred until its live-state ownership and migration path are settled.
+This is a deliberately bounded migration slice. The grid models the starter stockpile's six tiles as bounded food-storage slots and adds bounded food slots for each completed storage rack, using each rack's existing 80-unit capacity. Needs and Garden output therefore use real grid stacks while respecting pooled inventory capacity. Other resources, construction materials, and legacy recipe orders remain owned by the central inventory/scheduler. The bridge gates Garden workplaces against pooled free capacity and does not change the existing save schema. The grid/job state is reconstructed from the restored colony rather than serialized independently.
+
+Remaining integration work: migrate every resource into footprint-backed grid storage, route construction/gather/recipe tasks through the shared job broker, persist any durable citizen state, and deepen map-aware pathfinding around terrain and buildings. Do not describe those remaining systems as completed.
