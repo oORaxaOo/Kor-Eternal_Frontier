@@ -77,6 +77,26 @@ The command UI now provides mouse-accessible menus and nested submenus; keyboard
 
 All core management actions have visible menu paths. Context-specific actions that require the world map explain when they are unavailable from the colony view. Closing the game remains available through the operating system's window controls.
 
+
+## Industrial progression catalogue (foundation slice)
+
+The mouse-first **Industry & Tech** page introduces a data-first content catalogue intended to grow into the main long-term gameplay loop. The catalogue currently validates **784 definitions**: 32 resource types, 480 research nodes, 96 building variants, 80 unit variants, and 96 production recipes. Research spans eight eras and twelve disciplines: logistics, materials science, energy, food systems, industry, computing, medicine, defence, exploration, ecology, colony systems, and Blight studies.
+
+Production content is organised as twelve multi-stage industries, including timber, stoneworks, metallurgy, chemistry, electronics, power equipment, food processing, pharmaceuticals, construction components, vehicles, defence manufacturing, and research instruments. Resource definitions carry groups, baseline values, and renewability; recipes define inputs, outputs, work requirements and an unlock; buildings define footprint, construction work, material requirements and upkeep; units define recruitment costs and recurring upkeep. Research prerequisites form cross-linked era ladders so higher tiers become progressively more expensive and require both discipline progress and logistics infrastructure.
+
+**Important implementation boundary:** this commit adds and validates the catalogue and exposes a mouse-visible overview page. It does not yet replace the live colony inventory, current single component recipe, Ward Protocol research action, unit recruitment or save format. The next integration slices must migrate live inventory/jobs to stable resource IDs, route all recipe queues through the catalogue, persist research/unlocks, and apply building/unit upkeep to the simulation. This boundary is deliberate: showing hundreds of entries must not be mistaken for hundreds of already playable mechanics.
+
+### Intended pressure loop
+
+1. Survey and extract finite local deposits; expansion opens access to new resource families.
+2. Convert raw resources through multi-step industrial chains, each consuming labour, machine capacity, energy and intermediate stock.
+3. Research higher eras to unlock more efficient tools and advanced buildings, while research itself consumes increasingly scarce Knowledge and Energy.
+4. Maintain housing, farms, power, storage, logistics, medical and defence infrastructure; every additional system adds upkeep and competes for workers and materials.
+5. Recover waste and recycle intermediate products, negotiate or trade for shortages, and decide which production chains deserve limited space and power.
+6. As The Blight pressures territory and supply routes, choose between immediate survival, expansion, research and long-term industrial resilience.
+
+The intended challenge is not merely accumulating a larger stockpile. It is keeping an increasingly interconnected economy balanced while every new capability creates both power and a new obligation.
+
 ## Mouse-first colony management dashboard
 
 The **Manage** command-bar entry opens a nine-section dashboard over the playfield. Its left navigation keeps management categories consistently accessible while the main area displays current simulation data.
