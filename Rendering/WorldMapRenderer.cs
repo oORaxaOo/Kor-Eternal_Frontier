@@ -20,6 +20,7 @@ internal sealed class WorldMapRenderer : IDisposable
         canvas.Clear(Background);
         DrawText(canvas, "KOR ETERNAL FRONTIER  /  STRATEGIC WORLD", 24, 35, _title, Text);
         DrawText(canvas, $"WORLD TURN {world.State.Turn}   •   {WorldMapSimulation.Width * WorldMapSimulation.Height} TERRITORIES", 26, 59, _small, Muted);
+        DrawText(canvas, $"TREASURY  {world.State.EmpireSupplies} SUPPLIES  /  {world.State.EmpireAlloy} ALLOY", 515, 59, _small, new SKColor(225, 196, 120));
 
         const float originX = 24, originY = 82, cell = 29;
         foreach (var t in world.Territories)
@@ -82,10 +83,10 @@ internal sealed class WorldMapRenderer : IDisposable
         DrawText(canvas, "CONTROLS", panelX + 16, 500, _heading, Text);
         DrawText(canvas, "M   Return to colony / world map", panelX + 16, 523, _small, Muted);
         DrawText(canvas, "Click territory to inspect", panelX + 16, 544, _small, Muted);
-        DrawText(canvas, "Y   Offer non-aggression pact", panelX + 16, 565, _small, Muted);
-        DrawText(canvas, "G   Propose trade agreement", panelX + 16, 586, _small, Muted);
-        DrawText(canvas, "R   Send diplomatic mission", panelX + 16, 607, _small, Muted);
-        DrawText(canvas, "T   Advance world turn", panelX + 16, 628, _small, Muted);
+        DrawText(canvas, "C   Claim adjacent frontier (40 S / 25 A)", panelX + 16, 565, _small, Muted);
+        DrawText(canvas, "Y   Offer non-aggression pact", panelX + 16, 586, _small, Muted);
+        DrawText(canvas, "G   Propose trade agreement", panelX + 16, 607, _small, Muted);
+        DrawText(canvas, "R   Diplomatic mission   |   T   World turn", panelX + 16, 628, _small, Muted);
         _fill.Color = new SKColor(21, 27, 28);
         canvas.DrawRect(new SKRect(24, 614, 765, 660), _fill);
         DrawText(canvas, world.Message, 34, 642, _small, Text);
