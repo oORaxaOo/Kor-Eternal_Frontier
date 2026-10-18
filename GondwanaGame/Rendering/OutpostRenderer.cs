@@ -26,6 +26,8 @@ internal sealed class OutpostRenderer : IDisposable
         DrawNode(c, 10, 3, "S", new SKColor(125, 169, 126), cameraX, cameraY, zoom);
         DrawBase(c, cameraX, cameraY, zoom);
         DrawPurifiers(c, sim, cameraX, cameraY, zoom);
+        DrawHostiles(c, sim, cameraX, cameraY, zoom);
+        DrawGuardian(c, sim, cameraX, cameraY, zoom);
         DrawWorker(c, sim, cameraX, cameraY, zoom);
         DrawHud(c, sim, buildMode);
     }
@@ -139,7 +141,7 @@ internal sealed class OutpostRenderer : IDisposable
     private void DrawWorker(SKCanvas c, OutpostSimulation sim, float cameraX, float cameraY, float zoom)
     {
         var p = sim.WorkerScreen(cameraX, cameraY, zoom);
-        if (sim.Selected)
+        if (sim.WorkerSelected)
         {
             _line.Color = Gold; _line.StrokeWidth = 2;
             c.DrawOval(new SKRect(p.X - 18 * zoom, p.Y - 5 * zoom, p.X + 18 * zoom, p.Y + 8 * zoom), _line);
@@ -154,6 +156,41 @@ internal sealed class OutpostRenderer : IDisposable
         c.DrawLine(p.X + 7 * zoom, p.Y - 7 * zoom, p.X + 12 * zoom, p.Y + 3 * zoom, _line);
         _fill.Color = new SKColor(226, 183, 97); c.DrawCircle(p.X, p.Y - 27 * zoom, 6 * zoom, _fill);
         _fill.Color = new SKColor(37, 40, 39); c.DrawRect(new SKRect(p.X - 5 * zoom, p.Y - 29 * zoom, p.X + 5 * zoom, p.Y - 24 * zoom), _fill);
+    }
+
+    private void DrawGuardian(SKCanvas c, OutpostSimulation sim, float cameraX, float cameraY, float zoom)
+    {
+        var p = sim.GuardianScreen(cameraX, cameraY, zoom);
+        if (sim.GuardianSelected)
+        {
+            _line.Color = Gold; _line.StrokeWidth = 2;
+            c.DrawOval(new SKRect(p.X - 21 * zoom, p.Y - 5 * zoom, p.X + 21 * zoom, p.Y + 10 * zoom), _line);
+            _line.StrokeWidth = 1;
+        }
+        _fill.Color = new SKColor(4, 6, 6, 190); c.DrawOval(new SKRect(p.X - 19 * zoom, p.Y - 4 * zoom, p.X + 19 * zoom, p.Y + 10 * zoom), _fill);
+        DrawPoly(c, _fill, new SKColor(80, 85, 78), zoom,
+            (p.X - 17 * zoom, p.Y - 5 * zoom), (p.X - 13 * zoom, p.Y - 18 * zoom),
+            (p.X - 6 * zoom, p.Y - 22 * zoom), (p.X + 12 * zoom, p.Y - 18 * zoom), (p.X + 18 * zoom, p.Y - 5 * zoom));
+        _fill.Color = new SKColor(137, 42, 45); c.DrawRoundRect(new SKRect(p.X - 10 * zoom, p.Y - 18 * zoom, p.X + 11 * zoom, p.Y - 8 * zoom), 3 * zoom, 3 * zoom, _fill);
+        _fill.Color = new SKColor(36, 41, 40); c.DrawRect(new SKRect(p.X - 3 * zoom, p.Y - 25 * zoom, p.X + 4 * zoom, p.Y - 14 * zoom), _fill);
+        _line.Color = new SKColor(216, 177, 99); c.DrawLine(p.X, p.Y - 23 * zoom, p.X, p.Y - 31 * zoom, _line);
+        _fill.Color = Gold; c.DrawCircle(p.X, p.Y - 30 * zoom, 2 * zoom, _fill);
+    }
+
+    private void DrawHostiles(SKCanvas c, OutpostSimulation sim, float cameraX, float cameraY, float zoom)
+    {
+        foreach (var enemy in sim.Hostiles)
+        {
+            var p = OutpostSimulation.WorldScreen(enemy.X, enemy.Y, cameraX, cameraY, zoom);
+            _fill.Color = new SKColor(5, 5, 7, 180); c.DrawOval(new SKRect(p.X - 16 * zoom, p.Y - 3 * zoom, p.X + 16 * zoom, p.Y + 9 * zoom), _fill);
+            _fill.Color = new SKColor(76, 18, 34); c.DrawOval(new SKRect(p.X - 11 * zoom, p.Y - 24 * zoom, p.X + 12 * zoom, p.Y + 2 * zoom), _fill);
+            _fill.Color = new SKColor(171, 35, 54); c.DrawOval(new SKRect(p.X - 8 * zoom, p.Y - 27 * zoom, p.X + 9 * zoom, p.Y - 9 * zoom), _fill);
+            _fill.Color = new SKColor(255, 116, 83); c.DrawCircle(p.X + 2 * zoom, p.Y - 20 * zoom, 2.2f * zoom, _fill);
+            _line.Color = new SKColor(222, 74, 76); _line.StrokeWidth = 2 * zoom;
+            c.DrawLine(p.X - 8 * zoom, p.Y - 18 * zoom, p.X - 16 * zoom, p.Y - 24 * zoom, _line);
+            c.DrawLine(p.X + 8 * zoom, p.Y - 18 * zoom, p.X + 16 * zoom, p.Y - 25 * zoom, _line);
+            _line.StrokeWidth = 1;
+        }
     }
 
     private void DrawHud(SKCanvas c, OutpostSimulation sim, bool buildMode)
@@ -182,7 +219,7 @@ internal sealed class OutpostRenderer : IDisposable
         _fill.Color = Gold;
         c.DrawText("MISSION", 454, 666, SKTextAlign.Left, _font, _fill);
         c.DrawText(sim.Won ? "BLIGHT CONTAINED — SECTOR SECURE" : sim.Lost ? "COMMAND SHELTER LOST" : "DEPLOY 2 PURIFIERS TO CONTAIN THE BLIGHT", 454, 692, SKTextAlign.Left, _heading, _text);
-        c.DrawText(buildMode ? "BUILD MODE   /   LEFT CLICK: PLACE   /   ESC: CANCEL" : "LMB SELECT   •   RMB MOVE / GATHER   •   B BUILD   •   WASD PAN   •   +/- ZOOM", 454, 712, SKTextAlign.Left, _font, _subtle);
+        c.DrawText(buildMode ? "BUILD MODE   /   LEFT CLICK: PLACE   /   ESC: CANCEL" : "LMB SELECT UNIT   •   RMB MOVE / GATHER   •   B BUILD   •   WASD PAN   •   +/- ZOOM", 454, 712, SKTextAlign.Left, _font, _subtle);
     }
 
     private void DrawResource(SKCanvas c, float x, string label, int value, SKColor color) => DrawResource(c, x, label, value.ToString(), color);

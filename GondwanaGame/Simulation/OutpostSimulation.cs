@@ -9,16 +9,26 @@ internal sealed class OutpostSimulation
     private readonly byte[,] _blight = new byte[Width, Height];
     private readonly bool[,] _blocked = new bool[Width, Height];
     private readonly List<Purifier> _purifiers = [];
+    private readonly List<BlightEnemy> _hostiles = [];
     private readonly List<(int X, int Y)> _route = [];
+    private readonly List<(int X, int Y)> _guardianRoute = [];
     private readonly ScenarioBalance _balance;
-    private double _spreadClock, _workClock, _damageClock, _cleanseClock;
+    private double _spreadClock, _workClock, _damageClock, _cleanseClock, _combatClock;
     private int _spreadTurns;
+    private bool _guardianSelected;
 
     public float WorkerX { get; private set; } = 3.5f;
     public float WorkerY { get; private set; } = 4f;
     public float TargetX { get; private set; } = 3.5f;
     public float TargetY { get; private set; } = 4f;
-    public bool Selected { get; set; }
+    public float GuardianX { get; private set; } = 4.5f;
+    public float GuardianY { get; private set; } = 3.5f;
+    public float GuardianTargetX { get; private set; } = 4.5f;
+    public float GuardianTargetY { get; private set; } = 3.5f;
+    public bool Selected { get; private set; }
+    public bool WorkerSelected => Selected && !_guardianSelected;
+    public bool GuardianSelected => Selected && _guardianSelected;
+    public IReadOnlyList<BlightEnemy> Hostiles => _hostiles;
     public int Alloy { get; private set; }
     public int Supplies { get; private set; }
     public float BaseHealth { get; private set; } = 100;
@@ -39,6 +49,7 @@ internal sealed class OutpostSimulation
         // Seeded, fixed starter layout; deterministic updates need no cosmetic RNG.
         _blight[0, 7] = 3; _blight[1, 7] = 2; _blight[1, 8] = 2;
         _blocked[4, 1] = true; _blocked[9, 6] = true; _blocked[11, 1] = true;
+        _hostiles.Add(new BlightEnemy(.5f, 7.5f));
     }
 
     public static (float X, float Y) TileCenter(int x, int y, float cameraX = 0, float cameraY = 0, float zoom = 1)
@@ -58,14 +69,40 @@ internal sealed class OutpostSimulation
     {
         var p = WorkerScreen(cameraX, cameraY, zoom);
         Selected = MathF.Sqrt(MathF.Pow(sx - p.X, 2) + MathF.Pow(sy - p.Y, 2)) <= 24;
-        if (Selected) Message = "Worker selected. Right-click a deposit to gather, or open ground to move.";
+        _guardianSelected = false;
+        if (Selected) Message = "Worker selected. Right-click a deposit to gather or ground to move.";
         return Selected;
+    }
+
+    public bool SelectUnit(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
+    {
+        var worker = WorkerScreen(cameraX, cameraY, zoom);
+        var guardian = UnitScreen(GuardianX, GuardianY, cameraX, cameraY, zoom);
+        float workerDistance = Distance(sx, sy, worker.X, worker.Y);
+        float guardianDistance = Distance(sx, sy, guardian.X, guardian.Y);
+        if (Math.Min(workerDistance, guardianDistance) > 26)
+        {
+            Selected = false;
+            return false;
+        }
+        _guardianSelected = guardianDistance < workerDistance;
+        Selected = true;
+        Message = _guardianSelected ? "Guardian selected. Right-click to move; it will engage nearby Blight." : "Worker selected. Right-click a deposit to gather or ground to move.";
+        return true;
     }
 
     public (float X, float Y) WorkerScreen(float cameraX = 0, float cameraY = 0, float zoom = 1)
     {
+        return UnitScreen(WorkerX, WorkerY, cameraX, cameraY, zoom);
+    }
+
+    public (float X, float Y) GuardianScreen(float cameraX = 0, float cameraY = 0, float zoom = 1) => UnitScreen(GuardianX, GuardianY, cameraX, cameraY, zoom);
+    public static (float X, float Y) WorldScreen(float x, float y, float cameraX = 0, float cameraY = 0, float zoom = 1) => UnitScreen(x, y, cameraX, cameraY, zoom);
+
+    private static (float X, float Y) UnitScreen(float x, float y, float cameraX, float cameraY, float zoom)
+    {
         float cx = 550 + cameraX, cy = 350 + cameraY;
-        return (cx + (WorkerX - WorkerY) * TileWidth * zoom / 2f, cy + (WorkerX + WorkerY - 8) * TileHeight * zoom / 2f);
+        return (cx + (x - y) * TileWidth * zoom / 2f, cy + (x + y - 8) * TileHeight * zoom / 2f);
     }
 
     public void Command(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
@@ -74,6 +111,11 @@ internal sealed class OutpostSimulation
         var tile = ScreenToTile(sx, sy, cameraX, cameraY, zoom);
         int x = (int)MathF.Round(tile.X), y = (int)MathF.Round(tile.Y);
         if (!InBounds(x, y) || BlockedAt(x, y)) { Message = "Lilith: That route is blocked."; return; }
+        if (_guardianSelected)
+        {
+            if (SetGuardianRouteTo(x, y)) Message = "Guardian moving to the marked position.";
+            return;
+        }
         if (!SetRouteTo(x, y)) return;
         if ((x == 2 && y == 4) || (x == 10 && y == 3))
             Message = x == 2 ? "Worker en route to alloy salvage." : "Worker en route to supply cache.";
@@ -124,6 +166,9 @@ internal sealed class OutpostSimulation
             WorkerX += dx / distance * move; WorkerY += dy / distance * move;
             break;
         }
+
+        MoveGuardian(deltaSeconds);
+        UpdateCombat(deltaSeconds);
 
         _workClock += deltaSeconds;
         if (_workClock >= _balance.WorkIntervalSeconds)
@@ -189,6 +234,30 @@ internal sealed class OutpostSimulation
     {
         _route.Clear();
         int startX = Math.Clamp((int)WorkerX, 0, Width - 1), startY = Math.Clamp((int)WorkerY, 0, Height - 1);
+        if (!FindRoute(startX, startY, goalX, goalY, _route))
+        {
+            TargetX = WorkerX; TargetY = WorkerY;
+            Message = "Lilith: No clear route to that location.";
+            return false;
+        }
+        TargetX = goalX + .5f; TargetY = goalY + .5f;
+        return true;
+    }
+
+    private bool SetGuardianRouteTo(int goalX, int goalY)
+    {
+        GuardianTargetX = goalX + .5f; GuardianTargetY = goalY + .5f;
+        _guardianRoute.Clear();
+        int startX = Math.Clamp((int)GuardianX, 0, Width - 1), startY = Math.Clamp((int)GuardianY, 0, Height - 1);
+        if (FindRoute(startX, startY, goalX, goalY, _guardianRoute)) return true;
+        GuardianTargetX = GuardianX; GuardianTargetY = GuardianY;
+        Message = "Lilith: Guardian cannot reach that position.";
+        return false;
+    }
+
+    private bool FindRoute(int startX, int startY, int goalX, int goalY, List<(int X, int Y)> route)
+    {
+        route.Clear();
         var previous = new (int X, int Y)?[Width, Height];
         var visited = new bool[Width, Height];
         var queue = new Queue<(int X, int Y)>();
@@ -205,20 +274,64 @@ internal sealed class OutpostSimulation
             }
         }
         if (!visited[goalX, goalY])
-        {
-            TargetX = WorkerX; TargetY = WorkerY;
-            Message = "Lilith: No clear route to that location.";
             return false;
-        }
         var cursor = (X: goalX, Y: goalY);
         while (cursor.X != startX || cursor.Y != startY)
         {
-            _route.Add(cursor);
+            route.Add(cursor);
             cursor = previous[cursor.X, cursor.Y]!.Value;
         }
-        _route.Reverse();
-        TargetX = goalX + .5f; TargetY = goalY + .5f;
+        route.Reverse();
         return true;
+    }
+
+    private void MoveGuardian(float deltaSeconds)
+    {
+        while (_guardianRoute.Count > 0)
+        {
+            var waypoint = _guardianRoute[0];
+            float dx = waypoint.X + .5f - GuardianX, dy = waypoint.Y + .5f - GuardianY;
+            float distance = MathF.Sqrt(dx * dx + dy * dy);
+            if (distance <= .035f) { GuardianX = waypoint.X + .5f; GuardianY = waypoint.Y + .5f; _guardianRoute.RemoveAt(0); continue; }
+            float move = Math.Min(distance, 2.5f * deltaSeconds);
+            GuardianX += dx / distance * move; GuardianY += dy / distance * move;
+            break;
+        }
+    }
+
+    private void UpdateCombat(float deltaSeconds)
+    {
+        _combatClock += deltaSeconds;
+        if (_combatClock >= .5)
+        {
+            _combatClock -= .5;
+            var target = _hostiles.OrderBy(enemy => Distance(GuardianX, GuardianY, enemy.X, enemy.Y)).FirstOrDefault();
+            if (target != null && Distance(GuardianX, GuardianY, target.X, target.Y) <= 3.2f)
+            {
+                target.HitPoints -= 24;
+                if (target.HitPoints <= 0)
+                {
+                    _hostiles.Remove(target);
+                    Message = "Guardian neutralised a Blight creature.";
+                }
+            }
+        }
+
+        foreach (var enemy in _hostiles)
+        {
+            float dx = (BaseX + .5f) - enemy.X, dy = (BaseY + .5f) - enemy.Y;
+            float distance = MathF.Sqrt(dx * dx + dy * dy);
+            if (distance > .85f)
+            {
+                float step = Math.Min(distance - .85f, .65f * deltaSeconds);
+                enemy.X += dx / distance * step; enemy.Y += dy / distance * step;
+            }
+            else
+            {
+                BaseHealth -= 4f * deltaSeconds;
+                Message = "Lilith: Blight creature attacking the command shelter!";
+            }
+        }
     }
 
     private static float Distance(float x1, float y1, float x2, float y2) => MathF.Sqrt(MathF.Pow(x1 - x2, 2) + MathF.Pow(y1 - y2, 2));
@@ -229,5 +342,12 @@ internal sealed class OutpostSimulation
         public float X { get; } = x;
         public float Y { get; } = y;
         public float Progress { get; set; }
+    }
+
+    internal sealed class BlightEnemy(float x, float y)
+    {
+        public float X { get; set; } = x;
+        public float Y { get; set; } = y;
+        public int HitPoints { get; set; } = 72;
     }
 }

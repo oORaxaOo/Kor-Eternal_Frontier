@@ -94,7 +94,7 @@ internal static class Program
                 if (left && !wasLeft)
                 {
                     if (buildMode) { simulation.PlacePurifier(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom); buildMode = false; }
-                    else simulation.SelectWorker(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                    else simulation.SelectUnit(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
                 }
                 if (right && !wasRight) simulation.Command(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
                 wasLeft = left; wasRight = right;

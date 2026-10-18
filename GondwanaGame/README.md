@@ -4,7 +4,7 @@ KOR-ETERNAL FRONTIER is a small single-player RTS scenario prototype built with 
 
 ## Current status
 
-The scenario includes an isometric battlefield, a selectable worker, right-click movement and deposit gathering, resource counters, purifier placement and construction, spreading Blight, containment, and a win/loss objective. The worker routes around blocked tiles with a grid search. This remains a single-worker mission prototype, not a full RTS campaign or unit roster.
+The scenario includes an isometric battlefield, a worker and Guardian, right-click movement, deposit gathering, construction, automatic Guardian combat, a Blight creature that attacks the shelter, and a containment objective. Both units route around blocked tiles with a grid search. This remains a single-mission RTS prototype, not a full C&C-scale campaign or unit roster.
 
 The visuals use original Skia-drawn Kor structures, a worker, terrain, Blight, and a command-style resource and mission HUD. This is an early playable slice, not a finished campaign or a feature-complete RTS.
 
@@ -31,8 +31,9 @@ dotnet publish GondwanaGame/GondwanaGame.csproj --configuration Release --runtim
 
 ## Controls
 
-- Left-click the worker to select it.
-- Right-click an alloy or supply deposit to route there and gather. Right-click open ground to move around rocks and buildings.
+- Left-click the worker or Guardian to select it.
+- Right-click an alloy or supply deposit with the worker to gather; right-click open ground to move either unit around rocks and buildings.
+- The Guardian automatically engages Blight creatures in range.
 - Press **B**, then left-click open ground to place a purifier. Press **Escape** to cancel placement.
 - Use **WASD** to pan and **+ / -** to zoom.
 - Build two purifiers to win. The command shelter loses health if Blight reaches it.
