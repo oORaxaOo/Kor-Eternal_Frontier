@@ -232,6 +232,14 @@ internal sealed class ColonySnapshot
             Inventory.Select(stack => stack.Resource).Distinct().Count() != Inventory.Count)
             throw new InvalidDataException("Colony inventory is incomplete, duplicated, or contains an invalid amount.");
 
+        int availableStorageCapacity =
+            Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
+                .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
+            Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
+                .Sum(_ => ColonySimulation.StorageRackCapacity);
+        if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
+            throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+
         var productionIds = new HashSet<int>();
         foreach (var order in ProductionOrders)
         {
