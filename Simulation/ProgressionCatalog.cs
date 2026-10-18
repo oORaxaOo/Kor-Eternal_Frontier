@@ -267,7 +267,7 @@ internal static class ProgressionCatalog
             }
 
         foreach (var building in Buildings)
-            if (!researchIds.Contains(building.UnlockResearchId)
+            if (!researchIds.Contains(building.UnlockResearchId))
             {
                 error = $"Building {building.Id} has an unknown research unlock.";
                 return false;
