@@ -61,3 +61,15 @@ The build script publishes a self-contained linux-x64 package under artifacts/li
 ## Engineering direction
 
 Keep simulation logic independent of rendering and input. Extend the game through tested slices: material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, real research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
+
+
+## Integrated campaign alpha
+
+The local colony now shares a functional logistics boundary with the deterministic strategic campaign:
+
+- **T** advances the campaign turn and resolves regional income, army orders, upkeep, and Blight spread.
+- **I** imports up to 20 campaign Supplies as local Food and up to 10 Alloy, constrained by colony storage capacity.
+- **E** exports up to 20 local Food as campaign Supplies and up to 10 Alloy. Transfers are accounted for on both sides.
+- **F5 / F9** save or restore both systems together in `~/.local/share/kor-eternal-frontier/session.json` (or under `$XDG_DATA_HOME`).
+
+Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony, campaign, logistics conservation, and unified session persistence. The dedicated strategic map screen and region-specific local settlements remain future work.
