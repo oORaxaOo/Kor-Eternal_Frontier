@@ -173,12 +173,12 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 foreach (var recipe in colony.ManagementRecipes)
                 {
                     bool canQueue = colony.CanQueueRecipe(recipe.Id, out _);
-                    string inputs = string.Join(" + ", recipe.Inputs.Select(item =>
+                    string recipeInputsText = string.Join(" + ", recipe.Inputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
-                    string outputs = string.Join(" + ", recipe.Outputs.Select(item =>
+                    string recipeOutputsText = string.Join(" + ", recipe.Outputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, recipe.Name, 670, recipeY, 365);
-                    Note(c, $"{inputs} → {outputs} • {(canQueue ? "READY" : "MISSING INPUTS / STORAGE")}",
+                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • {(canQueue ? "READY" : "MISSING INPUTS / STORAGE")}",
                         670, recipeY + 27, 365);
                     recipeY += 50;
                 }
