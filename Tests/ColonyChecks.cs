@@ -1,3 +1,4 @@
+using System.Text.Json;
 using KorTheBlight.Simulation;
 using KorTheBlight.Rendering;
 
@@ -82,14 +83,44 @@ internal static class ColonyChecks
             "a worker must finish the queued recipe and place the output in inventory");
         Check(!colony.QueueComponentProduction(999999), "production at a missing workstation must be rejected");
 
+        int woodBeforeRecipe = colony.ResourceCount(ResourceKind.Wood);
+        Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage0"),
+            "a catalogue recipe should be queueable when its real inputs and workstation are available");
+        Check(colony.ResourceCount(ResourceKind.Wood) == woodBeforeRecipe - 2,
+            "catalogue recipe inputs must be removed from the same live colony inventory");
+        Check(!colony.QueueRecipeProduction(workbenchId, "recipe.metallurgy.stage0"),
+            "a recipe requiring unavailable raw ore must be rejected instead of creating free materials");
+        for (int i = 0; i < 1200; i++) colony.Step(0.1f);
+        Check(colony.MaterialCount("material.sawmill.stage0") == 2,
+            "worker labor must create the stage-specific stable-ID output from the selected recipe");
+        Check(colony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
+            "completed production orders must preserve their catalogue recipe identity");
+        int legacyResourceTotal = Enum.GetValues<ResourceKind>().Sum(resource => colony.ResourceCount(resource));
+        Check(colony.InventoryUsed == legacyResourceTotal + 2,
+            "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
+
         Check(colony.DesignTileConstruction(19, 14, ArchitectureKind.Path), "a new path order should be accepted before saving");
         colony.Step(0.1f);
         string json = ColonySaveService.Serialize(colony);
         var restored = ColonySaveService.Deserialize(json);
+        var legacySnapshot = colony.CaptureSnapshot();
+        legacySnapshot.SchemaVersion = 1;
+        legacySnapshot.Materials.Clear();
+        foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
+        string legacyJson = JsonSerializer.Serialize(legacySnapshot)
+            .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
+            .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
+        var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
+        Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
+              migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0,
+            "schema v1 saves without stable-ID materials or recipe IDs must remain loadable");
         Check(restored.Workers.Count == colony.Workers.Count, "save/load must preserve the colony population");
         Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
             "save/load must preserve actual inventory balances");
+        Check(restored.MaterialCount("material.sawmill.stage0") == 2 &&
+              restored.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
+            "save/load must preserve stable-ID industry stock and queued recipe identities");
         Check(restored.TileOrders.Count == colony.TileOrders.Count &&
               restored.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))
                   .SequenceEqual(colony.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))),

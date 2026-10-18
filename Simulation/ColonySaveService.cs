@@ -94,11 +94,12 @@ internal sealed class ColonySnapshot
     public List<ResourceDepositSnapshot> Deposits { get; set; } = [];
     public List<ColonyWorkerSnapshot> Workers { get; set; } = [];
     public List<ResourceStackSnapshot> Inventory { get; set; } = [];
+    public List<MaterialStackSnapshot> Materials { get; set; } = [];
     public List<ProductionOrderSnapshot> ProductionOrders { get; set; } = [];
 
     public void Validate()
     {
-        if (SchemaVersion != 1) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -106,6 +107,11 @@ internal sealed class ColonySnapshot
         if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
             throw new InvalidDataException("Colony save is missing a required collection.");
+        if (Materials is null)
+        {
+            if (SchemaVersion == 1) Materials = [];
+            else throw new InvalidDataException("Colony save is missing its stable-ID material inventory.");
+        }
         if (Tiles.Count != Width * Height)
             throw new InvalidDataException("Colony save has an incomplete tile grid.");
 
@@ -232,12 +238,19 @@ internal sealed class ColonySnapshot
             Inventory.Select(stack => stack.Resource).Distinct().Count() != Inventory.Count)
             throw new InvalidDataException("Colony inventory is incomplete, duplicated, or contains an invalid amount.");
 
+        var knownMaterialIds = ProgressionCatalog.Resources.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        if (Materials.Any(stack => string.IsNullOrWhiteSpace(stack.MaterialId) ||
+                !knownMaterialIds.Contains(stack.MaterialId) ||
+                ColonySimulation.IsLegacyMaterialId(stack.MaterialId) || stack.Amount <= 0) ||
+            Materials.Select(stack => stack.MaterialId).Distinct(StringComparer.Ordinal).Count() != Materials.Count)
+            throw new InvalidDataException("Colony save contains an unknown, duplicated, or invalid stable-ID material stack.");
+
         int availableStorageCapacity =
             Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
                 .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
             Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
                 .Sum(_ => ColonySimulation.StorageRackCapacity);
-        if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
+        if (Inventory.Sum(stack => stack.Amount) + Materials.Sum(stack => stack.Amount) > availableStorageCapacity)
             throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
 
         var productionIds = new HashSet<int>();
@@ -245,7 +258,8 @@ internal sealed class ColonySnapshot
         {
             CheckId(order.Id, productionIds, "production order");
             if (!objectIds.Contains(order.WorkstationId) || !float.IsFinite(order.WorkRequired) ||
-                !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0)
+                !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0 ||
+                (order.RecipeId != null && !ProgressionCatalog.Recipes.Any(recipe => recipe.Id == order.RecipeId)))
                 throw new InvalidDataException("Colony save contains an invalid production order.");
         }
         foreach (var worker in Workers)
@@ -340,10 +354,16 @@ internal sealed class ResourceStackSnapshot
     public ResourceKind Resource { get; set; }
     public int Amount { get; set; }
 }
+internal sealed class MaterialStackSnapshot
+{
+    public string MaterialId { get; set; } = string.Empty;
+    public int Amount { get; set; }
+}
 internal sealed class ProductionOrderSnapshot
 {
     public int Id { get; set; }
     public int WorkstationId { get; set; }
+    public string? RecipeId { get; set; }
     public float WorkRequired { get; set; }
     public float WorkDone { get; set; }
     public bool Complete { get; set; }
