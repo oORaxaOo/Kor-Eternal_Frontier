@@ -1,0 +1,44 @@
+name: GondwanaGame validation
+
+on:
+  push:
+    branches:
+      - main
+      - feature/wireframe-colony-foundation
+    paths:
+      - "GondwanaGame/**"
+      - ".github/workflows/gondwana-game.yml"
+  pull_request:
+    paths:
+      - "GondwanaGame/**"
+      - ".github/workflows/gondwana-game.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-sim-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore and build Release
+        run: dotnet build GondwanaGame/GondwanaGame.csproj --configuration Release
+
+      - name: Run deterministic gameplay checks
+        run: dotnet run --project GondwanaGame/GondwanaGame.csproj --configuration Release --no-build -- --self-test
+
+      - name: Publish self-contained Linux x86_64 build
+        run: dotnet publish GondwanaGame/GondwanaGame.csproj --configuration Release --runtime linux-x64 --self-contained true --output artifacts/Kor-Eternal-Frontier/linux-x64
+
+      - name: Verify published executable
+        run: |
+          test -f artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
+          file artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
