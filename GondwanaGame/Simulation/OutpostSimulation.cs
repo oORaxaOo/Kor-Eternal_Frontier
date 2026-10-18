@@ -1,33 +1,25 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using KorTheBlight.Core;
 
 namespace KorTheBlight.Simulation;
 
-/// <summary>A small fixed-step settlement scenario, independent of the renderer and SDL.
-/// Updated to use an orthographic square tile mapping for top-down view.
-/// </summary>
 internal sealed class OutpostSimulation
 {
     public const int Width = 13, Height = 9;
-    // Square tile size in pixels at zoom == 1
-    public const float TileSize = 48f;
-    public const float TileWidth = TileSize, TileHeight = TileSize;
-    private const float UI_OFFSET_Y = 80f; // top HUD height in the renderer layout
-
+    public const float TileWidth = 54, TileHeight = 27;
     public const int BaseX = 6, BaseY = 4;
 
     private readonly byte[,] _blight = new byte[Width, Height];
     private readonly bool[,] _blocked = new bool[Width, Height];
-    private readonly List<Purifier> _purifiers = new();
-    private readonly List<BlightEnemy> _hostiles = new();
-    private readonly List<(int X, int Y)> _route = new();
-    private readonly List<(int X, int Y)> _guardianRoute = new();
+    private readonly List<Purifier> _purifiers = [];
+    private readonly List<BlightEnemy> _hostiles = [];
+    private readonly List<(int X, int Y)> _route = [];
+    private readonly List<(int X, int Y)> _guardianRoute = [];
     private readonly ScenarioBalance _balance;
     private double _spreadClock, _workClock, _damageClock, _cleanseClock, _combatClock;
     private int _spreadTurns;
     private bool _guardianSelected;
 
+    public ColonyState Colony { get; } = new();
     public float WorkerX { get; private set; } = 3.5f;
     public float WorkerY { get; private set; } = 4f;
     public float TargetX { get; private set; } = 3.5f;
@@ -57,40 +49,31 @@ internal sealed class OutpostSimulation
         _balance = balance ?? new ScenarioBalance();
         Alloy = _balance.StartingAlloy;
         Supplies = _balance.StartingSupplies;
-        // Seeded, fixed starter layout; deterministic updates need no cosmetic RNG.
+        Colony.Storage.Set("alloy", Alloy);
+        Colony.Storage.Set("supplies", Supplies);
+        Colony.AddColonist("Pioneer", (int)WorkerX, (int)WorkerY);
         _blight[0, 7] = 3; _blight[1, 7] = 2; _blight[1, 8] = 2;
         _blocked[4, 1] = true; _blocked[9, 6] = true; _blocked[11, 1] = true;
         _hostiles.Add(new BlightEnemy(.5f, 7.5f));
     }
 
-    // Map tile (x,y) to screen coordinates (center) using orthographic mapping.
     public static (float X, float Y) TileCenter(int x, int y, float cameraX = 0, float cameraY = 0, float zoom = 1)
     {
-        float mapWidthPx = Width * TileWidth * zoom;
-        float mapHeightPx = Height * TileHeight * zoom;
-        // place map centered horizontally within the 1100 design width and below the HUD area
-        float originX = 1100f / 2f - mapWidthPx / 2f + cameraX;
-        float originY = UI_OFFSET_Y + cameraY; // render under top HUD
-        float cx = originX + x * TileWidth * zoom + (TileWidth * zoom) / 2f;
-        float cy = originY + y * TileHeight * zoom + (TileHeight * zoom) / 2f;
-        return (cx, cy);
+        float cx = 550 + cameraX, cy = 350 + cameraY;
+        return (cx + (x - y) * TileWidth * zoom / 2f, cy + (x + y - 8) * TileHeight * zoom / 2f);
     }
 
     public static (float X, float Y) ScreenToTile(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
     {
-        float mapWidthPx = Width * TileWidth * zoom;
-        float mapHeightPx = Height * TileHeight * zoom;
-        float originX = 1100f / 2f - mapWidthPx / 2f + cameraX;
-        float originY = UI_OFFSET_Y + cameraY;
-        float dx = (sx - originX) / (TileWidth * zoom);
-        float dy = (sy - originY) / (TileHeight * zoom);
-        return (dx, dy);
+        float dx = (sx - 550 - cameraX) / (TileWidth * zoom / 2f);
+        float dy = (sy - 350 - cameraY) / (TileHeight * zoom / 2f);
+        return ((dx + dy) / 2f + 4f, (dy - dx) / 2f + 4f);
     }
 
     public bool SelectWorker(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
     {
         var p = WorkerScreen(cameraX, cameraY, zoom);
-        Selected = MathF.Sqrt(MathF.Pow(sx - p.X, 2) + MathF.Pow(sy - p.Y, 2)) <= Math.Max(12f, TileSize * zoom * 0.5f);
+        Selected = MathF.Sqrt(MathF.Pow(sx - p.X, 2) + MathF.Pow(sy - p.Y, 2)) <= 24;
         _guardianSelected = false;
         if (Selected) Message = "Worker selected. Right-click a deposit to gather or ground to move.";
         return Selected;
@@ -102,7 +85,7 @@ internal sealed class OutpostSimulation
         var guardian = UnitScreen(GuardianX, GuardianY, cameraX, cameraY, zoom);
         float workerDistance = Distance(sx, sy, worker.X, worker.Y);
         float guardianDistance = Distance(sx, sy, guardian.X, guardian.Y);
-        if (Math.Min(workerDistance, guardianDistance) > Math.Max(16f, TileSize * zoom * 0.6f))
+        if (Math.Min(workerDistance, guardianDistance) > 26)
         {
             Selected = false;
             return false;
@@ -123,13 +106,8 @@ internal sealed class OutpostSimulation
 
     private static (float X, float Y) UnitScreen(float x, float y, float cameraX, float cameraY, float zoom)
     {
-        // x,y are world (tile) coordinates, may be fractional; map to center using same origin as TileCenter
-        float mapWidthPx = Width * TileWidth * zoom;
-        float originX = 1100f / 2f - mapWidthPx / 2f + cameraX;
-        float originY = UI_OFFSET_Y + cameraY;
-        float cx = originX + x * TileWidth * zoom;
-        float cy = originY + y * TileHeight * zoom;
-        return (cx, cy);
+        float cx = 550 + cameraX, cy = 350 + cameraY;
+        return (cx + (x - y) * TileWidth * zoom / 2f, cy + (x + y - 8) * TileHeight * zoom / 2f);
     }
 
     public void Command(float sx, float sy, float cameraX = 0, float cameraY = 0, float zoom = 1)
@@ -159,6 +137,8 @@ internal sealed class OutpostSimulation
         if (Alloy < _balance.PurifierAlloyCost || Supplies < _balance.PurifierSuppliesCost)
         { Message = $"Lilith: A purifier costs {_balance.PurifierAlloyCost} alloy and {_balance.PurifierSuppliesCost} supplies."; return; }
         Alloy -= _balance.PurifierAlloyCost; Supplies -= _balance.PurifierSuppliesCost;
+        Colony.Storage.Set("alloy", Alloy);
+        Colony.Storage.Set("supplies", Supplies);
         _purifiers.Add(new Purifier(x + .5f, y + .5f));
         var workTiles = new[] { (x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y) }
             .Where(tile => InBounds(tile.Item1, tile.Item2) && !BlockedAt(tile.Item1, tile.Item2)).ToArray();
@@ -166,6 +146,8 @@ internal sealed class OutpostSimulation
         {
             _purifiers.RemoveAt(_purifiers.Count - 1);
             Alloy += _balance.PurifierAlloyCost; Supplies += _balance.PurifierSuppliesCost;
+            Colony.Storage.Set("alloy", Alloy);
+            Colony.Storage.Set("supplies", Supplies);
             Message = "Lilith: No clear approach for the worker. Choose another site.";
             return;
         }
@@ -174,6 +156,8 @@ internal sealed class OutpostSimulation
         {
             _purifiers.RemoveAt(_purifiers.Count - 1);
             Alloy += _balance.PurifierAlloyCost; Supplies += _balance.PurifierSuppliesCost;
+            Colony.Storage.Set("alloy", Alloy);
+            Colony.Storage.Set("supplies", Supplies);
             Message = "Lilith: The worker cannot reach that construction site.";
             return;
         }
@@ -238,6 +222,9 @@ internal sealed class OutpostSimulation
         }
         else _damageClock = 0;
         if (BlightAt((int)MathF.Floor(WorkerX), (int)MathF.Floor(WorkerY)) > 1) Message = "Lilith: Worker is exposed to the Blight.";
+
+        Colony.Storage.Set("alloy", Alloy);
+        Colony.Storage.Set("supplies", Supplies);
     }
 
     private void SpreadBlight()

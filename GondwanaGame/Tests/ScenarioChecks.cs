@@ -1,8 +1,7 @@
-using KorTheBlight.Simulation;
+using KorTheBlight.Core;
 
 namespace KorTheBlight.Tests;
 
-/// <summary>Small dependency-free checks for the deterministic starter scenario.</summary>
 internal static class ScenarioChecks
 {
     public static int Run()
@@ -10,6 +9,7 @@ internal static class ScenarioChecks
         string balancePath = Path.Combine(AppContext.BaseDirectory, "Data", "Balance", "scenario.json");
         var configuredBalance = ScenarioBalance.Load(balancePath);
         Require(configuredBalance.PurifierAlloyCost == 80, "shipped balance file should load its configured purifier cost");
+
         string invalidConfig = Path.GetTempFileName();
         try
         {
@@ -27,6 +27,7 @@ internal static class ScenarioChecks
         for (int y = 0; y < OutpostSimulation.Height; y++)
         for (int x = 0; x < OutpostSimulation.Width; x++)
             Require(first.BlightAt(x, y) == second.BlightAt(x, y), "same scenario inputs must yield the same Blight map");
+
         int infected = 0;
         for (int y = 0; y < OutpostSimulation.Height; y++)
         for (int x = 0; x < OutpostSimulation.Width; x++) if (first.BlightAt(x, y) > 0) infected++;
@@ -57,11 +58,16 @@ internal static class ScenarioChecks
         Require(economy.Alloy == alloyBefore - 80 && economy.Supplies == suppliesBefore - 40, "valid construction should charge its cost");
         for (int i = 0; i < 250; i++) economy.Step(.1f);
         Require(economy.CompletedPurifiers == 1, "worker should complete a purifier when sent to its foundation");
+
         var secondSite = OutpostSimulation.TileCenter(3, 6);
         economy.PlacePurifier(secondSite.X, secondSite.Y);
         for (int i = 0; i < 250; i++) economy.Step(.1f);
         Require(economy.Won, "two completed purifiers should satisfy the containment objective");
-        Console.WriteLine("Scenario checks passed: deterministic spread, worker selection, gathering, placement validation, resource costs, construction, objective completion.");
+
+        var coreResult = CoreRules.Run();
+        if (coreResult != 0) return coreResult;
+
+        Console.WriteLine("Scenario checks passed: deterministic spread, worker selection, gathering, placement validation, resource costs, construction, objective completion, and core colony rules.");
         return 0;
     }
 
