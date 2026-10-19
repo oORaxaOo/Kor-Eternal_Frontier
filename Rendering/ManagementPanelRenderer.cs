@@ -183,13 +183,13 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 var names = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
                 foreach (var recipe in colony.ManagementRecipes)
                 {
-                    bool canQueue = colony.CanQueueRecipe(recipe.Id, out _);
+                    bool canQueue = colony.CanQueueRecipe(recipe.Id, out string recipeReason);
                     string recipeInputsText = string.Join(" + ", recipe.Inputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     string recipeOutputsText = string.Join(" + ", recipe.Outputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, recipe.Name, 670, recipeY, 365);
-                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • {(canQueue ? "READY" : "MISSING INPUTS / STORAGE")}",
+                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • {(canQueue ? "READY" : recipeReason)}",
                         670, recipeY + 27, 365);
                     recipeY += 50;
                 }
