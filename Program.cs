@@ -208,16 +208,6 @@ internal static class Program
     private static bool Hit(float x, float y, float left, float top, float right, float bottom)
         => x >= left && x <= right && y >= top && y <= bottom;
 
-    private static PlaceableKind NextPlaceable(PlaceableKind current) => current switch
-    {
-        PlaceableKind.Workbench => PlaceableKind.SleepingPod,
-        PlaceableKind.SleepingPod => PlaceableKind.StorageRack,
-        PlaceableKind.StorageRack => PlaceableKind.Generator,
-        PlaceableKind.Generator => PlaceableKind.Garden,
-        _ => PlaceableKind.Workbench
-    };
-
-    private static bool IsDown(IntPtr state, int scancode) => state != IntPtr.Zero && Marshal.ReadByte(state, scancode) != 0;
 }
 
 internal sealed class SdlAdapter(IntPtr renderer, int width, int height) : RenderSurfaceAdapterBase(width, height), IDisposable
@@ -273,10 +263,6 @@ internal static class Sdl
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206;
     public const uint ButtonLeftMask = 1, ButtonMiddleMask = 2, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    public const int ScancodeA = 4, ScancodeD = 7, ScancodeE = 8, ScancodeI = 12, ScancodeO = 18, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26;
-    public const int Scancode1 = 30, Scancode2 = 31, Scancode3 = 32, Scancode4 = 33, Scancode5 = 34;
-    public const int ScancodeTab = 43, ScancodeSpace = 44, ScancodeMinus = 45, ScancodeEquals = 46, ScancodeEscape = 41;
-    public const int ScancodeF5 = 62, ScancodeF9 = 66;
     [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();
@@ -289,7 +275,6 @@ internal static class Sdl
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_RenderPresent(IntPtr renderer);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_PollEvent(out Event e);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern uint SDL_GetMouseState(out float x, out float y);
-    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetKeyboardState(out int count);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_GetWindowSize(IntPtr window, out int width, out int height);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Delay(uint ms);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_DestroyTexture(IntPtr texture);
