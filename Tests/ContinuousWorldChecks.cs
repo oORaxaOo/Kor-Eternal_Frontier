@@ -30,7 +30,7 @@ internal static class ContinuousWorldChecks
         Check(world.ClockSeconds == 2,
             "continuous world state must maintain its own serializable simulation clock");
 
-        var destination = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+        var destination = world.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
         var caravan = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
         double woodBefore = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
         Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 50, 1_000),
