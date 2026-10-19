@@ -115,6 +115,18 @@ internal static class ColonyChecks
             "higher-era research should unlock after all prerequisite technologies are completed");
         Check(colony.CanQueueRecipe("recipe.sawmill.stage0", out _),
             "researching Machine Tools Era I should unlock the stage-zero sawmill recipe");
+        Check(colony.CanPlaceCatalogBuilding("building.workshop.tier0", out _),
+            "researching the matching technology should unlock the catalogue workshop blueprint");
+        var allVisibleResearch = Enumerable.Range(0, colony.ManagementResearchPageCount)
+            .SelectMany(page => colony.ManagementResearch(page))
+            .Select(project => project.Id)
+            .ToArray();
+        Check(allVisibleResearch.Length == ProgressionCatalog.Research.Count - 3 &&
+              allVisibleResearch.Distinct(StringComparer.Ordinal).Count() == allVisibleResearch.Length,
+            "mouse-accessible research pages must expose every unresearched project exactly once");
+        Check(colony.ManagementResearchPageCount > 1 &&
+              colony.ManagementResearch(colony.ManagementResearchPageCount - 1).Count > 0,
+            "the final research page must remain reachable and non-empty");
         Check(!colony.CanQueueRecipe("recipe.sawmill.stage1", out string stageOneReason) &&
               !stageOneReason.Contains("Locked by research", StringComparison.Ordinal),
             "the next recipe tier should be technology-unlocked but still respect its actual material inputs");
