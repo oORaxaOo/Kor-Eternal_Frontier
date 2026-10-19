@@ -120,16 +120,18 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Storage used", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 670, 300);
                 Pair(c, "Storage available", colony.InventoryFreeCapacity.ToString(), 670, 326);
                 Note(c, "Storage is shared by legacy resources and every stable-ID industry material.", 670, 372, 365);
-                Section(c, "Raw-material sites • click on map to extract", 670, 420);
-                int rawY = 450;
+                Section(c, "Raw-material sites • click row to set auto-extraction", 670, 420);
+                int rawY = 446;
                 var rawNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
-                foreach (var deposit in colony.MaterialDeposits.Where(item => item.Amount > 0).Take(5))
+                foreach (var deposit in colony.MaterialDeposits.OrderBy(item => item.Id).Take(7))
                 {
+                    int gatherTarget = colony.GatherTarget(deposit.MaterialId);
+                    string targetLabel = gatherTarget == 0 ? "AUTO OFF" : $"TARGET {gatherTarget}";
                     Row(c, rawNames.GetValueOrDefault(deposit.MaterialId, deposit.MaterialId),
-                        $"{deposit.Amount} remaining • tile {deposit.Cell.X},{deposit.Cell.Y}", 670, rawY);
-                    rawY += 35;
+                        $"{deposit.Amount} left • {targetLabel} • tile {deposit.Cell.X},{deposit.Cell.Y}", 670, rawY);
+                    rawY += 26;
                 }
-                Note(c, "Select a colonist, then click a marked raw-material site on the map. Workers haul up to five units per trip.", 670, 632, 365);
+                Note(c, "Click a site row to cycle AUTO OFF → 10 → 25 → 50. Idle colonists extract toward targets; manual orders still work.", 670, 632, 365);
                 break;
             case 4:
                 Section(c, "Construction & blueprints", 254, 164);
