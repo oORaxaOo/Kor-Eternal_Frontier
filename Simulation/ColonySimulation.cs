@@ -604,8 +604,8 @@ internal sealed class ColonySimulation
             return 0;
         }
         var building = ProgressionCatalog.Buildings.First(item => item.Id == buildingId);
-        int width = (int)Math.Ceiling(Math.Sqrt(building.Footprint));
-        int height = (int)Math.Ceiling(building.Footprint / (double)width);
+        int width = Math.Max(1, building.Footprint / 2);
+        int height = 2;
         var origin = new CellPosition(x, y);
         for (int ty = y; ty < y + height; ty++)
         for (int tx = x; tx < x + width; tx++)
