@@ -63,7 +63,6 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Replace/remove the remaining legacy CampaignSimulation/CampaignState save payload and compatibility bridge once migration is tested.
 - Add population-linked consumption, settlement development, diplomacy/conflict, and a dynamic multi-stage Blight ecosystem.
 - Large world generation and settlement transitions.
-- Dynamic multi-stage Blight ecosystem.
 
 ## Design constraints
 
@@ -91,3 +90,8 @@ The nine-region linked-hex campaign model is legacy scaffolding. It was built ar
 The target world uses continuous world-space coordinates and spatial queries. Local settlement construction may remain square-tile based, but the wider world is not a graph of linked tiles. All scales share one simulation clock and canonical world state; camera zoom changes the level of detail only. Population, resources, trade, caravans, armies and hazards move through space over elapsed time. Resource transfers must be represented as shipments with travel progress, not instant imports/exports. Save/load must serialize one validated world snapshot.
 
 Mouse-first is a product requirement. Visible menus must expose pause/resume, speed, save/load, zoom, build/object selection and cancellation. Mouse interaction is the primary input; keyboard shortcuts are optional only.
+
+
+## Cleanup boundary (2026-10)
+
+`CampaignState` and its JSON serializer remain temporarily because the session envelope and schema-v1 migration still read the old campaign payload. They are not an active simulation or world-map architecture. The obsolete standalone `campaign.json` save/load path has been removed; all active persistence goes through `GameSessionService` and the unified session file. Do not add new gameplay features, UI controls, or save paths to `CampaignSimulation`. Replace the legacy payload only after the canonical world ledger can migrate old saves and the migration tests cover resources, army/battle flags, selection, and corrupt input.
