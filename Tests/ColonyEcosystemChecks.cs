@@ -69,6 +69,30 @@ internal static class ColonyEcosystemChecks
         Check(citizen.Happiness >= 0 && citizen.Happiness <= 100,
             "happiness should be the bounded average of citizen needs");
 
+        var priorityColony = new ColonyEcosystem(8, 8);
+        priorityColony.Grid.DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(0, 1)]);
+        priorityColony.Grid.DefineStockpileZone(ResourceKind.Wood,
+            [new CellPosition(6, 6), new CellPosition(6, 7)]);
+        Check(priorityColony.Grid.TryAdd(ResourceKind.Food, 2),
+            "the priority fixture should have food available before work begins");
+        var priorityCitizen = priorityColony.AddCitizen("Priority-Kor", new CellPosition(1, 0));
+        int priorityJob = priorityColony.JobBroker.RegisterWorkplace("Priority lumber yard",
+            new CellPosition(5, 6), workerCapacity: 1, outputResource: ResourceKind.Wood,
+            outputAmount: 2, workSeconds: 5f);
+        priorityColony.Step(0.1f);
+        Check(priorityCitizen.JobId == priorityJob &&
+              priorityColony.Grid.ReservedCount(ResourceKind.Wood) == 2,
+            "a citizen should reserve workplace capacity and output storage before travelling to work");
+        priorityCitizen.Hunger = 29f;
+        priorityColony.Step(0.1f);
+        Check(priorityCitizen.State == CitizenState.MovingToStorage &&
+              priorityCitizen.JobId == null &&
+              priorityColony.Grid.ReservedCount(ResourceKind.Wood) == 0,
+            "food needs must preempt workplace travel and release both the job slot and its output reservation");
+        Check(priorityColony.JobBroker.FindJob(priorityJob)?.AssignedWorkers == 0,
+            "a citizen seeking food must not occupy workplace capacity while away from the job");
+
         var needsColony = new ColonyEcosystem(4, 4);
         needsColony.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(0, 1)]);
