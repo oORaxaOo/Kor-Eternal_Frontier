@@ -133,7 +133,7 @@ internal sealed class ColonySimulation
         + _productionOrders.Count(x => !x.Complete);
     public int InventoryUsed => _sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue
         ? _inventory.Values.Sum()
-        : (int)Math.Ceiling(_sharedInventoryWorld.Inventories[_sharedInventoryOwnerId.Value].Values.Sum());
+        : (int)Math.Ceiling(_sharedInventoryWorld.InventoryTotalAt(_sharedInventoryOwnerId.Value));
     public int InventoryCapacity =>
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
@@ -337,7 +337,6 @@ internal sealed class ColonySimulation
                                           entity.Kind == WorldEntityKind.Settlement))
             throw new ArgumentException("The shared inventory owner must be a settlement in this world.", nameof(settlementId));
 
-        if (!world.Inventories.ContainsKey(settlementId)) world.Inventories[settlementId] = [];
         _sharedInventoryWorld = world;
         _sharedInventoryOwnerId = settlementId;
         _inventory.Clear(); // No second resource balance remains once the canonical ledger is attached.
@@ -369,11 +368,11 @@ internal sealed class ColonySimulation
         }
 
         var worldResource = Enum.Parse<WorldResourceKind>(resource.ToString(), ignoreCase: false);
-        var inventory = _sharedInventoryWorld.Inventories[_sharedInventoryOwnerId.Value];
-        double updated = inventory.GetValueOrDefault(worldResource) + delta;
-        if (!double.IsFinite(updated) || updated < -1e-9)
-            throw new InvalidOperationException("A resource ledger adjustment would create an invalid balance.");
-        inventory[worldResource] = Math.Max(0d, updated);
+        bool changed = delta > 0
+            ? _sharedInventoryWorld.TryAddInventory(_sharedInventoryOwnerId.Value, worldResource, delta)
+            : _sharedInventoryWorld.TryTakeInventory(_sharedInventoryOwnerId.Value, worldResource, -delta);
+        if (!changed)
+            throw new InvalidOperationException("The canonical resource ledger rejected an invalid or over-capacity adjustment.");
     }
 
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
