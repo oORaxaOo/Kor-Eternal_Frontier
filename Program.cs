@@ -38,8 +38,30 @@ internal static class Program
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
 
-            var simulation = new ColonySimulation();
-            var campaign = new CampaignSimulation(70241);
+            ColonySimulation simulation;
+            CampaignSimulation campaign;
+            if (File.Exists(GameSessionService.SavePath))
+            {
+                try
+                {
+                    var restoredSession = GameSessionService.Load();
+                    simulation = restoredSession.Colony;
+                    campaign = restoredSession.Campaign;
+                    simulation.SetMessage("Previous colony and campaign session restored.");
+                }
+                catch (Exception ex)
+                {
+                    // Preserve the existing save for recovery; never silently overwrite it.
+                    simulation = new ColonySimulation();
+                    campaign = new CampaignSimulation(70241);
+                    simulation.SetMessage($"Session restore failed; started a fresh session without overwriting the save: {ex.Message}");
+                }
+            }
+            else
+            {
+                simulation = new ColonySimulation();
+                campaign = new CampaignSimulation(70241);
+            }
             var worldMap = new WorldMapSimulation(70241);
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
