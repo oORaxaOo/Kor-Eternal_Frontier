@@ -29,6 +29,7 @@ internal sealed class WorldSimulation
         Colony = colony ?? throw new ArgumentNullException(nameof(colony));
         World = world ?? throw new ArgumentNullException(nameof(world));
         SpatialWorld = ContinuousWorldState.Generate(World.State.Seed);
+        Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
     }
 
     /// <summary>Advances the unified simulation clock. deltaSeconds is real elapsed time.</summary>
@@ -60,12 +61,16 @@ internal sealed class WorldSimulation
         SpeedMultiplier = multiplier;
     }
 
+    private static long KorSettlementId(ContinuousWorldState world)
+        => world.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor").Id;
+
     public void Restore(LoadedGameSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         Colony = session.Colony;
         World = session.Campaign;
         SpatialWorld = session.ContinuousWorld;
+        Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
         ElapsedSeconds = SpatialWorld.ClockSeconds;
         _simulationAccumulator = 0f;
     }
