@@ -60,6 +60,8 @@ internal static class Program
             bool managementOpen = false;
             int managementPage = 1;
             int catalogBuildingPage = 0;
+            int researchCatalogPage = 0;
+            int catalogUnitPage = 0;
             string? selectedCatalogBuildingId = null;
             bool commandMode = false;
             host.RenderBackbufferPostScene += canvas =>
@@ -67,7 +69,7 @@ internal static class Program
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
                 else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
                 menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage);
+                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, researchCatalogPage, catalogUnitPage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -317,12 +319,18 @@ internal static class Program
                                              logicalMouse.Y >= 194 && logicalMouse.Y < 594)
                                     {
                                         int index = (int)((logicalMouse.Y - 194) / 50);
-                                        var project = simulation.ManagementResearch.ElementAtOrDefault(index);
+                                        var project = simulation.ManagementResearch(researchCatalogPage).ElementAtOrDefault(index);
                                         if (project == null)
                                             simulation.SetMessage("No local research project is listed at that position.");
                                         else
                                             simulation.ResearchProject(project.Id, campaign);
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        researchCatalogPage = Math.Max(0, researchCatalogPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        researchCatalogPage = Math.Min(simulation.ManagementResearchPageCount - 1, researchCatalogPage + 1);
                                     break;
                                 case 8:
                                     if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
@@ -343,6 +351,24 @@ internal static class Program
                                         try { campaign.EndTurn(); worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
                                         catch (Exception ex) { simulation.SetMessage("Strategic turn failed: " + ex.Message); }
                                     }
+                                    break;
+                                case 10:
+                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
+                                        logicalMouse.Y >= 444 && logicalMouse.Y < 624)
+                                    {
+                                        int index = (int)((logicalMouse.Y - 444) / 36);
+                                        var unit = CampaignColonyBridge.ManagementUnits(catalogUnitPage).ElementAtOrDefault(index);
+                                        if (unit == null)
+                                            simulation.SetMessage("No catalogue unit is listed at that position.");
+                                        else
+                                            CampaignColonyBridge.RecruitUnit(campaign, simulation, unit.Id);
+                                    }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        catalogUnitPage = Math.Max(0, catalogUnitPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        catalogUnitPage = Math.Min(CampaignColonyBridge.UnitPageCount - 1, catalogUnitPage + 1);
                                     break;
                             }
                         }
