@@ -99,6 +99,28 @@ internal static class ColonyChecks
         Check(colony.InventoryUsed == legacyResourceTotal + 2,
             "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
 
+        var oreDeposit = colony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
+        int oreDepositBefore = oreDeposit.Amount;
+        int oreStockBefore = colony.MaterialCount("ore");
+        Check(colony.SelectWorkerAt(worker.X, worker.Y), "a colonist should be selectable before raw-material extraction");
+        colony.CommandSelectedTo(oreDeposit.Cell.X + 0.5f, oreDeposit.Cell.Y + 0.5f);
+        for (int i = 0; i < 300 && worker.CarriedMaterialId == null; i++) colony.Step(0.1f);
+        Check(worker.CarriedMaterialId == "ore" && worker.CarriedAmount == 5,
+            "a raw-material extraction trip must place stable-ID cargo on the worker");
+        string cargoSave = ColonySaveService.Serialize(colony);
+        var cargoRestored = ColonySaveService.Deserialize(cargoSave);
+        var restoredCargoWorker = cargoRestored.Workers.Single(item => item.Id == worker.Id);
+        Check(restoredCargoWorker.CarriedMaterialId == "ore" && restoredCargoWorker.CarriedAmount == 5 &&
+              restoredCargoWorker.Task?.Kind == ColonyTaskKind.Deliver,
+            "save/load must preserve a worker carrying raw materials and its delivery task");
+        for (int i = 0; i < 300; i++) colony.Step(0.1f);
+        Check(colony.MaterialCount("ore") == oreStockBefore + 5,
+            "workers must extract stable-ID raw materials and deliver them to the shared stockpile");
+        Check(oreDeposit.Amount == oreDepositBefore - 5,
+            "raw-material extraction must reduce the finite deposit by the same delivered amount");
+        Check(worker.CarriedMaterialId == null && worker.CarriedAmount == 0,
+            "a completed raw-material delivery must clear stable-ID cargo");
+
         Check(colony.DesignTileConstruction(19, 14, ArchitectureKind.Path), "a new path order should be accepted before saving");
         colony.Step(0.1f);
         string json = ColonySaveService.Serialize(colony);
@@ -126,7 +148,12 @@ internal static class ColonyChecks
                   .SequenceEqual(colony.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))),
             "save/load must preserve each tile construction state and work progress");
         Check(restored.Deposits.Select(d => (d.Id, d.Amount)).SequenceEqual(colony.Deposits.Select(d => (d.Id, d.Amount))),
-            "save/load must preserve finite deposit quantities");
+            "save/load must preserve finite legacy deposit quantities");
+        Check(restored.MaterialDeposits.Select(d => (d.Id, d.MaterialId, d.Amount))
+                .SequenceEqual(colony.MaterialDeposits.Select(d => (d.Id, d.MaterialId, d.Amount))),
+            "save/load must preserve stable-ID raw-material sites and remaining quantities");
+        Check(restored.MaterialCount("ore") == colony.MaterialCount("ore"),
+            "save/load must preserve extracted raw materials in the shared inventory");
         Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
               .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
             "save/load must preserve worker positions, needs, cargo, and task kinds");
