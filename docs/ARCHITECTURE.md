@@ -25,7 +25,7 @@ One canonical application exists at the repository root, targeting .NET 8. Gondw
 
     GameSessionService
              |
-             +-- schema-v2 session envelope: colony, legacy migration snapshot, continuous world
+             +-- schema-v2 session envelope: colony state, legacy compatibility snapshot, canonical continuous world ledger
 
 The projection layer owns screen/world mapping. Gameplay APIs receive logical world coordinates. Rendering reads state but does not decide simulation rules.
 
@@ -41,22 +41,22 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - A workstation recipe that consumes real inventory and yields a component after labor.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
 - Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with Euclidean spatial queries and coordinate-based travel-time movement.
-- Continuous-time settlement food production, per-settlement strategic inventories, and caravan shipments that reserve origin cargo and deliver only after travel time.
+- Continuous-time settlement food production constrained by shared settlement storage capacity; per-settlement inventories are the only resource authority for colony and strategic actions.
+- Caravan shipments reserve cargo at dispatch and deliver only after travel time and destination storage capacity are available.
 - One active real-time clock; the legacy campaign turn/interval model is not advanced during active play.
 - Schema-v2 session saves include continuous-world state; schema-v1 saves migrate by generating a fresh continuous world from the stored seed.
 - Minimal symbol-based top-down rendering.
 
 ## Legacy debt and retirement order
 
-The old campaign model remains only as a compatibility snapshot for schema-v1 saves. Its linked-hex geometry, turn counter, region production and separate resource balances are not the target world simulation.
+The old campaign model remains only as a compatibility snapshot for now. Its linked-hex geometry, turn counter, region production and separate resource balances are not the target world simulation.
 
 The obsolete instant Campaign-to-Colony transfer bridge has been removed. Transfers between strategic settlements must use canonical inventories and travel-time shipments; instant imports/exports are not a supported gameplay path.
 
 Remaining migration work, in order:
 
-1. Move colony inventory, construction costs, production and hauling to the canonical world resource ledger without maintaining duplicate balances.
-2. Add schema migration that can restore old session data into the canonical world without requiring the legacy campaign model at runtime.
-3. Remove the legacy campaign snapshot and linked-hex model once migration coverage proves old saves remain readable.
+1. Remove the legacy campaign save payload and obsolete compatibility APIs now that the canonical world ledger owns inventory.
+2. Remove the linked-hex campaign model and its dead rules/tests; existing saves do not need migration support.
 4. Add population-linked consumption/production, settlement development, diplomacy/conflict and dynamic Blight behavior.
 5. Improve the continuous camera transition and perform a graphical human playtest.
 
