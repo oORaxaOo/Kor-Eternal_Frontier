@@ -490,26 +490,17 @@ internal sealed class ColonySimulation
         return true;
     }
 
-    internal IReadOnlyList<ProgressionCatalog.RecipeDef> ManagementRecipes
+    internal IReadOnlyList<ProgressionCatalog.RecipeDef> ManagementRecipes(int page)
     {
-        get
-        {
-            var recipes = ProgressionCatalog.Recipes;
-            var readyFollowUps = recipes
-                .Where(recipe => recipe.Stage > 0 && recipe.Inputs.All(input => MaterialCount(input.Key) >= input.Value))
-                .OrderBy(recipe => recipe.Stage)
-                .ThenBy(recipe => recipe.Industry, StringComparer.Ordinal)
-                .Take(4);
-            var readyStarters = recipes
-                .Where(recipe => recipe.Stage == 0 && recipe.Inputs.All(input => MaterialCount(input.Key) >= input.Value))
-                .Take(4);
-            var unavailableStarters = recipes
-                .Where(recipe => recipe.Stage == 0 && recipe.Inputs.Any(input => MaterialCount(input.Key) < input.Value))
-                .Take(2);
-            return readyFollowUps.Concat(readyStarters).Concat(unavailableStarters)
-                .DistinctBy(recipe => recipe.Id).Take(8).ToArray();
-        }
+        const int pageSize = 8;
+        return ProgressionCatalog.Recipes
+            .OrderBy(recipe => CanQueueRecipe(recipe.Id, out _) ? 0 : 1)
+            .ThenBy(recipe => recipe.Stage)
+            .ThenBy(recipe => recipe.Industry, StringComparer.Ordinal)
+            .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
     }
+
+    internal int ManagementRecipePageCount => (ProgressionCatalog.Recipes.Count + 7) / 8;
 
     /// <summary>Accepts external deliveries without bypassing the colony's real storage limit.</summary>
     public int AddExternalResource(ResourceKind resource, int requested)
