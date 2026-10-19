@@ -609,6 +609,15 @@ internal sealed class ColonySimulation
 
     internal int ManagementBuildingPageCount => (ProgressionCatalog.Buildings.Count + 4) / 5;
 
+    internal IReadOnlyList<MaterialDeposit> ManagementMaterialDeposits(int page)
+    {
+        const int pageSize = 5;
+        return _materialDeposits.OrderBy(deposit => deposit.MaterialId, StringComparer.Ordinal)
+            .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
+    }
+
+    internal int ManagementMaterialDepositPageCount => Math.Max(1, (_materialDeposits.Count + 4) / 5);
+
     public int PlaceCatalogBuildingBlueprint(string buildingId, int x, int y)
     {
         if (!CanPlaceCatalogBuilding(buildingId, out string reason))
