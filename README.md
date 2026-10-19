@@ -52,7 +52,8 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 ## Source map
 
 - Program.cs: SDL startup, input mapping, simulation stepping.
-- Simulation/ColonySimulation.cs: current colony state and rules.
+- Simulation/ColonySimulation.cs: current local settlement state and rules.
+- WorldModel/ContinuousWorldState.cs: continuous world-space entities, spatial queries, travel-time movement and world clock state.
 - Simulation/ColonySaveService.cs: validated versioned JSON persistence.
 - Campaign/: deterministic strategic model and campaign save data.
 - Rendering/ColonyRenderer.cs: presentation-only square-grid view.
@@ -70,6 +71,6 @@ Keep simulation logic independent of rendering and input. Extend the game throug
 
 The new `WorldSimulation` coordinates colony and temporary legacy regional updates under one clock. The mouse-first UI now exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
 
-This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The next slices must replace it with canonical resource ownership and real shipments, build a continuous world-space model with travel time, integrate population and settlements, and save one complete world state. The old nine-region linked-hex map must not be extended as the new world.
+This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The continuous world-space entity model now exists and is stepped/saved with the shared clock. The next slices must make it the active world renderer/simulation, replace the legacy regional production/Blight rules, and add canonical resource ownership and real shipments. The old nine-region linked-hex map must not be extended as the new world.
 
 **Save / Load** in the mouse menu save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, regional progression, the shared clock, resource accounting, and session persistence.
