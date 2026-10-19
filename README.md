@@ -17,7 +17,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 - A workstation recipe that consumes alloy and wood when queued; a worker performs the job before a component is added to inventory.
 - A minimal symbolic renderer: square tiles and buildings, colonists as dots, resource markers as squares.
 - Versioned colony save/load for terrain, architecture orders, objects, colonists, cargo, tasks/routes, deposits, inventory, production orders, IDs, selection, and simulation time.
-- A unified real-time coordinator (`Simulation/WorldSimulation.cs`) advances the colony and continuous world under one clock. The legacy campaign object is retained only as a save-migration compatibility snapshot and no longer receives active world ticks.
+- A unified real-time coordinator (Simulation/WorldSimulation.cs) advances the colony and continuous world under one clock. The colony and strategic layer read and mutate the same settlement inventory; session saves store that inventory only in the world ledger.
 
 This is a playable foundation, not the complete game. A reusable central job board, material reservations, capacity-aware stockpiles, multiple production chains, fuller population simulation, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
 
@@ -54,25 +54,24 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 
 - Program.cs: SDL startup, input mapping, simulation stepping.
 - Simulation/ColonySimulation.cs: current local settlement state and rules.
-- WorldModel/ContinuousWorldState.cs: continuous world-space entities, per-settlement strategic inventories, conserved cargo shipments with travel time, spatial queries and the shared world clock.
+- WorldModel/ContinuousWorldState.cs: continuous world-space entities, canonical per-settlement inventories and storage capacities, conserved cargo shipments with travel time, spatial queries and the shared world clock.
 - Simulation/ColonySaveService.cs: validated versioned JSON persistence.
-- Campaign/: deterministic strategic model and campaign save data.
+- Simulation/GameSessionService.cs: atomic session persistence for the colony and continuous world; legacy campaign migration is intentionally unsupported.
 - Rendering/ColonyRenderer.cs: presentation-only local square-grid and continuous strategic world views.
 - Rendering/ContinuousWorldProjection.cs: continuous world coordinate/screen projection.
 - Rendering/OrthogonalGridProjection.cs: screen/world coordinate conversion.
-- Tests/: automated colony and campaign checks.
+- Tests/: automated colony, campaign compatibility, and integration checks.
 - build-linux.sh and launch-kor.sh: Linux package and launch scripts.
 - .github/workflows/gondwana-game.yml: canonical build, tests, and Linux packaging.
 
 ## Engineering direction
 
-Keep simulation logic independent of rendering and input. Extend the game through tested slices: material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, real research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
+Keep simulation logic independent of rendering and input. Extend the game through tested slices: canonical inventory and shipments, material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
 
+## Unified real-time world
 
-## Unified real-time world migration
+The WorldSimulation advances the colony and continuous world under one clock. Strategic settlement food production integrates continuously from elapsed time and respects shared storage capacity. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera.
 
-The new `WorldSimulation` advances the colony and continuous world under one clock; the legacy campaign turn counter no longer advances during active play. Settlement food production integrates continuously from elapsed time. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
+The obsolete instant campaign transfer bridge and linked-hex campaign model have been removed. Colony construction, production, worker hauling and strategic shipments read or mutate the same settlement-owned resource ledger; a session snapshot does not duplicate the colony inventory. Settlement storage capacity is shared across local and strategic views, and deliveries wait at their destination if storage is full. The session format now represents the active unified world directly; old saves are intentionally not migrated. A dynamic Blight ecosystem and population-level strategic simulation remain unfinished.
 
-This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The continuous world-space entity model is rendered at strategic zoom, with mouse selection/inspection, middle-drag navigation, movement orders, strategic settlement inventories and real cargo shipments that travel with caravans. Tests cover origin reservation, delayed delivery, conservation and in-flight save/load. Local colony inventory still needs migration into the canonical world ledger. A dynamic Blight ecosystem, population-level strategic simulation, and replacement of the legacy campaign save payload remain unfinished. The old nine-region linked-hex map must not be extended as the new world.
-
-**Save / Load** in the mouse menu save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, legacy campaign compatibility, continuous production, the shared clock, shipment conservation, and session persistence.
+Save / Load in the mouse menu saves or restores the current session. Run the self-test command shown above to check colony behavior, shared-ledger debits, capacity-aware storage, continuous production, the shared clock, shipment conservation, and session persistence.

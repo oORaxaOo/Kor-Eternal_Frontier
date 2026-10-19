@@ -100,20 +100,6 @@ internal static class ColonyChecks
               .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
             "save/load must preserve worker positions, needs, cargo, and task kinds");
 
-        string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
-        string path = Path.Combine(directory, "colony.json");
-        try
-        {
-            ColonySaveService.Save(colony, path);
-            var loadedFromDisk = ColonySaveService.Load(path);
-            Check(loadedFromDisk.ResourceCount(ResourceKind.Food) == colony.ResourceCount(ResourceKind.Food),
-                "disk save/load must preserve inventory state");
-        }
-        finally
-        {
-            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
-        }
-
         var needsColony = new ColonySimulation();
         var needsWorker = needsColony.Workers[0];
         var liveCitizen = needsColony.CitizenForWorker(needsWorker.Id);
@@ -143,13 +129,11 @@ internal static class ColonyChecks
         for (int i = 0; i < 1200; i++) expandedStorageColony.Step(0.1f);
         Check(expandedStorageColony.Objects.Single(item => item.Id == expandedRackId).IsBuilt,
             "the storage rack must finish construction before its grid capacity is enabled");
-        int foodBeforeLargeImport = expandedStorageColony.ResourceCount(ResourceKind.Food);
-        int acceptedLargeImport = expandedStorageColony.AddExternalResource(ResourceKind.Food, 130);
-        Check(acceptedLargeImport > 0 && foodBeforeLargeImport + acceptedLargeImport > ColonySimulation.BaseStockpileCapacity,
-            "completed rack storage must expand bounded grid capacity beyond the starter stockpile");
-        expandedStorageColony.Step(0.1f);
-        Check(expandedStorageColony.ResourceCount(ResourceKind.Food) == foodBeforeLargeImport + acceptedLargeImport,
-            "expanded food inventory must synchronize into the grid without loss or overflow");
+        Check(expandedStorageColony.InventoryCapacity ==
+              ColonySimulation.BaseStockpileCapacity + ColonySimulation.StorageRackCapacity,
+            "a completed storage rack must expand the colony's bounded inventory capacity");
+        Check(expandedStorageColony.InventoryUsed <= expandedStorageColony.InventoryCapacity,
+            "completed storage capacity must never leave the colony inventory over capacity");
 
         var validationColony = new ColonySimulation();
         Check(validationColony.DesignTileConstruction(5, 5, ArchitectureKind.Wall),

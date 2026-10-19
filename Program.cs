@@ -5,7 +5,6 @@ using Gondwana;
 using Gondwana.Rendering;
 using Gondwana.Rendering.Backbuffers;
 using Gondwana.Scenes;
-using KorTheBlight.Campaign;
 using KorTheBlight.Rendering;
 using KorTheBlight.Simulation;
 using KorTheBlight.Tests;
@@ -38,7 +37,6 @@ internal static class Program
 
             var world = new WorldSimulation(70241);
             var simulation = world.Colony;
-            var campaign = world.World;
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
@@ -54,7 +52,7 @@ internal static class Program
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, paused = false;
-            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, campaign, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
             engine = Engine.Instance;
             engine.Initialize();
             engine.Configuration.TargetFPS = 60;
@@ -80,7 +78,7 @@ internal static class Program
                 accumulator += frame;
                 if (!paused)
                 {
-                    while (accumulator >= .1) { world.Step(.1f); simulation = world.Colony; campaign = world.World; accumulator -= .1; }
+                    while (accumulator >= .1) { world.Step(.1f); simulation = world.Colony; accumulator -= .1; }
                 }
                 else accumulator = 0;
                 scene.FullRefreshNeeded = true;
@@ -135,9 +133,9 @@ internal static class Program
                                 simulation.SetMessage("Choose a different destination settlement.");
                             else
                             {
-                                bool created = world.SpatialWorld.CreateShipment(selectedWorldEntityId.Value, home.Id, hit.Entity.Id, selectedShipmentResource.Value, 25, 1_000);
+                                bool created = world.SpatialWorld.CreateShipment(selectedWorldEntityId.Value, home.Id, hit.Entity.Id, selectedShipmentResource.Value, 10, 1_000);
                                 simulation.SetMessage(created
-                                    ? $"Shipment dispatched: 25 {selectedShipmentResource.Value} to {hit.Entity.Name}."
+                                    ? $"Shipment dispatched: 10 {selectedShipmentResource.Value} to {hit.Entity.Name}."
                                     : $"Shipment unavailable: Kor Hearthhold lacks {selectedShipmentResource.Value}.");
                                 if (created) selectedShipmentResource = null;
                             }
@@ -192,7 +190,6 @@ internal static class Program
                                 var loaded = GameSessionService.Load();
                                 world.Restore(loaded);
                                 simulation = world.Colony;
-                                campaign = world.World;
                                 simulation.SetMessage("World session loaded.");
                             }
                             catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); }

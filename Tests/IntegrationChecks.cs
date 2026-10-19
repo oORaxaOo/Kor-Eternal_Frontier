@@ -1,5 +1,6 @@
-using KorTheBlight.Campaign;
+using System.Text.Json;
 using KorTheBlight.Simulation;
+using KorTheBlight.WorldModel;
 
 namespace KorTheBlight.Tests;
 
@@ -7,80 +8,39 @@ internal static class IntegrationChecks
 {
     public static void Run()
     {
-        var campaign = new CampaignSimulation(70241);
-        var colony = new ColonySimulation();
+        var world = new WorldSimulation(70241);
+        var home = world.SpatialWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        int wood = world.Colony.ResourceCount(ResourceKind.Wood);
+        Check(wood == (int)world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood),
+            "local colony and strategic world must expose one shared resource balance");
 
-        int campaignSuppliesBefore = campaign.State.Supplies;
-        int campaignAlloyBefore = campaign.State.Alloy;
-        int colonyFoodBefore = colony.ResourceCount(ResourceKind.Food);
-        int colonyAlloyBefore = colony.ResourceCount(ResourceKind.Alloy);
-        int imported = CampaignColonyBridge.ImportToColony(campaign, colony);
-
-        Check(imported == 30, "initial resupply should transfer 20 Food and 10 Alloy");
-        Check(colony.ResourceCount(ResourceKind.Food) == colonyFoodBefore + 20 &&
-              colony.ResourceCount(ResourceKind.Alloy) == colonyAlloyBefore + 10,
-            "campaign imports must reach local inventory");
-        Check(campaign.State.Supplies == campaignSuppliesBefore - 20 &&
-              campaign.State.Alloy == campaignAlloyBefore - 10,
-            "imports must debit strategic inventory by exactly the delivered amounts");
-        Check(colony.InventoryUsed <= colony.InventoryCapacity, "imports must respect local storage capacity");
-
-        int suppliesBeforeExport = campaign.State.Supplies;
-        int alloyBeforeExport = campaign.State.Alloy;
-        int foodBeforeExport = colony.ResourceCount(ResourceKind.Food);
-        int localAlloyBeforeExport = colony.ResourceCount(ResourceKind.Alloy);
-        int exported = CampaignColonyBridge.ExportFromColony(campaign, colony);
-        Check(exported == 30, "initial export should transfer up to 20 Food and 10 Alloy");
-        Check(campaign.State.Supplies == suppliesBeforeExport + 20 &&
-              campaign.State.Alloy == alloyBeforeExport + 10,
-            "exports must credit campaign inventory exactly once");
-        Check(colony.ResourceCount(ResourceKind.Food) == foodBeforeExport - 20 &&
-              colony.ResourceCount(ResourceKind.Alloy) == localAlloyBeforeExport - 10,
-            "exports must debit local inventory exactly once");
-
-        // Full storage must prevent import without losing strategic stock.
-        var fullColony = ColonySimulation.RestoreSnapshot(colony.CaptureSnapshot());
-        var snapshot = fullColony.CaptureSnapshot();
-        int used = snapshot.Inventory.Sum(item => item.Amount);
-        snapshot.Inventory.Single(item => item.Resource == ResourceKind.Food).Amount += fullColony.InventoryCapacity - used;
-        fullColony = ColonySimulation.RestoreSnapshot(snapshot);
-        int suppliesAtCapacity = campaign.State.Supplies;
-        Check(CampaignColonyBridge.ImportToColony(campaign, fullColony) == 0 &&
-              campaign.State.Supplies == suppliesAtCapacity,
-            "full local storage must reject imports without consuming strategic supplies");
-
-        campaign.AdvanceWorldInterval();
-        int turn = campaign.State.Turn;
-        string json = GameSessionService.Serialize(colony, campaign);
-        var restored = GameSessionService.Deserialize(json);
-        Check(restored.Campaign.State.Turn == turn &&
-              restored.Campaign.State.Supplies == campaign.State.Supplies &&
-              restored.Campaign.State.Alloy == campaign.State.Alloy,
-            "unified save must preserve strategic turn and resource balances");
-        Check(restored.Colony.ResourceCount(ResourceKind.Food) == colony.ResourceCount(ResourceKind.Food) &&
-              restored.Colony.ResourceCount(ResourceKind.Alloy) == colony.ResourceCount(ResourceKind.Alloy),
-            "unified save must preserve local inventory alongside campaign state");
-
-        string legacyJson = System.Text.Json.JsonSerializer.Serialize(new
+        string json = GameSessionService.Serialize(world);
+        using (var envelope = JsonDocument.Parse(json))
         {
-            SchemaVersion = 1,
-            ColonyJson = ColonySaveService.Serialize(colony),
-            CampaignJson = CampaignSaveService.Serialize(campaign.State)
-        });
-        var migratedLegacy = GameSessionService.Deserialize(legacyJson);
-        Check(migratedLegacy.ContinuousWorld.Entities.Count > 0 &&
-              migratedLegacy.ContinuousWorld.ClockSeconds == 0,
-            "legacy session saves must migrate into a generated continuous world without interpreting hexes as geometry");
+            string colonyJson = envelope.RootElement.GetProperty("ColonyJson").GetString()
+                ?? throw new InvalidDataException("Session did not contain colony state.");
+            using var colony = JsonDocument.Parse(colonyJson);
+            Check(colony.RootElement.GetProperty("InventoryOwnedByWorld").GetBoolean() &&
+                  colony.RootElement.GetProperty("Inventory").GetArrayLength() == 0,
+                "session persistence must not duplicate the canonical resource ledger in the colony snapshot");
+        }
+
+        var restored = GameSessionService.Deserialize(json);
+        var restoredHome = restored.ContinuousWorld.Entities.Single(entity => entity.Id == home.Id);
+        Check(restored.Colony.ResourceCount(ResourceKind.Wood) == wood &&
+              (int)restored.ContinuousWorld.InventoryAt(restoredHome.Id, WorldResourceKind.Wood) == wood,
+            "session save/load must restore one inventory balance for both simulation views");
 
         string directory = Path.Combine(Path.GetTempPath(), "kor-session-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "session.json");
         try
         {
-            GameSessionService.Save(colony, campaign, path);
+            GameSessionService.Save(world, path);
             var fromDisk = GameSessionService.Load(path);
-            Check(fromDisk.Campaign.State.Turn == turn &&
-                  fromDisk.Colony.ResourceCount(ResourceKind.Food) == colony.ResourceCount(ResourceKind.Food),
-                "unified disk save/load must restore both linked systems");
+            Check(fromDisk.Colony.ResourceCount(ResourceKind.Wood) == wood &&
+                  (int)fromDisk.ContinuousWorld.InventoryAt(home.Id, WorldResourceKind.Wood) == wood,
+                "atomic disk save/load must preserve the canonical resource ledger");
         }
         finally
         {
