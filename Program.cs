@@ -50,10 +50,11 @@ internal static class Program
             float cameraX = 0, cameraY = 0, zoom = 1;
             float worldCameraX = (float)(ContinuousWorldState.WorldExtent / 2), worldCameraY = (float)(ContinuousWorldState.WorldExtent / 2);
             long? selectedWorldEntityId = null;
+            WorldResourceKind? selectedShipmentResource = null;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, paused = false;
-            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, campaign, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId);
+            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, campaign, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
             engine = Engine.Instance;
             engine.Initialize();
             engine.Configuration.TargetFPS = 60;
@@ -124,7 +125,24 @@ internal static class Program
                             .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))
                             .Select(item => (item.Entity, Distance: MathF.Sqrt(MathF.Pow(item.Screen.X - logicalMouse.X, 2) + MathF.Pow(item.Screen.Y - logicalMouse.Y, 2))))
                             .Where(item => item.Distance <= 20f).OrderBy(item => item.Distance).FirstOrDefault();
-                        if (hit.Entity != null)
+                        if (hit.Entity != null && selectedShipmentResource.HasValue &&
+                            selectedWorldEntityId.HasValue &&
+                            world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind == WorldEntityKind.Caravan) &&
+                            hit.Entity.Kind == WorldEntityKind.Settlement)
+                        {
+                            var home = world.SpatialWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+                            if (home.Id == hit.Entity.Id)
+                                simulation.SetMessage("Choose a different destination settlement.");
+                            else
+                            {
+                                bool created = world.SpatialWorld.CreateShipment(selectedWorldEntityId.Value, home.Id, hit.Entity.Id, selectedShipmentResource.Value, 25, 1_000);
+                                simulation.SetMessage(created
+                                    ? $"Shipment dispatched: 25 {selectedShipmentResource.Value} to {hit.Entity.Name}."
+                                    : $"Shipment unavailable: Kor Hearthhold lacks {selectedShipmentResource.Value}.");
+                                if (created) selectedShipmentResource = null;
+                            }
+                        }
+                        else if (hit.Entity != null)
                         {
                             selectedWorldEntityId = hit.Entity.Id;
                             simulation.SetMessage($"Selected world entity: {hit.Entity.Name} ({hit.Entity.Kind}).");
@@ -187,17 +205,23 @@ internal static class Program
                         {
                             zoom = Math.Min(1.7f, zoom * 1.15f);
                         }
-                        else if (Hit(mx, my, 784, 566, 838, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
-                        else if (Hit(mx, my, 842, 566, 896, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; }
-                        else if (Hit(mx, my, 900, 566, 954, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; }
-                        else if (Hit(mx, my, 958, 566, 1012, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; }
-                        else if (Hit(mx, my, 1016, 566, 1070, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; }
-                        else if (Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (Hit(mx, my, 937, 593, 984, 615)) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (Hit(mx, my, 988, 593, 1035, 615)) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (Hit(mx, my, 1039, 593, 1086, 615))
+                        else if (worldView && Hit(mx, my, 784, 566, 838, 588)) { selectedShipmentResource = WorldResourceKind.Wood; simulation.SetMessage("Cargo selected: Wood. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 842, 566, 896, 588)) { selectedShipmentResource = WorldResourceKind.Stone; simulation.SetMessage("Cargo selected: Stone. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 900, 566, 954, 588)) { selectedShipmentResource = WorldResourceKind.Food; simulation.SetMessage("Cargo selected: Food. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 958, 566, 1012, 588)) { selectedShipmentResource = WorldResourceKind.Alloy; simulation.SetMessage("Cargo selected: Alloy. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 1016, 566, 1070, 588)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
+                        else if (worldView && Hit(mx, my, 784, 593, 1086, 615)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
+                        else if (!worldView && Hit(mx, my, 784, 566, 838, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 842, 566, 896, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 900, 566, 954, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 958, 566, 1012, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 1016, 566, 1070, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615)) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615)) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 1039, 593, 1086, 615))
                         {
                             architectureMode = ArchitectureKind.None;
                             placingObject = false;
