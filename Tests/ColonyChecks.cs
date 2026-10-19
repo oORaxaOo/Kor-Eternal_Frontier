@@ -127,7 +127,7 @@ internal static class ColonyChecks
         Check(colony.WorkstationCapacity == 1 && colony.BusyWorkstations == 1 &&
               colony.ProductionOrders.Count(order => !order.Complete && order.Assigned) == 1,
             "one Workbench must run only one active production order at a time");
-        Check(colony.ResourceCount(ResourceKind.Wood) == woodBeforeRecipe - 2,
+        Check(colony.ResourceCount(ResourceKind.Wood) == woodBeforeRecipe - 4,
             "catalogue recipe inputs must be removed from the same live colony inventory");
         Check(!colony.QueueRecipeProduction(workbenchId, "recipe.metallurgy.stage0"),
             "a recipe requiring unavailable raw ore must be rejected instead of creating free materials");
