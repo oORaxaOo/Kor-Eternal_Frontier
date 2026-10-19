@@ -416,18 +416,19 @@ internal sealed class ColonySimulation
         return true;
     }
 
-    internal IReadOnlyList<ProgressionCatalog.ResearchDef> ManagementResearch => ProgressionCatalog.Research
-        .Where(project => !_researchedProjects.Contains(project.Id))
-        // Keep the live production unlock path visible without forcing players through every
-        // unrelated era-zero catalogue entry first.
-        .OrderBy(project => project.Id.StartsWith("research.industry.machine_tools.era", StringComparison.Ordinal)
-            ? project.Era * 2
-            : project.Id.StartsWith("research.logistics.field_operations.era", StringComparison.Ordinal)
-                ? project.Era * 2 + 1
-                : 1000 + project.Era)
-        .ThenBy(project => project.Id, StringComparer.Ordinal)
-        .Take(8)
-        .ToArray();
+    internal IReadOnlyList<ProgressionCatalog.ResearchDef> ManagementResearch(int page)
+    {
+        const int pageSize = 8;
+        return ProgressionCatalog.Research.Where(project => !_researchedProjects.Contains(project.Id))
+            .OrderBy(project => project.Era)
+            .ThenBy(project => project.Id.StartsWith("research.industry.machine_tools.era", StringComparison.Ordinal) ? 0 :
+                project.Id.StartsWith("research.logistics.field_operations.era", StringComparison.Ordinal) ? 1 : 2)
+            .ThenBy(project => project.Discipline, StringComparer.Ordinal)
+            .ThenBy(project => project.Name, StringComparer.Ordinal)
+            .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
+    }
+
+    internal int ManagementResearchPageCount => Math.Max(1, (ProgressionCatalog.Research.Count - _researchedProjects.Count + 7) / 8);
 
     public bool CanQueueRecipe(string recipeId, out string reason)
     {
