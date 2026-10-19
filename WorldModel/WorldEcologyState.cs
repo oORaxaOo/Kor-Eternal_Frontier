@@ -80,7 +80,7 @@ internal sealed class WorldEcologyState
             else if (herd.Forage > .8 && herd.Population < 80 && worldClock % 300 < deltaSeconds) herd.Population++;
         }
 
-        foreach (var hotspot in Hotspots.Where(item => item.IsActive))
+        foreach (var hotspot in Hotspots.Where(item => item.IsActive).ToArray())
         {
             hotspot.Intensity = Math.Min(1d, hotspot.Intensity + deltaSeconds * .0000025);
             hotspot.Radius = Math.Min(12_000d, hotspot.Radius + deltaSeconds * .08);
