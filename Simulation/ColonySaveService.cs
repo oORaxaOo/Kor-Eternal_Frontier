@@ -8,16 +8,6 @@ internal static class ColonySaveService
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
 
-    public static string SavePath
-    {
-        get
-        {
-            string root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-            return Path.Combine(root, "kor-eternal-frontier", "colony.json");
-        }
-    }
-
     public static string Serialize(ColonySimulation simulation)
     {
         ArgumentNullException.ThrowIfNull(simulation);
@@ -40,32 +30,6 @@ internal static class ColonySaveService
             throw new InvalidDataException($"Colony save is not valid JSON: {error.Message}", error);
         }
         return ColonySimulation.RestoreSnapshot(snapshot);
-    }
-
-    public static void Save(ColonySimulation simulation, string? path = null)
-    {
-        string target = path ?? SavePath;
-        string directory = Path.GetDirectoryName(Path.GetFullPath(target))
-            ?? throw new InvalidOperationException("Could not determine the colony save directory.");
-        Directory.CreateDirectory(directory);
-        string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, Serialize(simulation));
-            File.Move(temporary, target, true);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
-    }
-
-    public static ColonySimulation Load(string? path = null)
-    {
-        string target = path ?? SavePath;
-        if (!File.Exists(target))
-            throw new FileNotFoundException("No Kor Eternal Frontier colony save exists yet.", target);
-        return Deserialize(File.ReadAllText(target));
     }
 
     private static JsonSerializerOptions CreateOptions()

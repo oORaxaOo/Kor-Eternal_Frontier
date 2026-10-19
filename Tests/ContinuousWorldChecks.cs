@@ -54,6 +54,20 @@ internal static class ContinuousWorldChecks
         Check(Math.Abs(woodBefore - woodAfter) < 0.0001,
             "world shipments must conserve resources across origin, cargo and destination");
 
+        // A full destination must hold the shipment in transit until storage capacity is available.
+        world.SetInventoryCapacity(destination.Id, world.InventoryTotalAt(destination.Id));
+        Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 5, 1_000),
+            "a second shipment must be funded from the same canonical origin ledger");
+        world.Step(10);
+        Check(world.Shipments.Last().Status == WorldShipmentStatus.InTransit &&
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 10) < 0.0001,
+            "cargo must wait at a full destination instead of overfilling or disappearing");
+        world.SetInventoryCapacity(destination.Id, 200);
+        world.Step(0.1);
+        Check(world.Shipments.Last().Status == WorldShipmentStatus.Delivered &&
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 15) < 0.0001,
+            "waiting cargo must be credited once storage capacity becomes available");
+
         string json = ContinuousWorldState.Serialize(world);
         var restored = ContinuousWorldState.Deserialize(json);
         var restoredHome = restored.Entities.Single(entity => entity.Id == home.Id);

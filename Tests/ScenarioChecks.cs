@@ -1,5 +1,3 @@
-using KorTheBlight.Campaign;
-
 namespace KorTheBlight.Tests;
 
 internal static class ScenarioChecks
@@ -10,11 +8,10 @@ internal static class ScenarioChecks
         {
             ColonyChecks.Run();
             ColonyEcosystemChecks.Run();
-            CampaignChecks.Run();
             IntegrationChecks.Run();
             WorldSimulationChecks.Run();
             ContinuousWorldChecks.Run();
-            Console.WriteLine("Kor checks passed: colony construction and logistics, tile-grid stockpile capacity and reservations, citizen needs and movement, job-broker capacity and workplace removal, deterministic regional migration adapter, continuous world-space movement and queries, mouse-first simulation controls, unified clock, and versioned session persistence.");
+            Console.WriteLine("Kor checks passed: colony construction and logistics, tile-grid stockpile capacity and reservations, citizen needs and movement, job-broker capacity and workplace removal, continuous world-space movement and queries, shared settlement ledger, mouse-first simulation controls, unified clock, and session persistence.");
             return 0;
         }
         catch (Exception ex)

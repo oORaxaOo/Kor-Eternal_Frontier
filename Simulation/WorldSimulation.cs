@@ -1,11 +1,10 @@
-using KorTheBlight.Campaign;
 using KorTheBlight.WorldModel;
 
 namespace KorTheBlight.Simulation;
 
 /// <summary>
-/// Coordinates the local settlement and continuous world entities under one clock. CampaignSimulation remains a save-migration compatibility snapshot, not an active world simulation.
-/// The renderer is a consumer of this state; it does not advance either simulation.
+/// Coordinates the local settlement and continuous world under one clock. Inventory and storage
+/// capacity are owned by the world settlement ledger; the colony is a local simulation view.
 /// </summary>
 internal sealed class WorldSimulation
 {
@@ -13,22 +12,15 @@ internal sealed class WorldSimulation
     private const float FixedStepSeconds = 0.1f;
 
     public ColonySimulation Colony { get; private set; }
-    public CampaignSimulation World { get; private set; }
     public ContinuousWorldState SpatialWorld { get; private set; }
     public double ElapsedSeconds { get; private set; }
-    public bool IsPaused { get; set; } = false;
+    public bool IsPaused { get; set; }
     public float SpeedMultiplier { get; private set; } = 1f;
 
     public WorldSimulation(int seed)
-        : this(new ColonySimulation(), new CampaignSimulation(seed))
     {
-    }
-
-    public WorldSimulation(ColonySimulation colony, CampaignSimulation world)
-    {
-        Colony = colony ?? throw new ArgumentNullException(nameof(colony));
-        World = world ?? throw new ArgumentNullException(nameof(world));
-        SpatialWorld = ContinuousWorldState.Generate(World.State.Seed);
+        Colony = new ColonySimulation();
+        SpatialWorld = ContinuousWorldState.Generate(seed);
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
     }
 
@@ -69,7 +61,6 @@ internal sealed class WorldSimulation
     {
         ArgumentNullException.ThrowIfNull(session);
         Colony = session.Colony;
-        World = session.Campaign;
         SpatialWorld = session.ContinuousWorld;
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
         ElapsedSeconds = SpatialWorld.ClockSeconds;
