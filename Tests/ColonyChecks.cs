@@ -35,6 +35,22 @@ internal static class ColonyChecks
         Check(woodDeposit.Amount == depositBefore - 5, "gathering must subtract the same quantity from the source");
         Check(!worker.CarriedResource.HasValue, "a successful round trip must leave no ghost cargo");
 
+        var reservationColony = new ColonySimulation();
+        var reservationDeposit = reservationColony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
+        var firstGatherer = reservationColony.Workers[0];
+        var secondGatherer = reservationColony.Workers[1];
+        Check(reservationColony.SelectWorkerAt(firstGatherer.X, firstGatherer.Y),
+            "the first worker should be selectable for a deposit reservation check");
+        reservationColony.CommandSelectedTo(reservationDeposit.Cell.X + 0.5f, reservationDeposit.Cell.Y + 0.5f);
+        Check(firstGatherer.Task?.Kind == ColonyTaskKind.Gather,
+            "the first worker should claim the unreserved resource deposit");
+        Check(reservationColony.SelectWorkerAt(secondGatherer.X, secondGatherer.Y),
+            "the second worker should be selectable for a duplicate deposit order");
+        reservationColony.CommandSelectedTo(reservationDeposit.Cell.X + 0.5f, reservationDeposit.Cell.Y + 0.5f);
+        Check(secondGatherer.Task == null &&
+              reservationColony.Message.Contains("already assigned", StringComparison.OrdinalIgnoreCase),
+            "a finite resource deposit must not accept duplicate simultaneous gather assignments");
+
         Check(colony.DesignTileConstruction(16, 10, ArchitectureKind.Wall),
             "a wall should create an individual tile construction order");
         Check(colony.DesignTileConstruction(17, 10, ArchitectureKind.Floor),
