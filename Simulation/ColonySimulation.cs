@@ -335,6 +335,7 @@ internal sealed class ColonySimulation
                                           entity.Kind == WorldEntityKind.Settlement))
             throw new ArgumentException("The shared inventory owner must be a settlement in this world.", nameof(settlementId));
 
+        if (!world.Inventories.ContainsKey(settlementId)) world.Inventories[settlementId] = [];
         _sharedInventoryWorld = world;
         _sharedInventoryOwnerId = settlementId;
 
