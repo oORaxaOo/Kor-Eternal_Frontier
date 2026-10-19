@@ -206,6 +206,9 @@ internal sealed class ColonySnapshot
             if ((item.Kind == PlaceableKind.IndustryBuilding) != !string.IsNullOrWhiteSpace(item.CatalogBuildingId) ||
                 (item.CatalogBuildingId != null && !knownCatalogBuildingIds.Contains(item.CatalogBuildingId)))
                 throw new InvalidDataException("Colony save contains an unknown or inconsistent catalogue building reference.");
+            if (item.CatalogBuildingId != null &&
+                !researchedIds.Contains(ProgressionCatalog.Buildings.First(building => building.Id == item.CatalogBuildingId).UnlockResearchId))
+                throw new InvalidDataException("Colony save contains a catalogue building without its required research.");
             if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0 ||
                 (item.Status != ConstructionStatus.Complete && item.WorkRequired == 0) ||
                 (item.Status == ConstructionStatus.Complete && item.WorkDone < item.WorkRequired) ||
