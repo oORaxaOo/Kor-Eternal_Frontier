@@ -244,6 +244,20 @@ internal static class Program
                                         try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); simulation.SetMessage(moved == 0 ? "Export unavailable: no exportable resources." : "Exported resources to empire stock."); }
                                         catch (Exception ex) { simulation.SetMessage("Export failed: " + ex.Message); }
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 446 && logicalMouse.Y < 628)
+                                    {
+                                        int index = (int)((logicalMouse.Y - 446) / 26);
+                                        var deposit = simulation.MaterialDeposits.OrderBy(item => item.Id).Take(7).ElementAtOrDefault(index);
+                                        if (deposit == null)
+                                            simulation.SetMessage("No raw-material site is listed at that position.");
+                                        else
+                                        {
+                                            int currentTarget = simulation.GatherTarget(deposit.MaterialId);
+                                            int nextTarget = currentTarget switch { 0 => 10, 10 => 25, 25 => 50, _ => 0 };
+                                            simulation.SetGatherTarget(deposit.MaterialId, nextTarget);
+                                        }
+                                    }
                                     break;
                                 case 4:
                                     if (logicalMouse.Y >= 194 && logicalMouse.Y < 366 && logicalMouse.X >= 670 && logicalMouse.X < 1046)
