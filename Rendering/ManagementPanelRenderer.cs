@@ -70,15 +70,17 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Inventory", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 254, 268);
                 Pair(c, "Inventory free", colony.InventoryFreeCapacity.ToString(), 254, 294);
                 Pair(c, "Simulation time", $"{colony.ElapsedSeconds:0.0} s", 254, 320);
+                Pair(c, "Food producers", colony.FoodProducerCount.ToString(), 254, 346);
+                Pair(c, "Food / water per 30s", $"{colony.FoodProductionPerCycle} / {colony.FoodWaterDemandPerCycle}", 254, 372);
                 Section(c, "Empire status", 670, 164);
                 Pair(c, "Strategic turn", campaign.State.Turn.ToString(), 670, 190);
                 Pair(c, "Supplies / Alloy", $"{campaign.State.Supplies} / {campaign.State.Alloy}", 670, 216);
                 Pair(c, "Energy / Knowledge", $"{campaign.State.Energy} / {campaign.State.Knowledge}", 670, 242);
                 Pair(c, "Regions controlled", campaign.State.Regions.Count(r => r.Owner == "Kor").ToString(), 670, 268);
                 Pair(c, "World territories", $"{world.Territories.Count(t => t.Owner == WorldFactionKind.Kor)} / {world.Territories.Count}", 670, 294);
-                Note(c, colony.Message, 254, 380, 790);
-                Note(c, campaign.Message, 254, 426, 790);
-                Note(c, world.Message, 254, 472, 790);
+                Note(c, colony.Message, 254, 416, 790);
+                Note(c, campaign.Message, 254, 462, 790);
+                Note(c, world.Message, 254, 508, 790);
                 break;
             case 2:
                 Section(c, "Colonist roster", 254, 164);

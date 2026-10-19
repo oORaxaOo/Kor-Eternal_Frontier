@@ -124,6 +124,7 @@ internal sealed class ColonySimulation
     private readonly HashSet<string> _researchedProjects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _productionTargets = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _gatherTargets = new(StringComparer.Ordinal);
+    private float _buildingProductionProgressSeconds;
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -141,6 +142,10 @@ internal sealed class ColonySimulation
     public void SetMessage(string message) => Message = message;
     public int? SelectedWorkerId { get; private set; }
     public float ElapsedSeconds { get; private set; }
+    public float BuildingProductionProgressSeconds => _buildingProductionProgressSeconds;
+    public int FoodProducerCount => _objects.Count(IsFoodProducer);
+    public int FoodProductionPerCycle => _objects.Where(IsFoodProducer).Sum(FoodOutputPerCycle);
+    public int FoodWaterDemandPerCycle => _objects.Where(IsFoodProducer).Sum(FoodWaterCostPerCycle);
     public int CompletedTileOrders => _tileOrders.Count(x => x.Status == ConstructionStatus.Complete);
     public int CompletedObjects => _objects.Count(x => x.IsBuilt);
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
@@ -212,12 +217,13 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 7,
+            SchemaVersion = 8,
             ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
             ProductionTargets = _productionTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
                 .Select(item => new ProductionTargetSnapshot { RecipeId = item.Key, TargetAmount = item.Value }).ToList(),
             GatherTargets = _gatherTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
                 .Select(item => new GatherTargetSnapshot { MaterialId = item.Key, TargetAmount = item.Value }).ToList(),
+            BuildingProductionProgressSeconds = _buildingProductionProgressSeconds,
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -377,6 +383,7 @@ internal sealed class ColonySimulation
         simulation._nextMaterialDepositId = snapshot.NextMaterialDepositId;
         simulation._nextProductionId = snapshot.NextProductionId;
         simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
+        simulation._buildingProductionProgressSeconds = snapshot.BuildingProductionProgressSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
         return simulation;
@@ -919,6 +926,7 @@ internal sealed class ColonySimulation
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
         UpdateNeeds(deltaSeconds);
+        UpdateBuildingProduction(deltaSeconds);
         UpdateAutomaticProductionPlans();
         AssignJobs();
         UpdateAutomaticGatheringPlans();
@@ -927,6 +935,39 @@ internal sealed class ColonySimulation
         {
             if (worker.Task == null) continue;
             AdvanceWorker(worker, deltaSeconds);
+        }
+    }
+
+    private static bool IsFoodProducer(PlaceableObjectState item) =>
+        item.IsBuilt && (item.Kind == PlaceableKind.Garden ||
+            (item.CatalogBuildingId != null &&
+             ProgressionCatalog.Buildings.FirstOrDefault(building => building.Id == item.CatalogBuildingId)?.Family == "farm"));
+
+    private static int FoodWaterCostPerCycle(PlaceableObjectState item) =>
+        item.Kind == PlaceableKind.Garden ? 1 :
+        item.CatalogBuildingId != null
+            ? ProgressionCatalog.Buildings.First(building => building.Id == item.CatalogBuildingId).Era + 1
+            : 0;
+
+    private static int FoodOutputPerCycle(PlaceableObjectState item) => FoodWaterCostPerCycle(item) * 2;
+
+    private void UpdateBuildingProduction(float deltaSeconds)
+    {
+        _buildingProductionProgressSeconds += deltaSeconds;
+        while (_buildingProductionProgressSeconds >= 30f)
+        {
+            _buildingProductionProgressSeconds -= 30f;
+            foreach (var producer in _objects.Where(IsFoodProducer))
+            {
+                int waterCost = FoodWaterCostPerCycle(producer);
+                int foodOutput = FoodOutputPerCycle(producer);
+                if (waterCost <= 0 || MaterialCount("water") < waterCost ||
+                    UnreservedInventoryFreeCapacity + waterCost < foodOutput)
+                    continue;
+                if (!TryConsumeMaterials(new Dictionary<string, int>(StringComparer.Ordinal) { ["water"] = waterCost }))
+                    continue;
+                AddResource(ResourceKind.Food, foodOutput);
+            }
         }
     }
 

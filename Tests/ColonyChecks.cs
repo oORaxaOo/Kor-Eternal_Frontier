@@ -171,6 +171,7 @@ internal static class ColonyChecks
         var restored = ColonySaveService.Deserialize(json);
         var legacySnapshot = colony.CaptureSnapshot();
         legacySnapshot.SchemaVersion = 1;
+        legacySnapshot.BuildingProductionProgressSeconds = 0;
         legacySnapshot.Materials.Clear();
         legacySnapshot.ResearchedProjects.Clear();
         legacySnapshot.Objects.RemoveAll(item => item.CatalogBuildingId != null);
@@ -185,6 +186,7 @@ internal static class ColonyChecks
             .Replace(",\"ResearchedProjects\":[]", "", StringComparison.Ordinal)
             .Replace(",\"ProductionTargets\":[]", "", StringComparison.Ordinal)
             .Replace(",\"GatherTargets\":[]", "", StringComparison.Ordinal)
+            .Replace("\"BuildingProductionProgressSeconds\":0,", "", StringComparison.Ordinal)
             .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
         var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
         Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
@@ -385,6 +387,29 @@ internal static class ColonyChecks
         Check(gatherPlannerRestored.SetGatherTarget("ore", 0) &&
               gatherPlannerRestored.GatherTarget("ore") == 0,
             "setting a raw-material target to zero should disable automatic extraction");
+
+        var farmColony = new ColonySimulation();
+        int gardenId = farmColony.PlaceObjectBlueprint(PlaceableKind.Garden, 13, 12);
+        Check(gardenId > 0, "food-production test should place a garden blueprint");
+        for (int i = 0; i < 700; i++) farmColony.Step(0.1f);
+        Check(farmColony.Objects.Single(item => item.Id == gardenId).IsBuilt &&
+              farmColony.FoodProducerCount == 1 && farmColony.FoodProductionPerCycle == 2 &&
+              farmColony.FoodWaterDemandPerCycle == 1,
+            "completed gardens should advertise their water-fed food-production effect");
+        var farmSnapshot = farmColony.CaptureSnapshot();
+        farmSnapshot.BuildingProductionProgressSeconds = 29.95f;
+        farmSnapshot.Materials.Add(new MaterialStackSnapshot { MaterialId = "water", Amount = 2 });
+        var wateredFarm = ColonySimulation.RestoreSnapshot(farmSnapshot);
+        int foodBeforeFarmCycle = wateredFarm.ResourceCount(ResourceKind.Food);
+        wateredFarm.Step(0.1f);
+        Check(wateredFarm.ResourceCount(ResourceKind.Food) == foodBeforeFarmCycle + 2 &&
+              wateredFarm.MaterialCount("water") == 1,
+            "a completed garden should consume one stored water and produce two food each 30-second cycle");
+        string farmSave = ColonySaveService.Serialize(wateredFarm);
+        var restoredFarm = ColonySaveService.Deserialize(farmSave);
+        Check(Math.Abs(restoredFarm.BuildingProductionProgressSeconds - wateredFarm.BuildingProductionProgressSeconds) < 0.001f &&
+              restoredFarm.FoodProducerCount == 1,
+            "save/load must preserve building-production timing and built food producers");
     }
 
     private static void Check(bool condition, string message)
