@@ -63,6 +63,7 @@ internal static class Program
             int recipeCatalogPage = 0;
             int researchCatalogPage = 0;
             int catalogUnitPage = 0;
+            int rawDepositPage = 0;
             string? selectedCatalogBuildingId = null;
             bool commandMode = false;
             host.RenderBackbufferPostScene += canvas =>
@@ -70,7 +71,7 @@ internal static class Program
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
                 else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
                 menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage);
+                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage, rawDepositPage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -244,6 +245,10 @@ internal static class Program
                                         try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); simulation.SetMessage(moved == 0 ? "Export unavailable: no exportable resources." : "Exported resources to empire stock."); }
                                         catch (Exception ex) { simulation.SetMessage("Export failed: " + ex.Message); }
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 && logicalMouse.Y >= 602 && logicalMouse.Y < 636)
+                                        rawDepositPage = Math.Max(0, rawDepositPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 && logicalMouse.Y >= 602 && logicalMouse.Y < 636)
+                                        rawDepositPage = Math.Min(simulation.ManagementMaterialDepositPageCount - 1, rawDepositPage + 1);
                                     break;
                                 case 4:
                                     if (logicalMouse.Y >= 194 && logicalMouse.Y < 366 && logicalMouse.X >= 670 && logicalMouse.X < 1046)
