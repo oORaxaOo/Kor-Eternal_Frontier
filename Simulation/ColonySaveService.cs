@@ -102,7 +102,7 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5 or 6)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -210,6 +210,7 @@ internal sealed class ColonySnapshot
                 !researchedIds.Contains(ProgressionCatalog.Buildings.First(building => building.Id == item.CatalogBuildingId).UnlockResearchId))
                 throw new InvalidDataException("Colony save contains a catalogue building without its required research.");
             if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0 ||
+                !float.IsFinite(item.ExtractionProgress) || item.ExtractionProgress is < 0 or > 10 ||
                 (item.Status != ConstructionStatus.Complete && item.WorkRequired == 0) ||
                 (item.Status == ConstructionStatus.Complete && item.WorkDone < item.WorkRequired) ||
                 (item.Status != ConstructionStatus.Complete && item.WorkDone >= item.WorkRequired))
@@ -371,6 +372,7 @@ internal sealed class PlaceableObjectSnapshot
     public float WorkDone { get; set; }
     public int WorkRequired { get; set; }
     public string? CatalogBuildingId { get; set; }
+    public float ExtractionProgress { get; set; }
 }
 internal sealed class ResourceDepositSnapshot
 {
