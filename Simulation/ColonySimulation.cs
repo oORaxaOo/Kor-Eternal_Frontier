@@ -231,8 +231,7 @@ internal sealed class ColonySimulation
             Workers = [],
             Inventory = [],
             Materials = [],
-            ProductionOrders = [],
-            ProductionTargets = []
+            ProductionOrders = []
         };
 
         for (int y = 0; y < Height; y++)
