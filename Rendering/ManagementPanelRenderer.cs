@@ -206,11 +206,13 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     string recipeOutputsText = string.Join(" + ", recipe.Outputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, recipe.Name, 670, recipeY, 365);
-                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • power {recipe.Stage} • {(canQueue ? "READY" : recipeReason)}",
+                    int targetAmount = colony.ProductionTarget(recipe.Id);
+                    string autoLabel = targetAmount == 0 ? "AUTO OFF" : $"AUTO TARGET {targetAmount}";
+                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • PWR {recipe.Stage} • {autoLabel} • {(canQueue ? "READY" : recipeReason)}",
                         670, recipeY + 27, 365);
                     recipeY += 50;
                 }
-                Note(c, "Inputs and local power capacity are reserved when queued. Each Workbench runs one active order; spare power increases work speed.", 670, 602, 365);
+                Note(c, "Click a recipe title to queue once; click its detail line to cycle AUTO OFF → 5 → 10 → 20 units. Targets persist and reserve inputs/power as jobs queue.", 670, 602, 365);
                 ActionRow(c, "◀ Previous page", 670, 632, 170);
                 ActionRow(c, "Next page ▶", 850, 632, 185);
                 break;
