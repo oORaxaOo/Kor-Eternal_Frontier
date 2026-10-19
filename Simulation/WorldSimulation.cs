@@ -4,7 +4,7 @@ using KorTheBlight.WorldModel;
 namespace KorTheBlight.Simulation;
 
 /// <summary>
-/// Coordinates the local settlement and regional world under one fixed-step clock.
+/// Coordinates the local settlement, continuous world entities, and temporary legacy regional adapter under one clock.
 /// The renderer is a consumer of this state; it does not advance either simulation.
 /// </summary>
 internal sealed class WorldSimulation
@@ -77,8 +77,8 @@ internal sealed class WorldSimulation
         Colony = session.Colony;
         World = session.Campaign;
         SpatialWorld = session.ContinuousWorld;
-        _campaignElapsedSeconds = 0f;
-        _simulationAccumulator = 0f;
         ElapsedSeconds = SpatialWorld.ClockSeconds;
+        _campaignElapsedSeconds = (float)(ElapsedSeconds % CampaignUpdateIntervalSeconds);
+        _simulationAccumulator = 0f;
     }
 }
