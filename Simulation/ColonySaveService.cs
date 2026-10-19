@@ -100,10 +100,11 @@ internal sealed class ColonySnapshot
     public List<ProductionOrderSnapshot> ProductionOrders { get; set; } = [];
     public List<string> ResearchedProjects { get; set; } = [];
     public List<ProductionTargetSnapshot> ProductionTargets { get; set; } = [];
+    public List<GatherTargetSnapshot> GatherTargets { get; set; } = [];
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5 or 6)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5 or 6 or 7)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -131,6 +132,18 @@ internal sealed class ColonySnapshot
             if (SchemaVersion <= 5) ProductionTargets = [];
             else throw new InvalidDataException("Colony save is missing its automatic production targets.");
         }
+        if (GatherTargets is null)
+        {
+            if (SchemaVersion <= 6) GatherTargets = [];
+            else throw new InvalidDataException("Colony save is missing its automatic gathering targets.");
+        }
+        var knownGatherMaterialIds = MaterialDeposits.Select(item => item.MaterialId).ToHashSet(StringComparer.Ordinal);
+        if (GatherTargets.Any(target => target is null || string.IsNullOrWhiteSpace(target.MaterialId) ||
+                !knownGatherMaterialIds.Contains(target.MaterialId) || ColonySimulation.IsLegacyMaterialId(target.MaterialId) ||
+                target.TargetAmount is not (10 or 25 or 50)) ||
+            GatherTargets.Select(target => target.MaterialId).Distinct(StringComparer.Ordinal).Count() != GatherTargets.Count)
+            throw new InvalidDataException("Colony save contains an invalid or duplicate automatic gathering target.");
+
         var knownRecipeIds = ProgressionCatalog.Recipes.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
         if (ProductionTargets.Any(target => target is null || string.IsNullOrWhiteSpace(target.RecipeId) ||
                 !knownRecipeIds.Contains(target.RecipeId) || target.TargetAmount is not (5 or 10 or 20)) ||
@@ -433,6 +446,11 @@ internal sealed class MaterialStackSnapshot
 {
     public string MaterialId { get; set; } = string.Empty;
     public int Amount { get; set; }
+}
+internal sealed class GatherTargetSnapshot
+{
+    public string MaterialId { get; set; } = string.Empty;
+    public int TargetAmount { get; set; }
 }
 internal sealed class ProductionTargetSnapshot
 {
