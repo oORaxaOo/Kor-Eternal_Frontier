@@ -30,7 +30,7 @@ internal sealed class ColonyRenderer : IDisposable
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign,
-        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId)
+        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -42,7 +42,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
         }
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, campaign, worldView, spatialWorld, selectedWorldEntityId);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, campaign, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -261,7 +261,7 @@ internal sealed class ColonyRenderer : IDisposable
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
         PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign, bool worldView,
-        ContinuousWorldState spatialWorld, long? selectedWorldEntityId)
+        ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         _fill.Color = Background;
         canvas.DrawRect(new SKRect(0, 0, 1100, 62), _fill);
@@ -344,18 +344,32 @@ internal sealed class ColonyRenderer : IDisposable
         DrawButton(canvas, "ZOOM +", 994, 527, 66, 22);
 
         _text.Color = Gold;
-        canvas.DrawText("BUILD MENU", 790, 558, SKTextAlign.Left, _headingFont, _text);
-        DrawButton(canvas, "WALL", 784, 566, 54, 22, architectureMode == ArchitectureKind.Wall);
-        DrawButton(canvas, "FLOOR", 842, 566, 54, 22, architectureMode == ArchitectureKind.Floor);
-        DrawButton(canvas, "PATH", 900, 566, 54, 22, architectureMode == ArchitectureKind.Path);
-        DrawButton(canvas, "DOOR", 958, 566, 54, 22, architectureMode == ArchitectureKind.Door);
-        DrawButton(canvas, "CONDUIT", 1016, 566, 54, 22, architectureMode == ArchitectureKind.Conduit);
-        DrawButton(canvas, "BENCH", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Workbench);
-        DrawButton(canvas, "POD", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.SleepingPod);
-        DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
-        DrawButton(canvas, "GEN", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.Generator);
-        DrawButton(canvas, "GARDEN", 988, 593, 47, 22, placingObject && objectType == PlaceableKind.Garden);
-        DrawButton(canvas, "CANCEL", 1039, 593, 47, 22);
+        canvas.DrawText(worldView ? "TRADE & LOGISTICS" : "BUILD MENU", 790, 558, SKTextAlign.Left, _headingFont, _text);
+        if (worldView)
+        {
+            DrawButton(canvas, "WOOD", 784, 566, 54, 22, selectedShipmentResource == WorldResourceKind.Wood);
+            DrawButton(canvas, "STONE", 842, 566, 54, 22, selectedShipmentResource == WorldResourceKind.Stone);
+            DrawButton(canvas, "FOOD", 900, 566, 54, 22, selectedShipmentResource == WorldResourceKind.Food);
+            DrawButton(canvas, "ALLOY", 958, 566, 54, 22, selectedShipmentResource == WorldResourceKind.Alloy);
+            DrawButton(canvas, "CLEAR", 1016, 566, 54, 22);
+            DrawButton(canvas, "CLEAR SHIPMENT", 784, 593, 302, 22);
+            _muted.Color = MutedColor;
+            canvas.DrawText(selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}" : "Select cargo, caravan, then destination", 790, 635, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            DrawButton(canvas, "WALL", 784, 566, 54, 22, architectureMode == ArchitectureKind.Wall);
+            DrawButton(canvas, "FLOOR", 842, 566, 54, 22, architectureMode == ArchitectureKind.Floor);
+            DrawButton(canvas, "PATH", 900, 566, 54, 22, architectureMode == ArchitectureKind.Path);
+            DrawButton(canvas, "DOOR", 958, 566, 54, 22, architectureMode == ArchitectureKind.Door);
+            DrawButton(canvas, "CONDUIT", 1016, 566, 54, 22, architectureMode == ArchitectureKind.Conduit);
+            DrawButton(canvas, "BENCH", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Workbench);
+            DrawButton(canvas, "POD", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.SleepingPod);
+            DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
+            DrawButton(canvas, "GEN", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.Generator);
+            DrawButton(canvas, "GARDEN", 988, 593, 47, 22, placingObject && objectType == PlaceableKind.Garden);
+            DrawButton(canvas, "CANCEL", 1039, 593, 47, 22);
+        }
 
         _muted.Color = MutedColor;
         canvas.DrawText(worldView ? "Left click: inspect/select entity" : "Left click: select/place", 790, 635, SKTextAlign.Left, _smallFont, _muted);
