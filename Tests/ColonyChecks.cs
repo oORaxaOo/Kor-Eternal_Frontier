@@ -121,17 +121,23 @@ internal static class ColonyChecks
         int woodBeforeRecipe = colony.ResourceCount(ResourceKind.Wood);
         Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage0"),
             "a catalogue recipe should be queueable after its real research prerequisite and material inputs are available");
+        Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage0"),
+            "the same workstation should accept a second queued order without assigning concurrent labor");
+        colony.Step(0.1f);
+        Check(colony.WorkstationCapacity == 1 && colony.BusyWorkstations == 1 &&
+              colony.ProductionOrders.Count(order => !order.Complete && order.Assigned) == 1,
+            "one Workbench must run only one active production order at a time");
         Check(colony.ResourceCount(ResourceKind.Wood) == woodBeforeRecipe - 2,
             "catalogue recipe inputs must be removed from the same live colony inventory");
         Check(!colony.QueueRecipeProduction(workbenchId, "recipe.metallurgy.stage0"),
             "a recipe requiring unavailable raw ore must be rejected instead of creating free materials");
         for (int i = 0; i < 1200; i++) colony.Step(0.1f);
-        Check(colony.MaterialCount("material.sawmill.stage0") == 2,
+        Check(colony.MaterialCount("material.sawmill.stage0") == 4,
             "worker labor must create the stage-specific stable-ID output from the selected recipe");
         Check(colony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
             "completed production orders must preserve their catalogue recipe identity");
         int legacyResourceTotal = Enum.GetValues<ResourceKind>().Sum(resource => colony.ResourceCount(resource));
-        Check(colony.InventoryUsed == legacyResourceTotal + 10,
+        Check(colony.InventoryUsed == legacyResourceTotal + 12,
             "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
 
         var oreDeposit = colony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
@@ -187,7 +193,7 @@ internal static class ColonyChecks
         Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
             "save/load must preserve actual inventory balances");
-        Check(restored.MaterialCount("material.sawmill.stage0") == 2 &&
+        Check(restored.MaterialCount("material.sawmill.stage0") == 4 &&
               restored.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
             "save/load must preserve stable-ID industry stock and queued recipe identities");
         Check(restored.IsResearchComplete(machineToolsEra0) && restored.IsResearchComplete(logisticsEra0) &&
