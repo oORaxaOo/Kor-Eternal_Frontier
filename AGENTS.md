@@ -3,9 +3,16 @@
 ## Canonical project
 - The only active application is the root .NET 8 project.
 - The Unity prototype and duplicate nested Gondwana project have been removed. Do not recreate them.
-- The active simulation lives in Simulation/ColonySimulation.cs; strategic state lives under Campaign/.
+- The local colony mechanics currently live in Simulation/ColonySimulation.cs. Campaign/ contains a temporary legacy model and is not the target architecture for the world simulation.
 - Rendering/input may translate screen positions into world coordinates. Simulation APIs must not depend on SDL, Gondwana, SkiaSharp, windows, camera offsets, or screen pixels.
 - The local view is orthogonal top-down with square tiles. People are dots; objects use square footprints; hostile creatures use triangle markers. No isometric projection or polished art pipeline is active.
+
+## Product requirements — preserve these constraints
+- Mouse-first is mandatory: every core action must be reachable through visible clickable menus or contextual mouse interactions. Keyboard shortcuts are optional conveniences only, never required gameplay input.
+- The previous nine-region linked-hex campaign map is legacy scaffolding and is not a foundation to extend. Do not add new world features based on hex adjacency, region-hop movement, or end-turn completion.
+- The target world uses continuous world-space coordinates and spatial queries. Zooming/panning changes detail level and camera presentation, not the simulation mode or underlying world state.
+- One real-time clock, one canonical resource ownership model, travel-time movement/shipments, and one versioned world save are the target. No instant colony/world resource transfers in the final architecture.
+- Preserve the local settlement's square-tile building grid where useful; that local grid must not dictate the representation of the wider world.
 
 ## Commands
 - Build: dotnet build GondwanaGame.csproj --configuration Release
