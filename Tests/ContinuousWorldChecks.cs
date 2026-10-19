@@ -36,6 +36,18 @@ internal static class ContinuousWorldChecks
                   .SequenceEqual(deterministicB.Ecology.RecentEvents.Select(item => item.Title)),
             "world events must be reproducible from the same seed and simulation time");
 
+        var pressureWorld = ContinuousWorldState.Generate(4401);
+        var exposedSettlement = pressureWorld.Entities.First(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+        var initialHotspot = pressureWorld.Ecology.Hotspots[0];
+        exposedSettlement.X = initialHotspot.X;
+        exposedSettlement.Y = initialHotspot.Y;
+        double foodBeforePressure = pressureWorld.InventoryAt(exposedSettlement.Id, WorldResourceKind.Food);
+        pressureWorld.Step(100);
+        double exposedFoodGain = pressureWorld.InventoryAt(exposedSettlement.Id, WorldResourceKind.Food) - foodBeforePressure;
+        Check(exposedFoodGain < 1,
+            "severe local Blight pressure must suppress settlement food production");
+
         var world = ContinuousWorldState.Generate(70241);
         var projected = ContinuousWorldProjection.WorldToScreen(50_000, 50_000, 50_000, 50_000, .65f);
         var unprojected = ContinuousWorldProjection.ScreenToWorld(projected.X, projected.Y, 50_000, 50_000, .65f);
