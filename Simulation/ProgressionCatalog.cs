@@ -273,9 +273,10 @@ internal static class ProgressionCatalog
                 return false;
             }
         foreach (var unit in Units)
-            if (!researchIds.Contains(unit.UnlockResearchId))
+            if (!researchIds.Contains(unit.UnlockResearchId) || unit.SupplyCost < 0 ||
+                unit.AlloyCost < 0 || unit.Upkeep < 0 || unit.CombatStrength <= 0)
             {
-                error = $"Unit {unit.Id} has an unknown research unlock.";
+                error = $"Unit {unit.Id} has invalid costs, strength, upkeep, or a research unlock.";
                 return false;
             }
         foreach (var recipe in Recipes)
