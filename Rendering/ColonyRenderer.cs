@@ -154,6 +154,8 @@ internal sealed class ColonyRenderer : IDisposable
             var rect = new SKRect(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
             if (rect.Right < 0 || rect.Left > 770 || rect.Bottom < 62 || rect.Top > 650) continue;
 
+            var catalogBuilding = item.CatalogBuildingId == null ? null :
+                ProgressionCatalog.Buildings.FirstOrDefault(building => building.Id == item.CatalogBuildingId);
             _fill.Color = item.Kind switch
             {
                 PlaceableKind.Habitat => new SKColor(72, 27, 36),
@@ -163,6 +165,17 @@ internal sealed class ColonyRenderer : IDisposable
                 PlaceableKind.StorageRack => new SKColor(82, 70, 49),
                 PlaceableKind.Generator => new SKColor(72, 48, 79),
                 PlaceableKind.Garden => new SKColor(39, 75, 48),
+                PlaceableKind.IndustryBuilding => catalogBuilding?.Family switch
+                {
+                    "housing" => new SKColor(72, 27, 36),
+                    "storage" => new SKColor(82, 70, 49),
+                    "workshop" or "fabrication" => new SKColor(61, 69, 74),
+                    "farm" => new SKColor(39, 75, 48),
+                    "power" or "energy" => new SKColor(72, 48, 79),
+                    "medical" => new SKColor(55, 82, 78),
+                    "defense" or "containment" => new SKColor(112, 38, 48),
+                    _ => new SKColor(48, 50, 50)
+                },
                 _ => new SKColor(48, 50, 50)
             };
             canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
@@ -170,17 +183,19 @@ internal sealed class ColonyRenderer : IDisposable
             _line.StrokeWidth = Math.Max(1f, zoom * 1.4f);
             canvas.DrawRect(Inset(rect, size * 0.07f), _line);
 
-            string label = item.Kind switch
-            {
-                PlaceableKind.Habitat => "H",
-                PlaceableKind.Stockpile => "S",
-                PlaceableKind.Workbench => "W",
-                PlaceableKind.SleepingPod => "B",
-                PlaceableKind.StorageRack => "R",
-                PlaceableKind.Generator => "G",
-                PlaceableKind.Garden => "F",
-                _ => "?"
-            };
+            string label = item.Kind == PlaceableKind.IndustryBuilding
+                ? catalogBuilding == null ? "I" : catalogBuilding.Family.Substring(0, 1).ToUpperInvariant()
+                : item.Kind switch
+                {
+                    PlaceableKind.Habitat => "H",
+                    PlaceableKind.Stockpile => "S",
+                    PlaceableKind.Workbench => "W",
+                    PlaceableKind.SleepingPod => "B",
+                    PlaceableKind.StorageRack => "R",
+                    PlaceableKind.Generator => "G",
+                    PlaceableKind.Garden => "F",
+                    _ => "?"
+                };
             canvas.DrawText(label, rect.MidX, rect.MidY + 4f * zoom, SKTextAlign.Center, _headingFont, _text);
 
             if (!item.IsBuilt)
