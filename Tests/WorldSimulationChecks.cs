@@ -11,20 +11,16 @@ internal static class WorldSimulationChecks
         var world = new WorldSimulation(seed: 70241);
         int initialTurn = world.World.State.Turn;
         int initialSupplies = world.World.State.Supplies;
+        var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
+        double initialFood = world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food);
 
-        world.Step(WorldSimulation.CampaignUpdateIntervalSeconds - 0.2f);
-        Check(world.World.State.Turn == initialTurn,
-            "regional economy must not jump ahead of elapsed simulation time");
-        Check(world.World.State.Supplies == initialSupplies,
-            "regional stock must not change before its elapsed-time interval");
+        world.Step(10f);
+        Check(world.World.State.Turn == initialTurn && world.World.State.Supplies == initialSupplies,
+            "legacy regional turn state must no longer advance in the active simulation");
         Check(world.ElapsedSeconds > 0,
             "the unified simulation clock must advance");
-
-        world.Step(0.2f);
-        Check(world.World.State.Turn == initialTurn + 1,
-            "regional simulation must advance automatically when elapsed time reaches its interval");
-        Check(world.World.State.Supplies > initialSupplies,
-            "regional production must run without a player-issued end-turn command");
+        Check(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food) > initialFood,
+            "settlement production must integrate continuously against elapsed world time");
 
         world.IsPaused = true;
         double elapsed = world.ElapsedSeconds;
@@ -42,7 +38,6 @@ internal static class WorldSimulationChecks
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
 
-        var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
         Check(world.SpatialWorld.OrderMove(home.Id, home.X + 100, home.Y, 10),
             "unified world must expose continuous entity movement");
         world.Step(0.5f);
