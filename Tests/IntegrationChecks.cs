@@ -41,7 +41,7 @@ internal static class IntegrationChecks
         // Full storage must prevent import without losing strategic stock.
         var fullColony = ColonySimulation.RestoreSnapshot(colony.CaptureSnapshot());
         var snapshot = fullColony.CaptureSnapshot();
-        int used = snapshot.Inventory.Sum(item => item.Amount);
+        int used = snapshot.Inventory.Sum(item => item.Amount) + snapshot.Materials.Sum(item => item.Amount);
         snapshot.Inventory.Single(item => item.Resource == ResourceKind.Food).Amount += fullColony.InventoryCapacity - used;
         fullColony = ColonySimulation.RestoreSnapshot(snapshot);
         int suppliesAtCapacity = campaign.State.Supplies;

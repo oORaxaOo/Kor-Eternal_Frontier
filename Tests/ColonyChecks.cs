@@ -23,7 +23,7 @@ internal static class ColonyChecks
         Check(colony.ResourceCount(ResourceKind.Wood) == 20, "initial wood should be explicit inventory");
         Check(colony.InventoryCapacity == ColonySimulation.BaseStockpileCapacity,
             "the starter stockpile should provide the colony's initial storage capacity");
-        Check(colony.InventoryUsed == 78 && colony.InventoryFreeCapacity == 42,
+        Check(colony.InventoryUsed == 86 && colony.InventoryFreeCapacity == 34,
             "inventory used and free capacity should reflect the actual starting resource stacks");
         var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
@@ -90,6 +90,9 @@ internal static class ColonyChecks
         const string machineToolsEra0 = "research.industry.machine_tools.era0";
         const string machineToolsEra1 = "research.industry.machine_tools.era1";
         const string logisticsEra0 = "research.logistics.field_operations.era0";
+        Check(!colony.CanPlaceCatalogBuilding("building.workshop.tier0", out string lockedBuildingReason) &&
+              lockedBuildingReason.Contains("Locked by research", StringComparison.Ordinal),
+            "catalogue buildings must also respect their research prerequisite");
         Check(!colony.CanQueueRecipe("recipe.sawmill.stage0", out string lockedReason) &&
               lockedReason.Contains("Locked by research", StringComparison.Ordinal),
             "catalogue recipes must be locked until their technology prerequisite is researched");
@@ -112,6 +115,18 @@ internal static class ColonyChecks
             "higher-era research should unlock after all prerequisite technologies are completed");
         Check(colony.CanQueueRecipe("recipe.sawmill.stage0", out _),
             "researching Machine Tools Era I should unlock the stage-zero sawmill recipe");
+        Check(colony.CanPlaceCatalogBuilding("building.workshop.tier0", out _),
+            "researching the matching technology should unlock the catalogue workshop blueprint");
+        var allVisibleResearch = Enumerable.Range(0, colony.ManagementResearchPageCount)
+            .SelectMany(page => colony.ManagementResearch(page))
+            .Select(project => project.Id)
+            .ToArray();
+        Check(allVisibleResearch.Length == ProgressionCatalog.Research.Count - 3 &&
+              allVisibleResearch.Distinct(StringComparer.Ordinal).Count() == allVisibleResearch.Length,
+            "mouse-accessible research pages must expose every unresearched project exactly once");
+        Check(colony.ManagementResearchPageCount > 1 &&
+              colony.ManagementResearch(colony.ManagementResearchPageCount - 1).Count > 0,
+            "the final research page must remain reachable and non-empty");
         Check(!colony.CanQueueRecipe("recipe.sawmill.stage1", out string stageOneReason) &&
               !stageOneReason.Contains("Locked by research", StringComparison.Ordinal),
             "the next recipe tier should be technology-unlocked but still respect its actual material inputs");
@@ -128,7 +143,7 @@ internal static class ColonyChecks
         Check(colony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
             "completed production orders must preserve their catalogue recipe identity");
         int legacyResourceTotal = Enum.GetValues<ResourceKind>().Sum(resource => colony.ResourceCount(resource));
-        Check(colony.InventoryUsed == legacyResourceTotal + 2,
+        Check(colony.InventoryUsed == legacyResourceTotal + 10,
             "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
 
         var oreDeposit = colony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
@@ -153,6 +168,9 @@ internal static class ColonyChecks
         Check(worker.CarriedMaterialId == null && worker.CarriedAmount == 0,
             "a completed raw-material delivery must clear stable-ID cargo");
 
+        int catalogWorkshopId = colony.PlaceCatalogBuildingBlueprint("building.workshop.tier0", 5, 4);
+        Check(catalogWorkshopId > 0 && colony.Objects.Single(item => item.Id == catalogWorkshopId).CatalogBuildingId == "building.workshop.tier0",
+            "a researched catalogue building should create a persistent footprint-based blueprint");
         Check(colony.DesignTileConstruction(19, 14, ArchitectureKind.Path), "a new path order should be accepted before saving");
         colony.Step(0.1f);
         string json = ColonySaveService.Serialize(colony);
@@ -161,6 +179,12 @@ internal static class ColonyChecks
         legacySnapshot.SchemaVersion = 1;
         legacySnapshot.Materials.Clear();
         legacySnapshot.ResearchedProjects.Clear();
+        legacySnapshot.Objects.RemoveAll(item => item.CatalogBuildingId != null);
+        var legacyObjectIds = legacySnapshot.Objects.Select(item => item.Id).ToHashSet();
+        foreach (var workerSnapshot in legacySnapshot.Workers)
+            if (workerSnapshot.Task?.Kind == ColonyTaskKind.BuildObject &&
+                !legacyObjectIds.Contains(workerSnapshot.Task.TargetId))
+                workerSnapshot.Task = null;
         foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
         string legacyJson = JsonSerializer.Serialize(legacySnapshot)
             .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
@@ -193,9 +217,15 @@ internal static class ColonyChecks
             "save/load must preserve stable-ID raw-material sites and remaining quantities");
         Check(restored.MaterialCount("ore") == colony.MaterialCount("ore"),
             "save/load must preserve extracted raw materials in the shared inventory");
+        Check(restored.Objects.Any(item => item.CatalogBuildingId == "building.workshop.tier0"),
+            "save/load must preserve catalogue building identity and footprint state");
         Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
               .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
             "save/load must preserve worker positions, needs, cargo, and task kinds");
+        for (int i = 0; i < 1000; i++) colony.Step(0.1f);
+        Check(colony.Objects.Single(item => item.Id == catalogWorkshopId).IsBuilt &&
+              colony.MaterialCount("material.masonry.stage0") == 4,
+            "catalogue building construction must consume its real stable-ID costs and complete worker labor");
 
         string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "colony.json");
@@ -246,7 +276,7 @@ internal static class ColonyChecks
 
         var fullSnapshot = new ColonySimulation().CaptureSnapshot();
         int fullCapacity = ColonySimulation.BaseStockpileCapacity;
-        int startingTotal = fullSnapshot.Inventory.Sum(stack => stack.Amount);
+        int startingTotal = fullSnapshot.Inventory.Sum(stack => stack.Amount) + fullSnapshot.Materials.Sum(stack => stack.Amount);
         fullSnapshot.Inventory.Single(stack => stack.Resource == ResourceKind.Food).Amount += fullCapacity - startingTotal;
         var fullColony = ColonySimulation.RestoreSnapshot(fullSnapshot);
         Check(fullColony.InventoryUsed == fullColony.InventoryCapacity && fullColony.InventoryFreeCapacity == 0,
@@ -262,7 +292,8 @@ internal static class ColonyChecks
 
         var partialDeliverySnapshot = new ColonySimulation().CaptureSnapshot();
         int targetInventory = ColonySimulation.BaseStockpileCapacity - 2;
-        int partialStartingInventory = partialDeliverySnapshot.Inventory.Sum(stack => stack.Amount);
+        int partialStartingInventory = partialDeliverySnapshot.Inventory.Sum(stack => stack.Amount) +
+            partialDeliverySnapshot.Materials.Sum(stack => stack.Amount);
         partialDeliverySnapshot.Inventory.Single(stack => stack.Resource == ResourceKind.Food).Amount +=
             targetInventory - partialStartingInventory;
         var cargoWorker = partialDeliverySnapshot.Workers[0];
