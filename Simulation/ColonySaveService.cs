@@ -125,10 +125,14 @@ internal sealed class ColonySnapshot
             if (SchemaVersion <= 3) ResearchedProjects = [];
             else throw new InvalidDataException("Colony save is missing its researched-project ledger.");
         }
-        var knownResearchIds = ProgressionCatalog.Research.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-        if (ResearchedProjects.Any(id => string.IsNullOrWhiteSpace(id) || !knownResearchIds.Contains(id)) ||
+        var researchById = ProgressionCatalog.Research.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        if (ResearchedProjects.Any(id => string.IsNullOrWhiteSpace(id) || !researchById.ContainsKey(id)) ||
             ResearchedProjects.Distinct(StringComparer.Ordinal).Count() != ResearchedProjects.Count)
             throw new InvalidDataException("Colony save contains an unknown or duplicate researched-project ID.");
+        var researchedIds = ResearchedProjects.ToHashSet(StringComparer.Ordinal);
+        foreach (string projectId in ResearchedProjects)
+            if (researchById[projectId].Prerequisites.Any(prerequisite => !researchedIds.Contains(prerequisite)))
+                throw new InvalidDataException("Colony save contains research whose prerequisites are not completed.");
 
         if (Tiles.Count != Width * Height)
             throw new InvalidDataException("Colony save has an incomplete tile grid.");
