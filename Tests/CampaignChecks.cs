@@ -30,7 +30,7 @@ internal static class CampaignChecks
         var loadedOrder = CampaignSaveService.Deserialize(CampaignSaveService.Serialize(first.State));
         var resumed = new CampaignSimulation(loadedOrder);
         Check(resumed.PendingArmyDestination == 4, "pending army order must survive save/load");
-        resumed.EndTurn();
+        resumed.AdvanceWorldInterval();
         Check(resumed.State.ArmyRegionId == 4 && resumed.State.Turn == 2, "end turn must execute army movement");
 
         // Region 3 is the seeded Blight threat. Region 4 is adjacent, so the RTS encounter is earned by moving there.

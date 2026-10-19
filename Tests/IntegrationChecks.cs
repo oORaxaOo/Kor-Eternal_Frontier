@@ -49,7 +49,7 @@ internal static class IntegrationChecks
               campaign.State.Supplies == suppliesAtCapacity,
             "full local storage must reject imports without consuming strategic supplies");
 
-        campaign.EndTurn();
+        campaign.AdvanceWorldInterval();
         int turn = campaign.State.Turn;
         string json = GameSessionService.Serialize(colony, campaign);
         var restored = GameSessionService.Deserialize(json);
