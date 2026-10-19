@@ -171,6 +171,7 @@ internal static class ColonyChecks
         var restored = ColonySaveService.Deserialize(json);
         var legacySnapshot = colony.CaptureSnapshot();
         legacySnapshot.SchemaVersion = 1;
+        legacySnapshot.BuildingProductionProgressSeconds = 0;
         legacySnapshot.Materials.Clear();
         legacySnapshot.ResearchedProjects.Clear();
         legacySnapshot.Objects.RemoveAll(item => item.CatalogBuildingId != null);
@@ -396,7 +397,7 @@ internal static class ColonyChecks
               farmColony.FoodWaterDemandPerCycle == 1,
             "completed gardens should advertise their water-fed food-production effect");
         var farmSnapshot = farmColony.CaptureSnapshot();
-        farmSnapshot.BuildingProductionProgressSeconds = 29.9f;
+        farmSnapshot.BuildingProductionProgressSeconds = 29.95f;
         farmSnapshot.Materials.Add(new MaterialStackSnapshot { MaterialId = "water", Amount = 2 });
         var wateredFarm = ColonySimulation.RestoreSnapshot(farmSnapshot);
         int foodBeforeFarmCycle = wateredFarm.ResourceCount(ResourceKind.Food);
