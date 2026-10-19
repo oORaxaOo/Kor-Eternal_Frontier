@@ -407,6 +407,7 @@ internal sealed class ColonySimulation
         campaign.State.Energy -= project.CostEnergy;
         _researchedProjects.Add(project.Id);
         Message = $"Research completed: {project.Name}. Unlocks now apply to colony production.";
+        campaign.State.LastEvent = Message;
         return true;
     }
 
