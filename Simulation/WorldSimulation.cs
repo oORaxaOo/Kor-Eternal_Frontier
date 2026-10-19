@@ -50,6 +50,7 @@ internal sealed class WorldSimulation
             Colony.Step(FixedStepSeconds);
             _simulationAccumulator -= FixedStepSeconds;
         }
+        SpatialWorld.SetInventoryCapacity(KorSettlementId(SpatialWorld), Colony.InventoryCapacity);
         SpatialWorld.Step(scaledSeconds);
         ElapsedSeconds = SpatialWorld.ClockSeconds;
     }
