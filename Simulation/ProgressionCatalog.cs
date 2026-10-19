@@ -14,7 +14,7 @@ internal static class ProgressionCatalog
     internal sealed record BuildingDef(string Id, string Name, string Family, int Era, int Footprint,
         int Work, IReadOnlyDictionary<string, int> Inputs, string Upkeep, string UnlockResearchId);
     internal sealed record UnitDef(string Id, string Name, string Role, int Era, int SupplyCost,
-        int AlloyCost, int Upkeep, string UnlockResearchId);
+        int AlloyCost, int Upkeep, int CombatStrength, string UnlockResearchId);
     internal sealed record RecipeDef(string Id, string Name, string Industry, int Stage,
         IReadOnlyDictionary<string, int> Inputs, IReadOnlyDictionary<string, int> Outputs,
         int Work, string UnlockResearchId);
@@ -201,7 +201,7 @@ internal static class ProgressionCatalog
             int scale = era + 1;
             result.Add(new UnitDef($"unit.{role.Id}.tier{era}", $"{Eras[era]} {role.Name}", role.Id,
                 era, role.Supplies * scale, role.Alloy * scale, role.Upkeep * scale,
-                $"research.defense.fortification.era{era}"));
+                1 + era / 3, $"research.defense.fortification.era{era}"));
         }
         return result;
     }
