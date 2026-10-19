@@ -99,10 +99,11 @@ internal sealed class ColonySnapshot
     public List<MaterialStackSnapshot> Materials { get; set; } = [];
     public List<ProductionOrderSnapshot> ProductionOrders { get; set; } = [];
     public List<string> ResearchedProjects { get; set; } = [];
+    public List<ProductionTargetSnapshot> ProductionTargets { get; set; } = [];
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5 or 6)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -125,6 +126,17 @@ internal sealed class ColonySnapshot
             if (SchemaVersion <= 3) ResearchedProjects = [];
             else throw new InvalidDataException("Colony save is missing its researched-project ledger.");
         }
+        if (ProductionTargets is null)
+        {
+            if (SchemaVersion <= 5) ProductionTargets = [];
+            else throw new InvalidDataException("Colony save is missing its automatic production targets.");
+        }
+        var knownRecipeIds = ProgressionCatalog.Recipes.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        if (ProductionTargets.Any(target => target is null || string.IsNullOrWhiteSpace(target.RecipeId) ||
+                !knownRecipeIds.Contains(target.RecipeId) || target.TargetAmount is not (5 or 10 or 20)) ||
+            ProductionTargets.Select(target => target.RecipeId).Distinct(StringComparer.Ordinal).Count() != ProductionTargets.Count)
+            throw new InvalidDataException("Colony save contains an invalid or duplicate automatic production target.");
+
         var researchById = ProgressionCatalog.Research.ToDictionary(item => item.Id, StringComparer.Ordinal);
         if (ResearchedProjects.Any(id => string.IsNullOrWhiteSpace(id) || !researchById.ContainsKey(id)) ||
             ResearchedProjects.Distinct(StringComparer.Ordinal).Count() != ResearchedProjects.Count)
@@ -421,6 +433,11 @@ internal sealed class MaterialStackSnapshot
 {
     public string MaterialId { get; set; } = string.Empty;
     public int Amount { get; set; }
+}
+internal sealed class ProductionTargetSnapshot
+{
+    public string RecipeId { get; set; } = string.Empty;
+    public int TargetAmount { get; set; }
 }
 internal sealed class ProductionOrderSnapshot
 {
