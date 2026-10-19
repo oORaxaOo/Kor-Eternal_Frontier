@@ -136,6 +136,10 @@ internal sealed class ContinuousWorldState
         {
             var inventory = InventoryFor(settlement.Id);
             double foodRate = settlement.Faction == "Blight" ? 0d : settlement.Faction == "Kor" ? 0.04d : 0.02d;
+            // Blight pressure damages the regional food economy; severe hotspots can make land
+            // effectively unproductive even before a settlement is physically abandoned.
+            double habitatPressure = Ecology.EnvironmentalPressureAt(settlement.X, settlement.Y);
+            foodRate *= Math.Clamp(1d - habitatPressure * 1.6d, 0d, 1d);
             double freeCapacity = Math.Max(0d, InventoryCapacityFor(settlement.Id) - inventory.Values.Sum());
             double producedFood = Math.Min(foodRate * deltaSeconds, freeCapacity);
             inventory[WorldResourceKind.Food] = inventory.GetValueOrDefault(WorldResourceKind.Food) + producedFood;
