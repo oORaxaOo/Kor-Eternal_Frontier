@@ -47,6 +47,8 @@ internal sealed class ContinuousWorldState
         state.AddEntity(WorldEntityKind.Settlement, "Ironwood Enclave", "Neutral", 58_600, 54_100);
         state.AddEntity(WorldEntityKind.ResourceSite, "Westwood Deposit", "Neutral", 48_200, 51_900);
         state.AddEntity(WorldEntityKind.BlightFront, "Blight Expanse", "Blight", 64_000, 46_500);
+        state.AddEntity(WorldEntityKind.Army, "Kor Vanguard", "Kor", 51_200, 50_800);
+        state.AddEntity(WorldEntityKind.Caravan, "Hearthhold Caravan", "Kor", 49_100, 50_400);
         state.Validate();
         return state;
     }
