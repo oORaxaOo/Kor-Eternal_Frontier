@@ -159,7 +159,7 @@ internal static class Program
                 if (spaceDown && !wasSpace) paused = !paused;
                 if (tDown && !wasT)
                 {
-                    try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
+                    try { campaign.EndTurn(); worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
                     catch (Exception ex) { simulation.SetMessage($"Campaign turn failed: {ex.Message}"); }
                 }
                 if (iDown && !wasI)
@@ -404,7 +404,7 @@ internal static class Program
                                         else { architectureMode = ArchitectureKind.None; placingObject = false; activeMenu = 0; }
                                         break;
                                     case 3:
-                                        if (index == 0) { try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); } catch (Exception ex) { simulation.SetMessage($"Turn failed: {ex.Message}"); } }
+                                        if (index == 0) { try { campaign.EndTurn(); worldMap.EndTurn(); simulation.SetMessage(campaign.Message); } catch (Exception ex) { simulation.SetMessage($"Turn failed: {ex.Message}"); } }
                                         else if (index == 1) activeMenu = 9;
                                         else if (index == 2 && worldMapMode) worldMap.ClaimSelected();
                                         else if (index == 2) simulation.SetMessage("Open Colony → Strategic World Map before claiming frontier territory.");
