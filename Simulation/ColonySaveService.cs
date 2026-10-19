@@ -102,7 +102,7 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3 or 4)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -195,6 +195,7 @@ internal sealed class ColonySnapshot
         }
 
         var objectIds = new HashSet<int>();
+        var knownCatalogBuildingIds = ProgressionCatalog.Buildings.Select(building => building.Id).ToHashSet(StringComparer.Ordinal);
         var occupied = new HashSet<(int X, int Y)>();
         foreach (var item in Objects)
         {
@@ -202,6 +203,9 @@ internal sealed class ColonySnapshot
             if (!Enum.IsDefined(item.Kind) || !Enum.IsDefined(item.Status) || item.Width <= 0 || item.Height <= 0 ||
                 item.X < 0 || item.Y < 0 || item.X + item.Width > Width || item.Y + item.Height > Height)
                 throw new InvalidDataException("Colony save contains an invalid placeable object footprint.");
+            if ((item.Kind == PlaceableKind.IndustryBuilding) != !string.IsNullOrWhiteSpace(item.CatalogBuildingId) ||
+                (item.CatalogBuildingId != null && !knownCatalogBuildingIds.Contains(item.CatalogBuildingId)))
+                throw new InvalidDataException("Colony save contains an unknown or inconsistent catalogue building reference.");
             if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0 ||
                 (item.Status != ConstructionStatus.Complete && item.WorkRequired == 0) ||
                 (item.Status == ConstructionStatus.Complete && item.WorkDone < item.WorkRequired) ||
@@ -359,6 +363,7 @@ internal sealed class PlaceableObjectSnapshot
     public ConstructionStatus Status { get; set; }
     public float WorkDone { get; set; }
     public int WorkRequired { get; set; }
+    public string? CatalogBuildingId { get; set; }
 }
 internal sealed class ResourceDepositSnapshot
 {
