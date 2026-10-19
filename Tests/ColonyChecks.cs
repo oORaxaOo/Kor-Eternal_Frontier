@@ -140,6 +140,21 @@ internal static class ColonyChecks
         Check(colony.InventoryUsed == legacyResourceTotal + 12,
             "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
 
+        Check(new[] { "clay", "sand", "copper_ore", "silica", "fuel", "medicine_precursor", "blight_sample", "exotic_matter" }
+                .All(materialId => colony.MaterialDeposits.Any(deposit => deposit.MaterialId == materialId && deposit.Amount > 0)),
+            "all eight expanded finite raw-material deposits should be available on the colony map");
+        Check(colony.MaterialDeposits.Count == 15 && colony.ManagementMaterialDepositPageCount == 3 &&
+              colony.ManagementMaterialDeposits(2).Count == 5,
+            "all fifteen finite raw-material sites should be accessible through three pages of the Resources panel");
+        Check(ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.masonry.stage0").Inputs.ContainsKey("clay") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.metallurgy.stage0").Inputs.ContainsKey("copper_ore") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.glass.stage0").Inputs.ContainsKey("silica") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.glass.stage0").Inputs.ContainsKey("sand") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.power.stage1").Inputs.ContainsKey("fuel") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.medicine.stage0").Inputs.ContainsKey("medicine_precursor") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.containment.stage0").Inputs.ContainsKey("blight_sample") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.containment.stage5").Inputs.ContainsKey("exotic_matter"),
+            "mineral, fuel, medical and advanced containment recipes should consume their corresponding raw materials");
         var oreDeposit = colony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
         int oreDepositBefore = oreDeposit.Amount;
         int oreStockBefore = colony.MaterialCount("ore");

@@ -57,7 +57,7 @@ internal static class ProgressionCatalog
         ("research", "Research Instruments", ["Sample Glassware", "Spectrometer", "Lab Instruments", "Sensor Array", "Precision Scanner", "Quantum Sensor", "Field Analyzer", "Anomaly Observatory"], "components", "research_parts"),
         ("water", "Water Treatment", ["Rough Filtration", "Potable Water", "Mineral Balancing", "Membrane Filtration", "Closed-Loop Water", "Molecular Purification", "Atmospheric Recovery", "Adaptive Hydrology"], "water", "treated_water"),
         ("textiles", "Technical Textiles", ["Plant Fibre", "Woven Cloth", "Reinforced Fabric", "Insulation Weave", "Smart Fabric", "Armoured Fibre", "Adaptive Textile", "Molecular Weave"], "biomass", "technical_fabric"),
-        ("glass", "Glassworks", ["Glass Cullets", "Industrial Glass", "Optical Glass", "Ceramic Glass", "Pressure Glass", "Radiation Glass", "Self-Healing Glass", "Adaptive Transparent Alloy"], "stone", "glass"),
+        ("glass", "Glassworks", ["Glass Cullets", "Industrial Glass", "Optical Glass", "Ceramic Glass", "Pressure Glass", "Radiation Glass", "Self-Healing Glass", "Adaptive Transparent Alloy"], "silica", "glass"),
         ("optics", "Optics", ["Ground Lenses", "Optical Lenses", "Thermal Optics", "Sensor Optics", "Laser Optics", "Photonic Lens", "Quantum Optics", "Adaptive Optics"], "crystal", "optical_parts"),
         ("aerospace", "Aerospace Fabrication", ["Lightweight Frames", "Pressure Hulls", "Flight Controls", "Heat Shields", "High-G Structures", "Magnetic Thrusters", "Adaptive Hulls", "Field-Shift Assemblies"], "alloy", "aerospace_parts"),
         ("biochemistry", "Biochemistry", ["Culture Medium", "Enzyme Blend", "Bio-Reagents", "Synthetic Tissue", "Programmable Enzymes", "Regenerative Matrix", "Adaptive Biomass", "Closed-Loop Biocatalyst"], "biomass", "bioreagents"),
@@ -115,7 +115,9 @@ internal static class ProgressionCatalog
         new("biomass", "Processed Biomass", "Biomass", 4, true), new("medicine_precursor", "Medical Precursors", "Chemicals", 9, false),
         new("quantum_core", "Quantum Core", "Advanced", 40, false), new("nanites", "Nanites", "Advanced", 35, false),
         new("exotic_matter", "Exotic Matter", "Anomalous", 60, false), new("blight_sample", "Contained Blight Sample", "Hazardous", 25, false),
-        new("containment_medium", "Containment Medium", "Hazardous", 14, false), new("recycled_feedstock", "Recycled Feedstock", "Reclamation", 3, true)
+        new("containment_medium", "Containment Medium", "Hazardous", 14, false), new("recycled_feedstock", "Recycled Feedstock", "Reclamation", 3, true),
+        new("clay", "Raw Clay", "Minerals", 2, false), new("sand", "Silica Sand", "Minerals", 1, false),
+        new("copper_ore", "Copper Ore", "Minerals", 4, false), new("silica", "Raw Silica", "Minerals", 3, false)
     ];
 
     public static IReadOnlyList<ResourceDef> Resources { get; } = BaseResources.Concat(BuildIndustryResources()).ToArray();
@@ -223,6 +225,12 @@ internal static class ProgressionCatalog
                 inputs[$"material.{industry.Id}.stage{stage - 1}"] = scale + 1;
                 inputs[industry.Input] = scale;
             }
+            if (industry.Id == "masonry") inputs["clay"] = scale;
+            if (industry.Id == "metallurgy") inputs["copper_ore"] = scale;
+            if (industry.Id == "glass") inputs["sand"] = scale;
+            if (industry.Id == "power" && stage > 0) inputs["fuel"] = scale;
+            if (industry.Id == "medicine") inputs["medicine_precursor"] = scale;
+            if (industry.Id == "containment" && stage >= 5) inputs["exotic_matter"] = stage - 4;
             var outputs = new Dictionary<string, int> { [outputId] = scale * 2 };
             result.Add(new RecipeDef(recipeId, industry.Stages[stage], industry.Name, stage,
                 inputs, outputs, 4 * scale * (stage + 1),
