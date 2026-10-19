@@ -82,6 +82,7 @@ internal sealed class ColonySnapshot
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
     public float ElapsedSeconds { get; set; }
+    public float BuildingProductionProgressSeconds { get; set; }
     public string Message { get; set; } = string.Empty;
     public int? SelectedWorkerId { get; set; }
     public int NextOrderId { get; set; }
@@ -104,11 +105,13 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5 or 6 or 7)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2 or 3 or 4 or 5 or 6 or 7 or 8)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
             throw new InvalidDataException("Colony save contains an invalid simulation clock.");
+        if (!float.IsFinite(BuildingProductionProgressSeconds) || BuildingProductionProgressSeconds < 0 || BuildingProductionProgressSeconds >= 30f)
+            throw new InvalidDataException("Colony save contains invalid building-production progress.");
         if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
             throw new InvalidDataException("Colony save is missing a required collection.");
