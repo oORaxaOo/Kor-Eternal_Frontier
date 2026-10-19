@@ -72,3 +72,12 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Exports are capped per order and limited by real local inventory. Local balances are reduced before the strategic balances are credited.
 - F5/F9 use `GameSessionService`, which validates both existing subsystem save formats and writes a single temporary file before atomic replacement.
 - IntegrationChecks exercise resource conservation, full-storage rejection, and save/load of both systems.
+
+
+## Target architecture: continuous real-time world
+
+The nine-region linked-hex campaign model is legacy scaffolding. It was built around turn-based adjacency and must not be used as the representation for the new world. Keep it only as a temporary compatibility layer while replacement systems are migrated and tested.
+
+The target world uses continuous world-space coordinates and spatial queries. Local settlement construction may remain square-tile based, but the wider world is not a graph of linked tiles. All scales share one simulation clock and canonical world state; camera zoom changes the level of detail only. Population, resources, trade, caravans, armies and hazards move through space over elapsed time. Resource transfers must be represented as shipments with travel progress, not instant imports/exports. Save/load must serialize one validated world snapshot.
+
+Mouse-first is a product requirement. Visible menus must expose pause/resume, speed, save/load, zoom, build/object selection and cancellation. Mouse interaction is the primary input; keyboard shortcuts are optional only.
