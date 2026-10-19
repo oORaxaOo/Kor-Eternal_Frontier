@@ -20,11 +20,14 @@ One canonical application exists at the root, targeting .NET 8. Gondwana is the 
     WorldSimulation
        |               \
        v                v
-    ContinuousWorldState   CampaignSimulation (temporary legacy adapter)
-       |                    |
-       +-- continuous X/Y   +-- old region income/Blight rules pending migration
-           entity motion
-           spatial queries
+    ContinuousWorldState   CampaignSimulation (save migration only)
+       |
+       +-- continuous X/Y entities and spatial queries
+       +-- continuous food production
+       +-- settlement inventories and conserved cargo shipments
+
+    CampaignSimulation
+       +-- legacy save snapshot; not advanced during active play
 
     GameSessionService
              |
@@ -43,7 +46,9 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
-- Continuous world-space settlements, resource sites and Blight fronts with Euclidean spatial queries and coordinate-based travel-time movement.
+- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with Euclidean spatial queries and coordinate-based travel-time movement.
+- Continuous-time settlement food production, per-settlement strategic inventories, and caravan shipments that reserve origin cargo and deliver only after travel time.
+- The active world coordinator no longer advances the legacy campaign turn/interval model; the campaign snapshot remains only for old-save compatibility.
 - Schema-v2 unified saves include continuous world entity positions, in-flight destinations and the shared world clock; schema-v1 saves migrate by generating a fresh continuous world from the stored seed.
 - Minimal symbol-based top-down rendering.
 
@@ -54,7 +59,9 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - General recipe catalogs, workplace queues and multiple production chains.
 - Broader needs, housing, work eligibility, skills and social relationships.
 - Research unlocks wired to local buildings, production and systems.
-- Replace the temporary CampaignSimulation/CampaignState linked-hex model with continuous world-space entities, canonical resources, spatial movement and travel-time shipments.
+- Migrate local colony inventory, construction consumption, production and hauling into the canonical world resource ledger without double-counting.
+- Replace/remove the remaining legacy CampaignSimulation/CampaignState save payload and compatibility bridge once migration is tested.
+- Add population-linked consumption, settlement development, diplomacy/conflict, and a dynamic multi-stage Blight ecosystem.
 - Large world generation and settlement transitions.
 - Dynamic multi-stage Blight ecosystem.
 
