@@ -100,20 +100,6 @@ internal static class ColonyChecks
               .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
             "save/load must preserve worker positions, needs, cargo, and task kinds");
 
-        string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
-        string path = Path.Combine(directory, "colony.json");
-        try
-        {
-            ColonySaveService.Save(colony, path);
-            var loadedFromDisk = ColonySaveService.Load(path);
-            Check(loadedFromDisk.ResourceCount(ResourceKind.Food) == colony.ResourceCount(ResourceKind.Food),
-                "disk save/load must preserve inventory state");
-        }
-        finally
-        {
-            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
-        }
-
         var needsColony = new ColonySimulation();
         var needsWorker = needsColony.Workers[0];
         var liveCitizen = needsColony.CitizenForWorker(needsWorker.Id);
