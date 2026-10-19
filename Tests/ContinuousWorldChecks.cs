@@ -7,6 +7,35 @@ internal static class ContinuousWorldChecks
 {
     public static void Run()
     {
+        var ecologyWorld = ContinuousWorldState.Generate(81357);
+        Check(ecologyWorld.Ecology.Herds.Count >= 3 && ecologyWorld.Ecology.Hotspots.Count >= 1,
+            "world generation must seed wildlife herds and a Blight hotspot");
+        var firstHerd = ecologyWorld.Ecology.Herds[0];
+        double herdStartX = firstHerd.X, herdStartY = firstHerd.Y;
+        for (int i = 0; i < 500; i++) ecologyWorld.Step(60);
+        Check(Math.Abs(firstHerd.X - herdStartX) > .01 || Math.Abs(firstHerd.Y - herdStartY) > .01,
+            "wildlife herds must migrate autonomously without player orders");
+        Check(ecologyWorld.Ecology.RecentEvents.Count > 0,
+            "the world must generate and retain time-based ambient events");
+        Check(ecologyWorld.Ecology.Hotspots.Count > 1,
+            "Blight hotspots must be able to spread into new regions over world time");
+        Check(ecologyWorld.Ecology.IsDangerousAt(
+                ecologyWorld.Ecology.Hotspots[0].X, ecologyWorld.Ecology.Hotspots[0].Y),
+            "high-pressure Blight regions must be queryable as dangerous terrain");
+        string ecologyJson = ContinuousWorldState.Serialize(ecologyWorld);
+        var ecologyRestored = ContinuousWorldState.Deserialize(ecologyJson);
+        Check(ecologyRestored.Ecology.Herds.Count == ecologyWorld.Ecology.Herds.Count &&
+              ecologyRestored.Ecology.Hotspots.Count == ecologyWorld.Ecology.Hotspots.Count &&
+              ecologyRestored.Ecology.RecentEvents.Count == ecologyWorld.Ecology.RecentEvents.Count,
+            "save/load must preserve wildlife, Blight spread and the world event history");
+
+        var deterministicA = ContinuousWorldState.Generate(9912);
+        var deterministicB = ContinuousWorldState.Generate(9912);
+        for (int i = 0; i < 25; i++) { deterministicA.Step(60); deterministicB.Step(60); }
+        Check(deterministicA.Ecology.RecentEvents.Select(item => item.Title)
+                  .SequenceEqual(deterministicB.Ecology.RecentEvents.Select(item => item.Title)),
+            "world events must be reproducible from the same seed and simulation time");
+
         var world = ContinuousWorldState.Generate(70241);
         var projected = ContinuousWorldProjection.WorldToScreen(50_000, 50_000, 50_000, 50_000, .65f);
         var unprojected = ContinuousWorldProjection.ScreenToWorld(projected.X, projected.Y, 50_000, 50_000, .65f);
