@@ -17,7 +17,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 - A workstation recipe that consumes alloy and wood when queued; a worker performs the job before a component is added to inventory.
 - A minimal symbolic renderer: square tiles and buildings, colonists as dots, resource markers as squares.
 - Versioned colony save/load for terrain, architecture orders, objects, colonists, cargo, tasks/routes, deposits, inventory, production orders, IDs, selection, and simulation time.
-- A first unified real-time simulation coordinator (`Simulation/WorldSimulation.cs`) that owns the colony and regional world, advances both from one clock, supports pause/speed controls, and automatically advances regional systems on elapsed-time intervals. The strategic model still has legacy resource fields and is being migrated incrementally.
+- A unified real-time coordinator (`Simulation/WorldSimulation.cs`) that currently shares a clock between colony simulation and the temporary legacy regional model. This is an interim migration layer, not the target continuous world.
 
 This is a playable foundation, not the complete game. A reusable central job board, material reservations, capacity-aware stockpiles, multiple production chains, fuller population simulation, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
 
@@ -34,18 +34,20 @@ The build script publishes a self-contained linux-x64 package under artifacts/li
 
 ## Controls
 
-- W/A/S/D: move camera.
-- + / -: zoom.
-- Left click: place selected tile architecture/object or select a colonist.
-- Right click: move the selected colonist; right-click a resource deposit to gather and deliver.
-- 1: wall, 2: floor, 3: path, 4: door, 5: conduit.
-- O: toggle object placement; Tab: cycle object type.
-- Space: pause/resume the unified world simulation.
-- F5: save colony to `~/.local/share/kor-eternal-frontier/colony.json` (or `$XDG_DATA_HOME/kor-eternal-frontier/colony.json`).
-- F9: load the colony save.
-- The HUD shows used storage versus available capacity; complete storage racks to expand it.
-- Regional development now advances automatically while the simulation runs; there is no player-issued campaign-turn key. World speed controls are exposed by the simulation coordinator and will be surfaced in the UI in a later slice.
-- Esc: cancel placement mode.
+The primary controls are visible mouse-operated menus in the right panel:
+
+- **Pause / Resume** — pause or resume the shared real-time simulation.
+- **Speed − / Speed +** — slow down or speed up the world clock.
+- **Save / Load** — save or restore the current session.
+- **Zoom − / Zoom +** — zoom the view in or out.
+- **Wall / Floor / Path / Door / Conduit** — select a tile-construction mode, then left-click a tile.
+- **Bench / Pod / Rack / Gen / Garden** — select a placeable object, then left-click a location.
+- **Cancel** — cancel the active placement mode.
+- **Left click** — select a colonist or place the selected blueprint.
+- **Right click** — issue a movement/work command to the selected colonist.
+- **Middle-mouse drag** — pan the camera.
+
+No keyboard shortcut is required for core gameplay. The local map remains a square-tile settlement view; the wider world is being redesigned around continuous space rather than the old linked-hex campaign map.
 
 ## Source map
 
@@ -66,8 +68,8 @@ Keep simulation logic independent of rendering and input. Extend the game throug
 
 ## Unified real-time world migration
 
-The new `WorldSimulation` coordinates colony and regional updates under one clock. Regional economy, army orders, upkeep, and Blight progression are advanced automatically at elapsed-time intervals; the player no longer presses **T** to end a campaign turn. Pause/resume applies to the shared clock. A bounded speed multiplier API is implemented and covered by self-tests, though speed selection is not yet exposed in the UI.
+The new `WorldSimulation` coordinates colony and temporary legacy regional updates under one clock. The mouse-first UI now exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
 
-This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in the legacy campaign state, and **I/E** remain temporary legacy transfer controls while resource ownership is migrated into shared world entities. The next slices must replace those transfers with real shipments, integrate regional settlements and population, unify save data without competing subsystem snapshots, and replace the nine-region campaign map with a scale level of the same world.
+This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The next slices must replace it with canonical resource ownership and real shipments, build a continuous world-space model with travel time, integrate population and settlements, and save one complete world state. The old nine-region linked-hex map must not be extended as the new world.
 
 **F5 / F9** save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, regional progression, the shared clock, resource accounting, and session persistence.
