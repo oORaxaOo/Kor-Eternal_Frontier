@@ -354,7 +354,6 @@ internal sealed class ColonyRenderer : IDisposable
             DrawButton(canvas, "CLEAR", 1016, 566, 54, 22);
             DrawButton(canvas, "CLEAR SHIPMENT", 784, 593, 302, 22);
             _muted.Color = MutedColor;
-            canvas.DrawText(selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}" : "Select cargo, caravan, then destination", 790, 635, SKTextAlign.Left, _smallFont, _muted);
         }
         else
         {
@@ -372,7 +371,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _muted.Color = MutedColor;
-        canvas.DrawText(worldView ? "Left click: inspect/select entity" : "Left click: select/place", 790, 635, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination") : "Left click: select/place", 790, 635, SKTextAlign.Left, _smallFont, _muted);
         canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
