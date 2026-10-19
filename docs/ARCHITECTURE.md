@@ -17,17 +17,18 @@ One canonical application exists at the root, targeting .NET 8. Gondwana is the 
              +-- tiles, construction, objects, colonists, deposits,
                  hauling, inventory, production, needs and persistence
 
-    CampaignSimulation / CampaignState
-             |                 ^
-             v                 |
-    CampaignColonyBridge ------+
-             |
-             +-- explicit Supplies↔Food and Alloy↔Alloy transfers
-                 with local capacity checks and exact debits
+    WorldSimulation
+       |               \
+       v                v
+    ContinuousWorldState   CampaignSimulation (temporary legacy adapter)
+       |                    |
+       +-- continuous X/Y   +-- old region income/Blight rules pending migration
+           entity motion
+           spatial queries
 
     GameSessionService
              |
-             +-- validated atomic session envelope containing both save schemas
+             +-- schema-v2 atomic session envelope: colony, legacy adapter, continuous world
 
 The projection layer owns screen/world mapping. Gameplay APIs receive logical world coordinates. Rendering reads state but does not decide simulation rules.
 
@@ -42,6 +43,8 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
+- Continuous world-space settlements, resource sites and Blight fronts with Euclidean spatial queries and coordinate-based travel-time movement.
+- Schema-v2 unified saves include continuous world entity positions, in-flight destinations and the shared world clock; schema-v1 saves migrate by generating a fresh continuous world from the stored seed.
 - Minimal symbol-based top-down rendering.
 
 ## Remaining integration work
