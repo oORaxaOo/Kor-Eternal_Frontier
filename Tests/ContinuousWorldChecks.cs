@@ -1,4 +1,5 @@
 using KorTheBlight.WorldModel;
+using KorTheBlight.Rendering;
 
 namespace KorTheBlight.Tests;
 
@@ -7,6 +8,12 @@ internal static class ContinuousWorldChecks
     public static void Run()
     {
         var world = ContinuousWorldState.Generate(70241);
+        var projected = ContinuousWorldProjection.WorldToScreen(50_000, 50_000, 50_000, 50_000, .65f);
+        var unprojected = ContinuousWorldProjection.ScreenToWorld(projected.X, projected.Y, 50_000, 50_000, .65f);
+        Check(Math.Abs(unprojected.X - 50_000) < .01 && Math.Abs(unprojected.Y - 50_000) < .01,
+            "continuous world projection must round-trip world coordinates");
+        Check(ContinuousWorldProjection.Scale(.08f) < ContinuousWorldProjection.Scale(.65f),
+            "strategic zoom must smoothly scale the continuous world representation");
         var home = world.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
         var nearby = world.QueryRadius(home.X, home.Y, 1);
         Check(nearby.Count == 1 && nearby[0].Id == home.Id,
