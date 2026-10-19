@@ -18,7 +18,7 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - Footprint-based multi-tile object blueprints that remain unfinished until workers complete construction.
 - Inventory-based construction and production costs with shared storage capacity across legacy resources and stable-ID industry materials.
 - Live catalogue-driven recipe queues: a completed workbench reserves actual inputs, workers travel to the station, perform recipe work, and add stage-specific outputs.
-- Local research projects spend strategic Knowledge and Energy, enforce catalogue prerequisites, persist in colony schema v5, and unlock recipes only after the required technology is completed.
+- Local research projects spend strategic Knowledge and Energy, enforce catalogue prerequisites, persist in colony schema v5, and unlock recipes and catalogue buildings only after the required technology is completed.
 - All 128 catalogue building variants can be selected through a paginated mouse-first construction list, placed as footprint blueprints, gated by research, built by colonists, and saved with their stable building IDs. Construction reserves actual stable-ID masonry-chain materials, alloy and components; completed catalogue storage buildings add inventory capacity.
 - All 128 catalogue unit variants are now recruitable through a paginated mouse-first roster. Recruitment requires the unit's research unlock and exact Supplies/Alloy costs, adds combat strength, persists in campaign saves, incurs recurring upkeep, and can lose a roster unit when a battle is lost.
 - Multi-stage intermediate material IDs persist through save/load; recipes reject missing inputs instead of generating free goods.
