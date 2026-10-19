@@ -68,12 +68,12 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Graphics remain minimal until integrated mechanics are legible.
 
 
-## Alpha integration contract
+## Legacy migration adapter contract (temporary)
 
-- Campaign Supplies map to local Food; strategic Alloy maps to local Alloy. Energy and Knowledge stay strategic-only until corresponding local resources and consumers exist.
-- Imports are capped per order and limited by local free storage. Strategic balances are reduced only by accepted local deliveries.
-- Exports are capped per order and limited by real local inventory. Local balances are reduced before the strategic balances are credited.
-- F5/F9 use `GameSessionService`, which validates both existing subsystem save formats and writes a single temporary file before atomic replacement.
+- The old Campaign Supplies-to-Food and Alloy transfer mapping exists only as compatibility code and must not become the target world resource model. Energy and Knowledge remain in the legacy adapter until canonical world inventories replace it.
+- Legacy imports are capped per order and limited by local free storage. This is not a real shipment and must be retired.
+- Legacy exports are capped per order and limited by local inventory. Local balances are debited before the legacy strategic balances are credited; this bridge is not exposed as a player keyboard control.
+- The visible mouse-menu Save/Load actions use `GameSessionService`, which validates subsystem formats and atomically writes the schema-v2 session envelope.
 - IntegrationChecks exercise resource conservation, full-storage rejection, and save/load of both systems.
 
 
