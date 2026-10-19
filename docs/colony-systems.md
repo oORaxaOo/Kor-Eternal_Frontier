@@ -33,6 +33,7 @@ This module is the first deterministic core for the next colony-simulation slice
 - Stockpile zones are connected, resource-specific, and cannot overlap.
 - Stack limits, storage reservations, additions, and withdrawals conserve quantities.
 - A citizen reserves storage before travelling to a workplace; output cannot overfill a stockpile.
+- A resource deposit accepts only one active gather assignment at a time, preventing redundant worker trips and overcommitted finite sources.
 - Hunger causes a real trip to food storage and consumes one stored unit.
 - Worker capacity is enforced, and removing a workplace releases its citizens and storage reservations.
 - Movement cannot path into a blocked destination.

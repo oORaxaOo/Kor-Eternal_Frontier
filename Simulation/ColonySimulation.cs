@@ -651,6 +651,11 @@ internal sealed class ColonySimulation
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
+            if (IsDepositReserved(deposit.Id, worker.Id))
+            {
+                Message = $"Another worker is already assigned to {deposit.Resource} at ({x}, {y}).";
+                return;
+            }
             if (InventoryFreeCapacity <= 0)
             {
                 Message = "Colony storage is full. Build or complete additional storage before gathering more resources.";
@@ -816,13 +821,20 @@ internal sealed class ColonySimulation
             foreach (var need in ObjectCost(item.Kind))
                 if (ResourceCount(need.Key) < need.Value) required.Add(need.Key);
 
-        var deposit = _deposits.Where(d => d.Amount > 0 && required.Contains(d.Resource))
+        var deposit = _deposits.Where(d => d.Amount > 0 && required.Contains(d.Resource) &&
+                                           !IsDepositReserved(d.Id, worker.Id))
             .OrderBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f)).FirstOrDefault();
         if (deposit == null) return;
         if (!TryFindPath(worker, deposit.Cell, out var route)) return;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
         Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} from the nearby deposit.";
     }
+
+    private bool IsDepositReserved(int depositId, int exceptWorkerId) =>
+        _workers.Any(candidate => candidate.Id != exceptWorkerId &&
+            candidate.Task != null &&
+            candidate.Task.Kind == ColonyTaskKind.Gather &&
+            candidate.Task.DepositId == depositId);
 
     private void AssignDelivery(ColonyWorker worker)
     {
