@@ -122,6 +122,7 @@ internal sealed class ColonySimulation
     // Industry materials use catalogue-stable IDs; legacy five-resource APIs remain compatible.
     private readonly Dictionary<string, int> _industryInventory = new(StringComparer.Ordinal);
     private readonly HashSet<string> _researchedProjects = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _productionTargets = new(StringComparer.Ordinal);
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -210,8 +211,10 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 5,
+            SchemaVersion = 6,
             ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+            ProductionTargets = _productionTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new ProductionTargetSnapshot { RecipeId = item.Key, TargetAmount = item.Value }).ToList(),
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -228,7 +231,8 @@ internal sealed class ColonySimulation
             Workers = [],
             Inventory = [],
             Materials = [],
-            ProductionOrders = []
+            ProductionOrders = [],
+            ProductionTargets = []
         };
 
         for (int y = 0; y < Height; y++)
@@ -354,6 +358,8 @@ internal sealed class ColonySimulation
         foreach (var item in snapshot.Materials) simulation._industryInventory.Add(item.MaterialId, item.Amount);
         simulation._researchedProjects.Clear();
         foreach (var projectId in snapshot.ResearchedProjects) simulation._researchedProjects.Add(projectId);
+        simulation._productionTargets.Clear();
+        foreach (var target in snapshot.ProductionTargets) simulation._productionTargets.Add(target.RecipeId, target.TargetAmount);
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
@@ -440,6 +446,48 @@ internal sealed class ColonySimulation
     }
 
     internal int ManagementResearchPageCount => Math.Max(1, (ProgressionCatalog.Research.Count - _researchedProjects.Count + 7) / 8);
+
+    public int ProductionTarget(string recipeId) =>
+        _productionTargets.TryGetValue(recipeId, out int target) ? target : 0;
+
+    public bool SetProductionTarget(string recipeId, int targetAmount)
+    {
+        if (!ProgressionCatalog.Recipes.Any(recipe => recipe.Id == recipeId))
+        {
+            Message = "Unknown production recipe.";
+            return false;
+        }
+        if (targetAmount is not (0 or 5 or 10 or 20))
+        {
+            Message = "Production target must be 0, 5, 10, or 20 units.";
+            return false;
+        }
+        if (targetAmount == 0) _productionTargets.Remove(recipeId);
+        else _productionTargets[recipeId] = targetAmount;
+        Message = targetAmount == 0
+            ? $"Automatic production disabled for {recipeId}."
+            : $"Automatic production target set to {targetAmount} units for {recipeId}.";
+        return true;
+    }
+
+    private void UpdateAutomaticProductionPlans()
+    {
+        var workstation = _objects.FirstOrDefault(item => item.Kind == PlaceableKind.Workbench && item.IsBuilt);
+        if (workstation == null || _productionTargets.Count == 0) return;
+
+        foreach (var (recipeId, targetAmount) in _productionTargets.ToArray())
+        {
+            var recipe = ProgressionCatalog.Recipes.FirstOrDefault(item => item.Id == recipeId);
+            if (recipe == null || recipe.Outputs.Count == 0) continue;
+            var primaryOutput = recipe.Outputs.First();
+            int pendingOutput = _productionOrders.Where(order => !order.Complete && order.RecipeId == recipeId)
+                .Sum(_ => primaryOutput.Value);
+            if (MaterialCount(primaryOutput.Key) + pendingOutput >= targetAmount) continue;
+            // At most one order per plan per simulation step; pending output is counted above,
+            // so frame rate cannot flood the queue past its target.
+            QueueRecipeProduction(workstation.Id, recipeId);
+        }
+    }
 
     public bool CanQueueRecipe(string recipeId, out string reason)
     {
@@ -815,6 +863,7 @@ internal sealed class ColonySimulation
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
         UpdateNeeds(deltaSeconds);
+        UpdateAutomaticProductionPlans();
         AssignJobs();
 
         foreach (var worker in _workers)
