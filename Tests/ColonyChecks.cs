@@ -1,5 +1,6 @@
 using System.Text.Json;
 using KorTheBlight.Simulation;
+using KorTheBlight.Campaign;
 using KorTheBlight.Rendering;
 
 namespace KorTheBlight.Tests;
@@ -83,9 +84,40 @@ internal static class ColonyChecks
             "a worker must finish the queued recipe and place the output in inventory");
         Check(!colony.QueueComponentProduction(999999), "production at a missing workstation must be rejected");
 
+        var researchCampaign = new CampaignSimulation(WorldGenerationService.Generate(31415));
+        researchCampaign.State.Knowledge = 500;
+        researchCampaign.State.Energy = 500;
+        const string machineToolsEra0 = "research.industry.machine_tools.era0";
+        const string machineToolsEra1 = "research.industry.machine_tools.era1";
+        const string logisticsEra0 = "research.logistics.field_operations.era0";
+        Check(!colony.CanQueueRecipe("recipe.sawmill.stage0", out string lockedReason) &&
+              lockedReason.Contains("Locked by research", StringComparison.Ordinal),
+            "catalogue recipes must be locked until their technology prerequisite is researched");
+        int knowledgeBeforeResearch = researchCampaign.State.Knowledge;
+        int energyBeforeResearch = researchCampaign.State.Energy;
+        Check(colony.CanResearchProject(machineToolsEra0, researchCampaign, out _),
+            "an era-zero research project without prerequisites should be available when funded");
+        Check(colony.ResearchProject(machineToolsEra0, researchCampaign),
+            "research should spend strategic resources and persist a completed technology");
+        var machineTools = ProgressionCatalog.Research.Single(item => item.Id == machineToolsEra0);
+        Check(researchCampaign.State.Knowledge == knowledgeBeforeResearch - machineTools.CostKnowledge &&
+              researchCampaign.State.Energy == energyBeforeResearch - machineTools.CostEnergy,
+            "research must debit the exact Knowledge and Energy costs from the campaign");
+        Check(!colony.CanResearchProject(machineToolsEra1, researchCampaign, out string prerequisiteReason) &&
+              prerequisiteReason.Contains("Requires:", StringComparison.Ordinal),
+            "higher-era research must be blocked until both its previous era and logistics prerequisite are complete");
+        Check(colony.ResearchProject(logisticsEra0, researchCampaign),
+            "the foundational logistics project should be researchable");
+        Check(colony.ResearchProject(machineToolsEra1, researchCampaign),
+            "higher-era research should unlock after all prerequisite technologies are completed");
+        Check(colony.CanQueueRecipe("recipe.sawmill.stage0", out _),
+            "researching Machine Tools Era I should unlock the stage-zero sawmill recipe");
+        Check(!colony.CanQueueRecipe("recipe.sawmill.stage1", out string stageOneReason) &&
+              !stageOneReason.Contains("Locked by research", StringComparison.Ordinal),
+            "the next recipe tier should be technology-unlocked but still respect its actual material inputs");
         int woodBeforeRecipe = colony.ResourceCount(ResourceKind.Wood);
         Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage0"),
-            "a catalogue recipe should be queueable when its real inputs and workstation are available");
+            "a catalogue recipe should be queueable after its real research prerequisite and material inputs are available");
         Check(colony.ResourceCount(ResourceKind.Wood) == woodBeforeRecipe - 2,
             "catalogue recipe inputs must be removed from the same live colony inventory");
         Check(!colony.QueueRecipeProduction(workbenchId, "recipe.metallurgy.stage0"),
@@ -128,14 +160,17 @@ internal static class ColonyChecks
         var legacySnapshot = colony.CaptureSnapshot();
         legacySnapshot.SchemaVersion = 1;
         legacySnapshot.Materials.Clear();
+        legacySnapshot.ResearchedProjects.Clear();
         foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
         string legacyJson = JsonSerializer.Serialize(legacySnapshot)
             .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
+            .Replace(",\"ResearchedProjects\":[]", "", StringComparison.Ordinal)
             .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
         var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
         Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
-              migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0,
-            "schema v1 saves without stable-ID materials or recipe IDs must remain loadable");
+              migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0 &&
+              !migratedLegacySave.IsResearchComplete(machineToolsEra0),
+            "schema v1 saves without stable-ID materials, recipe IDs or a research ledger must remain loadable");
         Check(restored.Workers.Count == colony.Workers.Count, "save/load must preserve the colony population");
         Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
@@ -143,6 +178,10 @@ internal static class ColonyChecks
         Check(restored.MaterialCount("material.sawmill.stage0") == 2 &&
               restored.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0" && order.Complete),
             "save/load must preserve stable-ID industry stock and queued recipe identities");
+        Check(restored.IsResearchComplete(machineToolsEra0) && restored.IsResearchComplete(logisticsEra0) &&
+              restored.IsResearchComplete(machineToolsEra1) &&
+              restored.CanQueueRecipe("recipe.sawmill.stage0", out _),
+            "save/load must preserve researched technologies and their recipe unlock effects");
         Check(restored.TileOrders.Count == colony.TileOrders.Count &&
               restored.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))
                   .SequenceEqual(colony.TileOrders.Select(o => (o.Cell, o.Target, o.Status, o.WorkDone))),

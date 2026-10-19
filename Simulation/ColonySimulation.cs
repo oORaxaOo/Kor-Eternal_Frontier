@@ -1,3 +1,5 @@
+using KorTheBlight.Campaign;
+
 namespace KorTheBlight.Simulation;
 
 internal enum TerrainKind { Ground, Rock, Water }
@@ -118,6 +120,7 @@ internal sealed class ColonySimulation
     private readonly Dictionary<ResourceKind, int> _inventory = Enum.GetValues<ResourceKind>().ToDictionary(k => k, _ => 0);
     // Industry materials use catalogue-stable IDs; legacy five-resource APIs remain compatible.
     private readonly Dictionary<string, int> _industryInventory = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _researchedProjects = new(StringComparer.Ordinal);
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -191,7 +194,8 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 3,
+            SchemaVersion = 4,
+            ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -332,6 +336,8 @@ internal sealed class ColonySimulation
         foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
         simulation._industryInventory.Clear();
         foreach (var item in snapshot.Materials) simulation._industryInventory.Add(item.MaterialId, item.Amount);
+        simulation._researchedProjects.Clear();
+        foreach (var projectId in snapshot.ResearchedProjects) simulation._researchedProjects.Add(projectId);
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
@@ -358,12 +364,78 @@ internal sealed class ColonySimulation
         return _industryInventory.TryGetValue(materialId, out int amount) ? amount : 0;
     }
 
+    public bool IsResearchComplete(string researchId) => _researchedProjects.Contains(researchId);
+
+    public bool CanResearchProject(string researchId, CampaignSimulation campaign, out string reason)
+    {
+        var project = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == researchId);
+        if (project == null)
+        {
+            reason = "Unknown research project.";
+            return false;
+        }
+        if (_researchedProjects.Contains(project.Id))
+        {
+            reason = "Research already completed.";
+            return false;
+        }
+        var missing = project.Prerequisites.Where(id => !_researchedProjects.Contains(id)).ToArray();
+        if (missing.Length > 0)
+        {
+            var names = missing.Select(id => ProgressionCatalog.Research.FirstOrDefault(item => item.Id == id)?.Name ?? id);
+            reason = "Requires: " + string.Join(", ", names) + ".";
+            return false;
+        }
+        if (campaign.State.Knowledge < project.CostKnowledge || campaign.State.Energy < project.CostEnergy)
+        {
+            reason = $"Needs {project.CostKnowledge} Knowledge and {project.CostEnergy} Energy.";
+            return false;
+        }
+        reason = "Ready to research.";
+        return true;
+    }
+
+    public bool ResearchProject(string researchId, CampaignSimulation campaign)
+    {
+        if (!CanResearchProject(researchId, campaign, out string reason))
+        {
+            Message = reason;
+            return false;
+        }
+        var project = ProgressionCatalog.Research.First(item => item.Id == researchId);
+        campaign.State.Knowledge -= project.CostKnowledge;
+        campaign.State.Energy -= project.CostEnergy;
+        _researchedProjects.Add(project.Id);
+        Message = $"Research completed: {project.Name}. Unlocks now apply to colony production.";
+        campaign.State.LastEvent = Message;
+        return true;
+    }
+
+    internal IReadOnlyList<ProgressionCatalog.ResearchDef> ManagementResearch => ProgressionCatalog.Research
+        .Where(project => !_researchedProjects.Contains(project.Id))
+        // Keep the live production unlock path visible without forcing players through every
+        // unrelated era-zero catalogue entry first.
+        .OrderBy(project => project.Id.StartsWith("research.industry.machine_tools.era", StringComparison.Ordinal)
+            ? project.Era * 2
+            : project.Id.StartsWith("research.logistics.field_operations.era", StringComparison.Ordinal)
+                ? project.Era * 2 + 1
+                : 1000 + project.Era)
+        .ThenBy(project => project.Id, StringComparer.Ordinal)
+        .Take(8)
+        .ToArray();
+
     public bool CanQueueRecipe(string recipeId, out string reason)
     {
         var recipe = ProgressionCatalog.Recipes.FirstOrDefault(item => item.Id == recipeId);
         if (recipe == null)
         {
             reason = "Unknown production recipe.";
+            return false;
+        }
+        if (!_researchedProjects.Contains(recipe.UnlockResearchId))
+        {
+            string projectName = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == recipe.UnlockResearchId)?.Name ?? recipe.UnlockResearchId;
+            reason = $"Locked by research: {projectName}.";
             return false;
         }
 

@@ -287,8 +287,19 @@ internal static class Program
                                     }
                                     break;
                                 case 6:
-                                    if (logicalMouse.X >= 254 && logicalMouse.X <= 1044 && logicalMouse.Y >= 316 && logicalMouse.Y < 351)
-                                        simulation.SetMessage(campaign.ResearchWard() ? campaign.Message : "Research unavailable: need 30 Knowledge and 20 Energy, or project already complete.");
+                                    if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
+                                        logicalMouse.Y >= 316 && logicalMouse.Y < 351)
+                                        simulation.SetMessage(campaign.ResearchWard() ? campaign.Message : "Ward Protocol unavailable: need 30 Knowledge and 20 Energy, or project already complete.");
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 194 && logicalMouse.Y < 594)
+                                    {
+                                        int index = (int)((logicalMouse.Y - 194) / 50);
+                                        var project = simulation.ManagementResearch.ElementAtOrDefault(index);
+                                        if (project == null)
+                                            simulation.SetMessage("No local research project is listed at that position.");
+                                        else
+                                            simulation.ResearchProject(project.Id, campaign);
+                                    }
                                     break;
                                 case 8:
                                     if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&

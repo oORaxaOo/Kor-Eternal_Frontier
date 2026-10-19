@@ -98,10 +98,11 @@ internal sealed class ColonySnapshot
     public List<ResourceStackSnapshot> Inventory { get; set; } = [];
     public List<MaterialStackSnapshot> Materials { get; set; } = [];
     public List<ProductionOrderSnapshot> ProductionOrders { get; set; } = [];
+    public List<string> ResearchedProjects { get; set; } = [];
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion is not (1 or 2 or 3 or 4)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -119,6 +120,20 @@ internal sealed class ColonySnapshot
             if (SchemaVersion <= 2) MaterialDeposits = [];
             else throw new InvalidDataException("Colony save is missing its raw-material deposits.");
         }
+        if (ResearchedProjects is null)
+        {
+            if (SchemaVersion <= 3) ResearchedProjects = [];
+            else throw new InvalidDataException("Colony save is missing its researched-project ledger.");
+        }
+        var researchById = ProgressionCatalog.Research.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        if (ResearchedProjects.Any(id => string.IsNullOrWhiteSpace(id) || !researchById.ContainsKey(id)) ||
+            ResearchedProjects.Distinct(StringComparer.Ordinal).Count() != ResearchedProjects.Count)
+            throw new InvalidDataException("Colony save contains an unknown or duplicate researched-project ID.");
+        var researchedIds = ResearchedProjects.ToHashSet(StringComparer.Ordinal);
+        foreach (string projectId in ResearchedProjects)
+            if (researchById[projectId].Prerequisites.Any(prerequisite => !researchedIds.Contains(prerequisite)))
+                throw new InvalidDataException("Colony save contains research whose prerequisites are not completed.");
+
         if (Tiles.Count != Width * Height)
             throw new InvalidDataException("Colony save has an incomplete tile grid.");
 
