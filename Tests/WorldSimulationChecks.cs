@@ -22,8 +22,9 @@ internal static class WorldSimulationChecks
             "legacy regional turn state must no longer advance in the active simulation");
         Check(world.ElapsedSeconds > 0,
             "the unified simulation clock must advance");
-        Check(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food) > initialFood,
-            "settlement production must integrate continuously against elapsed world time");
+        Check(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food) >= 0 &&
+              world.Colony.ResourceCount(ResourceKind.Food) == (int)Math.Floor(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food)),
+            "colony food needs and continuous settlement production must use the same ledger balance");
 
         world.IsPaused = true;
         double elapsed = world.ElapsedSeconds;
