@@ -24,6 +24,7 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKPaint _muted = new() { IsAntialias = true, Color = MutedColor };
     private readonly SKFont _normalFont = new(SKTypeface.FromFamilyName("sans-serif"), 13);
     private readonly SKFont _smallFont = new(SKTypeface.FromFamilyName("sans-serif"), 11);
+    private readonly SKFont _glyphFont = new(SKTypeface.FromFamilyName("monospace"), 14);
     private readonly SKFont _headingFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 17);
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
@@ -184,6 +185,38 @@ internal sealed class ColonyRenderer : IDisposable
             _line.Color = new SKColor(66, 79, 72, 170);
             _line.StrokeWidth = Math.Max(0.5f, zoom * 0.6f);
             canvas.DrawRect(rect, _line);
+
+            // At settlement zoom, a compact glyph layer makes the map legible in the
+            // Dwarf-Fortress-inspired symbolic style while retaining colour for quick scanning.
+            if (zoom >= 0.82f)
+            {
+                string glyph = tile.Architecture switch
+                {
+                    ArchitectureKind.Floor => ".",
+                    ArchitectureKind.Wall => "#",
+                    ArchitectureKind.Door => "+",
+                    ArchitectureKind.Path => ":",
+                    ArchitectureKind.Conduit => "=",
+                    _ => tile.Terrain switch
+                    {
+                        TerrainKind.Rock => "▒",
+                        TerrainKind.Water => "~",
+                        _ => string.Empty
+                    }
+                };
+                if (glyph.Length > 0)
+                {
+                    _text.Color = tile.Architecture switch
+                    {
+                        ArchitectureKind.Wall => new SKColor(232, 204, 177),
+                        ArchitectureKind.Door => Gold,
+                        ArchitectureKind.Conduit => new SKColor(202, 162, 235),
+                        _ when tile.Terrain == TerrainKind.Water => new SKColor(126, 191, 214),
+                        _ => new SKColor(194, 202, 184)
+                    };
+                    canvas.DrawText(glyph, point.X, point.Y + 4f * zoom, SKTextAlign.Center, _glyphFont, _text);
+                }
+            }
         }
     }
 
@@ -274,7 +307,15 @@ internal sealed class ColonyRenderer : IDisposable
             if (point.X < -12 || point.X > 782 || point.Y < 50 || point.Y > 662) continue;
             float radius = Math.Max(3f, 4.5f * zoom);
             _fill.Color = worker.Hungry ? new SKColor(222, 149, 73) : WorkerColor;
-            canvas.DrawCircle(point.X, point.Y, radius, _fill);
+            if (zoom >= 0.82f)
+            {
+                _text.Color = worker.Hungry ? new SKColor(255, 173, 90) : WorkerColor;
+                canvas.DrawText("@", point.X, point.Y + 4f * zoom, SKTextAlign.Center, _glyphFont, _text);
+            }
+            else
+            {
+                canvas.DrawCircle(point.X, point.Y, radius, _fill);
+            }
             if (simulation.SelectedWorkerId == worker.Id)
             {
                 _line.Color = Gold;
@@ -307,7 +348,7 @@ internal sealed class ColonyRenderer : IDisposable
         _text.Color = Crimson;
         canvas.DrawText("KOR ETERNAL FRONTIER", 18, 27, SKTextAlign.Left, _titleFont, _text);
         _muted.Color = MutedColor;
-        canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "COLONY / WORLD SIMULATION FOUNDATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "SYMBOLIC COLONY GRID / LIVE SIMULATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
 
         int x = 405;
         foreach (var resource in Enum.GetValues<ResourceKind>())
