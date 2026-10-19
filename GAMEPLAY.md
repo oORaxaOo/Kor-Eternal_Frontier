@@ -20,11 +20,11 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - A functional production recipe: a completed workbench consumes alloy and wood and creates a component only after worker labor.
 - Minimal orthogonal top-down rendering.
 - Versioned local colony saves with structural validation and round-trip tests.
-- A separate deterministic strategic campaign model with regional development, research, turns, battle reconciliation, and save/load tests.
+- A `WorldSimulation` coordinator that advances the local colony and regional world under one real-time clock, with pause/speed support and automatic regional updates.
 
 ## Known gaps
 
-The strategic campaign and local colony are now connected through explicit logistics orders and a unified session save. Strategic Supplies transfer to local Food; Alloy transfers directly. Imports obey colony storage capacity and debit campaign stock only for accepted deliveries. Exports remove actual local Food/Alloy and credit strategic Supplies/Alloy. Strategic Energy and Knowledge remain campaign-only until the local simulation has matching consumers. The current integration is a first functional bridge, not yet a full regional settlement simulation. The colony still needs shared job ownership, job/material reservations, capacity-aware stockpiles, multiple recipe definitions and production chains, fuller needs/workplace simulation, save migration beyond the initial schema, and research that unlocks local mechanics. The world map is currently the separate nine-region campaign model, not a large connected civilization simulation. The Blight is still a simple local spread-and-cleanse model.
+The local colony and regional world now advance through one `WorldSimulation` clock. Regional production, army upkeep/movement, and Blight progression run automatically on elapsed-time intervals; there is no player-issued end-turn action. Pause affects both layers, and a bounded speed multiplier is available in the simulation API. This is a migration slice rather than completion: regional stock remains in a legacy campaign state, I/E still use a temporary transfer bridge, and the world is still a nine-region model rather than a connected map with detailed local settlements. Next, resource ownership must move to shared world entities and I/E must be replaced by real shipments. Shared save state, population migration, and region/local-settlement continuity remain required.
 
 ## Implementation priority
 
@@ -43,9 +43,8 @@ This is an incremental migration, not a wholesale replacement of the established
 
 ## Integrated alpha controls
 
-- **T** — advance one strategic campaign turn. Regional production, army orders, upkeep, research effects, and Blight spread are resolved by the campaign model.
-- **I** — import up to 20 strategic Supplies as local Food and up to 10 strategic Alloy, limited by available local storage. Only accepted deliveries are charged to the campaign.
-- **E** — export up to 20 local Food as strategic Supplies and up to 10 local Alloy. Only resources actually present in local inventory are transferred.
+- **I** — legacy temporary import bridge: transfers up to 20 strategic Supplies as local Food and up to 10 Alloy, limited by local storage. This is scheduled for replacement by actual shipments.
+- **E** — legacy temporary export bridge: transfers up to 20 local Food as strategic Supplies and up to 10 local Alloy. This is scheduled for replacement by actual shipments.
 - **F5 / F9** — save/load one session containing both colony and campaign state at `~/.local/share/kor-eternal-frontier/session.json` (or under `$XDG_DATA_HOME`). Legacy colony-only and campaign-only saves are not overwritten by these controls.
 
 The deterministic self-test checks import/export conservation, full-storage rejection, and unified disk save/load in addition to the existing colony and campaign checks.
