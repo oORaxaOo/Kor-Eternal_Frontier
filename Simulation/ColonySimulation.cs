@@ -173,7 +173,7 @@ internal sealed class ColonySimulation
         _inventory[ResourceKind.Food] = 32;
         _inventory[ResourceKind.Alloy] = 8;
         _inventory[ResourceKind.Components] = 4;
-        _industryInventory["building_material"] = 8;
+        _industryInventory["material.masonry.stage0"] = 8;
 
         AddBuiltObject(PlaceableKind.Habitat, new CellPosition(15, 8), 2, 2);
         AddBuiltObject(PlaceableKind.Stockpile, new CellPosition(18, 8), 3, 2);
