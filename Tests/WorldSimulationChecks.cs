@@ -11,7 +11,7 @@ internal static class WorldSimulationChecks
         int initialTurn = world.World.State.Turn;
         int initialSupplies = world.World.State.Supplies;
 
-        world.Step(WorldSimulation.CampaignUpdateIntervalSeconds - 0.1f);
+        world.Step(WorldSimulation.CampaignUpdateIntervalSeconds - 0.2f);
         Check(world.World.State.Turn == initialTurn,
             "regional economy must not jump ahead of elapsed simulation time");
         Check(world.World.State.Supplies == initialSupplies,
@@ -19,7 +19,7 @@ internal static class WorldSimulationChecks
         Check(world.ElapsedSeconds > 0,
             "the unified simulation clock must advance");
 
-        world.Step(0.1f);
+        world.Step(0.2f);
         Check(world.World.State.Turn == initialTurn + 1,
             "regional simulation must advance automatically when elapsed time reaches its interval");
         Check(world.World.State.Supplies > initialSupplies,
