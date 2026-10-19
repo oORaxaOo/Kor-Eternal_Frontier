@@ -42,7 +42,7 @@ jobs:
       - name: Build canonical root project
         run: dotnet build GondwanaGame.csproj --configuration Release
 
-      - name: Run colony and campaign checks
+      - name: Run simulation and unified-session checks
         run: dotnet run --project GondwanaGame.csproj --configuration Release --no-build -- --self-test
 
       - name: Publish self-contained Linux x86_64 build
