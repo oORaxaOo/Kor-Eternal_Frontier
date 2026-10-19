@@ -65,7 +65,7 @@ internal static class IntegrationChecks
         {
             SchemaVersion = 1,
             ColonyJson = ColonySaveService.Serialize(colony),
-            CampaignJson = CampaignSaveService.Serialize(campaign.State)
+            CampaignJson = LegacyCampaignPayloadCodec.Serialize(campaign.State)
         });
         var migratedLegacy = GameSessionService.Deserialize(legacyJson);
         Check(migratedLegacy.ContinuousWorld.Entities.Count > 0 &&
