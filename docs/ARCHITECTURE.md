@@ -51,7 +51,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - General recipe catalogs, workplace queues and multiple production chains.
 - Broader needs, housing, work eligibility, skills and social relationships.
 - Research unlocks wired to local buildings, production and systems.
-- Campaign screen connected to the colony state and real regional resource/population flows.
+- Replace the temporary CampaignSimulation/CampaignState linked-hex model with continuous world-space entities, canonical resources, spatial movement and travel-time shipments.
 - Large world generation and settlement transitions.
 - Dynamic multi-stage Blight ecosystem.
 
