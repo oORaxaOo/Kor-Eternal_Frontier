@@ -152,6 +152,17 @@ internal sealed class ColonySimulation
             .Sum(item => ProgressionCatalog.Buildings.FirstOrDefault(def => def.Id == item.CatalogBuildingId) is { Family: "storage" } def
                 ? StorageRackCapacity * (def.Era + 1) : 0);
     public int InventoryFreeCapacity => Math.Max(0, InventoryCapacity - InventoryUsed);
+    public int PowerCapacity =>
+        _objects.Where(item => item.Kind == PlaceableKind.Generator && item.IsBuilt).Sum(_ => 6) +
+        _objects.Where(item => item.CatalogBuildingId != null && item.IsBuilt)
+            .Sum(item => ProgressionCatalog.Buildings.FirstOrDefault(def => def.Id == item.CatalogBuildingId) is { Family: "power" } def
+                ? 10 * (def.Era + 1) : 0);
+    public int PendingPowerDemand => _productionOrders.Where(order => !order.Complete && order.RecipeId != null)
+        .Sum(order => ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Stage ?? 0);
+    public int AvailablePowerCapacity => Math.Max(0, PowerCapacity - PendingPowerDemand);
+    public int WorkstationCapacity => _objects.Count(item => item.Kind == PlaceableKind.Workbench && item.IsBuilt);
+    public int BusyWorkstations => _productionOrders.Where(order => !order.Complete && order.Assigned)
+        .Select(order => order.WorkstationId).Distinct().Count();
     private int UnreservedInventoryFreeCapacity => Math.Max(0, InventoryFreeCapacity - PendingProductionOutputCapacity);
 
     public ColonySimulation()
@@ -442,6 +453,11 @@ internal sealed class ColonySimulation
         {
             string projectName = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == recipe.UnlockResearchId)?.Name ?? recipe.UnlockResearchId;
             reason = $"Locked by research: {projectName}.";
+            return false;
+        }
+        if (recipe.Stage > 0 && AvailablePowerCapacity < recipe.Stage)
+        {
+            reason = $"Needs {recipe.Stage} free local power capacity; {AvailablePowerCapacity} available from {PowerCapacity} built capacity.";
             return false;
         }
 
@@ -913,6 +929,8 @@ internal sealed class ColonySimulation
         {
             var station = _objects.FirstOrDefault(o => o.Id == order.WorkstationId && o.IsBuilt);
             if (station == null) { order.Complete = true; continue; }
+            if (_productionOrders.Any(other => other.Id != order.Id && !other.Complete &&
+                other.Assigned && other.WorkstationId == order.WorkstationId)) continue;
             var workCell = FindWorkCell(worker, station.Origin, station.Width, station.Height);
             if (!workCell.HasValue || !TryFindPath(worker, workCell.Value, out var route)) continue;
 
@@ -1120,7 +1138,9 @@ internal sealed class ColonySimulation
             worker.Task = null;
             return;
         }
-        float workRate = worker.Hungry ? 0.5f : 1f;
+        float powerSurplus = Math.Max(0, PowerCapacity - PendingPowerDemand);
+        float powerMultiplier = Math.Min(1.5f, 1f + powerSurplus / 20f);
+        float workRate = (worker.Hungry ? 0.5f : 1f) * powerMultiplier;
         int outputCapacity = order.RecipeId == null ? 1 :
             ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Outputs.Values.Sum() ?? 0;
         if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < outputCapacity)
