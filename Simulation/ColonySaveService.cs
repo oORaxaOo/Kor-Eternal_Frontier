@@ -79,6 +79,7 @@ internal static class ColonySaveService
 internal sealed class ColonySnapshot
 {
     public int SchemaVersion { get; set; } = 1;
+    public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
     public float ElapsedSeconds { get; set; }
@@ -227,18 +228,22 @@ internal sealed class ColonySnapshot
         }
 
         var resourceKinds = Enum.GetValues<ResourceKind>().ToHashSet();
-        if (Inventory.Count != resourceKinds.Count || Inventory.Any(stack =>
-                !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
+        if ((!InventoryOwnedByWorld && Inventory.Count != resourceKinds.Count) ||
+            (InventoryOwnedByWorld && Inventory.Count != 0) ||
+            Inventory.Any(stack => !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
             Inventory.Select(stack => stack.Resource).Distinct().Count() != Inventory.Count)
             throw new InvalidDataException("Colony inventory is incomplete, duplicated, or contains an invalid amount.");
 
-        int availableStorageCapacity =
-            Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
-            Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.StorageRackCapacity);
-        if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
-            throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+        if (!InventoryOwnedByWorld)
+        {
+            int availableStorageCapacity =
+                Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
+                    .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
+                Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
+                    .Sum(_ => ColonySimulation.StorageRackCapacity);
+            if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
+                throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+        }
 
         var productionIds = new HashSet<int>();
         foreach (var order in ProductionOrders)
