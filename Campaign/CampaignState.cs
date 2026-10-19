@@ -59,7 +59,7 @@ internal sealed class RegionState
 
 internal sealed record BattleSetup(int RegionId, int Seed, int Supplies, int Alloy, int GuardianDamage);
 
-internal static class CampaignSaveService
+internal static class LegacyCampaignPayloadCodec
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -76,6 +76,4 @@ internal static class CampaignSaveService
         state.Validate();
         return state;
     }
-
-
 }
