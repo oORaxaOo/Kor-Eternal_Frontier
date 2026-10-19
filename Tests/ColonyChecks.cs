@@ -264,7 +264,7 @@ internal static class ColonyChecks
 
         var fullSnapshot = new ColonySimulation().CaptureSnapshot();
         int fullCapacity = ColonySimulation.BaseStockpileCapacity;
-        int startingTotal = fullSnapshot.Inventory.Sum(stack => stack.Amount);
+        int startingTotal = fullSnapshot.Inventory.Sum(stack => stack.Amount) + fullSnapshot.Materials.Sum(stack => stack.Amount);
         fullSnapshot.Inventory.Single(stack => stack.Resource == ResourceKind.Food).Amount += fullCapacity - startingTotal;
         var fullColony = ColonySimulation.RestoreSnapshot(fullSnapshot);
         Check(fullColony.InventoryUsed == fullColony.InventoryCapacity && fullColony.InventoryFreeCapacity == 0,
@@ -280,7 +280,8 @@ internal static class ColonyChecks
 
         var partialDeliverySnapshot = new ColonySimulation().CaptureSnapshot();
         int targetInventory = ColonySimulation.BaseStockpileCapacity - 2;
-        int partialStartingInventory = partialDeliverySnapshot.Inventory.Sum(stack => stack.Amount);
+        int partialStartingInventory = partialDeliverySnapshot.Inventory.Sum(stack => stack.Amount) +
+            partialDeliverySnapshot.Materials.Sum(stack => stack.Amount);
         partialDeliverySnapshot.Inventory.Single(stack => stack.Resource == ResourceKind.Food).Amount +=
             targetInventory - partialStartingInventory;
         var cargoWorker = partialDeliverySnapshot.Workers[0];
