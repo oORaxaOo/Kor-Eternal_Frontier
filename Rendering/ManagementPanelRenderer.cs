@@ -70,15 +70,17 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Inventory", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 254, 268);
                 Pair(c, "Inventory free", colony.InventoryFreeCapacity.ToString(), 254, 294);
                 Pair(c, "Simulation time", $"{colony.ElapsedSeconds:0.0} s", 254, 320);
+                Pair(c, "Food producers", colony.FoodProducerCount.ToString(), 254, 346);
+                Pair(c, "Food / water per 30s", $"{colony.FoodProductionPerCycle} / {colony.FoodWaterDemandPerCycle}", 254, 372);
                 Section(c, "Empire status", 670, 164);
                 Pair(c, "Strategic turn", campaign.State.Turn.ToString(), 670, 190);
                 Pair(c, "Supplies / Alloy", $"{campaign.State.Supplies} / {campaign.State.Alloy}", 670, 216);
                 Pair(c, "Energy / Knowledge", $"{campaign.State.Energy} / {campaign.State.Knowledge}", 670, 242);
                 Pair(c, "Regions controlled", campaign.State.Regions.Count(r => r.Owner == "Kor").ToString(), 670, 268);
                 Pair(c, "World territories", $"{world.Territories.Count(t => t.Owner == WorldFactionKind.Kor)} / {world.Territories.Count}", 670, 294);
-                Note(c, colony.Message, 254, 380, 790);
-                Note(c, campaign.Message, 254, 426, 790);
-                Note(c, world.Message, 254, 472, 790);
+                Note(c, colony.Message, 254, 416, 790);
+                Note(c, campaign.Message, 254, 462, 790);
+                Note(c, world.Message, 254, 508, 790);
                 break;
             case 2:
                 Section(c, "Colonist roster", 254, 164);
@@ -120,16 +122,18 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Storage used", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 670, 300);
                 Pair(c, "Storage available", colony.InventoryFreeCapacity.ToString(), 670, 326);
                 Note(c, "Storage is shared by legacy resources and every stable-ID industry material.", 670, 372, 365);
-                Section(c, "Raw-material sites • click on map to extract", 670, 420);
-                int rawY = 450;
+                Section(c, "Raw-material sites • click row to set auto-extraction", 670, 420);
+                int rawY = 446;
                 var rawNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
-                foreach (var deposit in colony.MaterialDeposits.Where(item => item.Amount > 0).Take(5))
+                foreach (var deposit in colony.MaterialDeposits.OrderBy(item => item.Id).Take(7))
                 {
+                    int gatherTarget = colony.GatherTarget(deposit.MaterialId);
+                    string targetLabel = gatherTarget == 0 ? "AUTO OFF" : $"TARGET {gatherTarget}";
                     Row(c, rawNames.GetValueOrDefault(deposit.MaterialId, deposit.MaterialId),
-                        $"{deposit.Amount} remaining • tile {deposit.Cell.X},{deposit.Cell.Y}", 670, rawY);
-                    rawY += 35;
+                        $"{deposit.Amount} left • {targetLabel} • tile {deposit.Cell.X},{deposit.Cell.Y}", 670, rawY);
+                    rawY += 26;
                 }
-                Note(c, "Select a colonist, then click a marked raw-material site on the map. Workers haul up to five units per trip.", 670, 632, 365);
+                Note(c, "Click a site row to cycle AUTO OFF → 10 → 25 → 50. Idle colonists extract toward targets; manual orders still work.", 670, 632, 365);
                 break;
             case 4:
                 Section(c, "Construction & blueprints", 254, 164);

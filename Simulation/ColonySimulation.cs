@@ -123,6 +123,8 @@ internal sealed class ColonySimulation
     private readonly Dictionary<string, int> _industryInventory = new(StringComparer.Ordinal);
     private readonly HashSet<string> _researchedProjects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _productionTargets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _gatherTargets = new(StringComparer.Ordinal);
+    private float _buildingProductionProgressSeconds;
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -140,6 +142,10 @@ internal sealed class ColonySimulation
     public void SetMessage(string message) => Message = message;
     public int? SelectedWorkerId { get; private set; }
     public float ElapsedSeconds { get; private set; }
+    public float BuildingProductionProgressSeconds => _buildingProductionProgressSeconds;
+    public int FoodProducerCount => _objects.Count(IsFoodProducer);
+    public int FoodProductionPerCycle => _objects.Where(IsFoodProducer).Sum(FoodOutputPerCycle);
+    public int FoodWaterDemandPerCycle => _objects.Where(IsFoodProducer).Sum(FoodWaterCostPerCycle);
     public int CompletedTileOrders => _tileOrders.Count(x => x.Status == ConstructionStatus.Complete);
     public int CompletedObjects => _objects.Count(x => x.IsBuilt);
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
@@ -211,10 +217,13 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 6,
+            SchemaVersion = 8,
             ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
             ProductionTargets = _productionTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
                 .Select(item => new ProductionTargetSnapshot { RecipeId = item.Key, TargetAmount = item.Value }).ToList(),
+            GatherTargets = _gatherTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new GatherTargetSnapshot { MaterialId = item.Key, TargetAmount = item.Value }).ToList(),
+            BuildingProductionProgressSeconds = _buildingProductionProgressSeconds,
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -359,6 +368,8 @@ internal sealed class ColonySimulation
         foreach (var projectId in snapshot.ResearchedProjects) simulation._researchedProjects.Add(projectId);
         simulation._productionTargets.Clear();
         foreach (var target in snapshot.ProductionTargets) simulation._productionTargets.Add(target.RecipeId, target.TargetAmount);
+        simulation._gatherTargets.Clear();
+        foreach (var target in snapshot.GatherTargets) simulation._gatherTargets.Add(target.MaterialId, target.TargetAmount);
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
@@ -372,6 +383,7 @@ internal sealed class ColonySimulation
         simulation._nextMaterialDepositId = snapshot.NextMaterialDepositId;
         simulation._nextProductionId = snapshot.NextProductionId;
         simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
+        simulation._buildingProductionProgressSeconds = snapshot.BuildingProductionProgressSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
         return simulation;
@@ -445,6 +457,55 @@ internal sealed class ColonySimulation
     }
 
     internal int ManagementResearchPageCount => Math.Max(1, (ProgressionCatalog.Research.Count - _researchedProjects.Count + 7) / 8);
+
+    public int GatherTarget(string materialId) =>
+        _gatherTargets.TryGetValue(materialId, out int target) ? target : 0;
+
+    public bool SetGatherTarget(string materialId, int targetAmount)
+    {
+        if (!ProgressionCatalog.Resources.Any(item => item.Id == materialId) ||
+            ColonySimulation.IsLegacyMaterialId(materialId) ||
+            !_materialDeposits.Any(deposit => deposit.MaterialId == materialId))
+        {
+            Message = "No known local raw-material site exists for that material.";
+            return false;
+        }
+        if (targetAmount is not (0 or 10 or 25 or 50))
+        {
+            Message = "Raw-material target must be 0, 10, 25, or 50 units.";
+            return false;
+        }
+        if (targetAmount == 0) _gatherTargets.Remove(materialId);
+        else _gatherTargets[materialId] = targetAmount;
+        Message = targetAmount == 0
+            ? $"Automatic extraction disabled for {materialId}."
+            : $"Automatic extraction target set to {targetAmount} units for {materialId}.";
+        return true;
+    }
+
+    private void UpdateAutomaticGatheringPlans()
+    {
+        if (_gatherTargets.Count == 0 || UnreservedInventoryFreeCapacity <= 0) return;
+        foreach (var (materialId, targetAmount) in _gatherTargets.ToArray())
+        {
+            if (MaterialCount(materialId) >= targetAmount) continue;
+            var deposit = _materialDeposits.FirstOrDefault(item => item.MaterialId == materialId && item.Amount > 0);
+            if (deposit == null) continue;
+            int activeGatherers = _workers.Count(worker =>
+                worker.Task is { Kind: ColonyTaskKind.Gather } task && task.MaterialDepositId == deposit.Id);
+            int cargoInTransit = _workers.Where(worker => worker.CarriedMaterialId == materialId)
+                .Sum(worker => worker.CarriedAmount);
+            if (MaterialCount(materialId) + activeGatherers * CarryCapacity + cargoInTransit >= targetAmount) continue;
+            if (UnreservedInventoryFreeCapacity < Math.Min(CarryCapacity, deposit.Amount)) continue;
+            var worker = _workers.FirstOrDefault(item => item.Task == null &&
+                !item.CarriedResource.HasValue && string.IsNullOrWhiteSpace(item.CarriedMaterialId));
+            if (worker == null) continue;
+            if (!TryFindPath(worker, deposit.Cell, out var route)) continue;
+            worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route)
+                { MaterialDepositId = deposit.Id };
+            Message = $"{worker.Name} assigned to automatically extract {materialId} toward its stock target.";
+        }
+    }
 
     public int ProductionTarget(string recipeId) =>
         _productionTargets.TryGetValue(recipeId, out int target) ? target : 0;
@@ -865,13 +926,48 @@ internal sealed class ColonySimulation
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
         UpdateNeeds(deltaSeconds);
+        UpdateBuildingProduction(deltaSeconds);
         UpdateAutomaticProductionPlans();
         AssignJobs();
+        UpdateAutomaticGatheringPlans();
 
         foreach (var worker in _workers)
         {
             if (worker.Task == null) continue;
             AdvanceWorker(worker, deltaSeconds);
+        }
+    }
+
+    private static bool IsFoodProducer(PlaceableObjectState item) =>
+        item.IsBuilt && (item.Kind == PlaceableKind.Garden ||
+            (item.CatalogBuildingId != null &&
+             ProgressionCatalog.Buildings.FirstOrDefault(building => building.Id == item.CatalogBuildingId)?.Family == "farm"));
+
+    private static int FoodWaterCostPerCycle(PlaceableObjectState item) =>
+        item.Kind == PlaceableKind.Garden ? 1 :
+        item.CatalogBuildingId != null
+            ? ProgressionCatalog.Buildings.First(building => building.Id == item.CatalogBuildingId).Era + 1
+            : 0;
+
+    private static int FoodOutputPerCycle(PlaceableObjectState item) => FoodWaterCostPerCycle(item) * 2;
+
+    private void UpdateBuildingProduction(float deltaSeconds)
+    {
+        _buildingProductionProgressSeconds += deltaSeconds;
+        while (_buildingProductionProgressSeconds >= 30f)
+        {
+            _buildingProductionProgressSeconds -= 30f;
+            foreach (var producer in _objects.Where(IsFoodProducer))
+            {
+                int waterCost = FoodWaterCostPerCycle(producer);
+                int foodOutput = FoodOutputPerCycle(producer);
+                if (waterCost <= 0 || MaterialCount("water") < waterCost ||
+                    UnreservedInventoryFreeCapacity + waterCost < foodOutput)
+                    continue;
+                if (!TryConsumeMaterials(new Dictionary<string, int>(StringComparer.Ordinal) { ["water"] = waterCost }))
+                    continue;
+                AddResource(ResourceKind.Food, foodOutput);
+            }
         }
     }
 
