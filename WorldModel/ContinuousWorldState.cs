@@ -67,7 +67,7 @@ internal sealed class ContinuousWorldState
         var morrowstead = state.AddEntity(WorldEntityKind.Settlement, "Morrowstead", "Neutral", 54_200, 47_800);
         var vesper = state.AddEntity(WorldEntityKind.Settlement, "Vesper Crossing", "Neutral", 45_700, 53_600);
         var ironwood = state.AddEntity(WorldEntityKind.Settlement, "Ironwood Enclave", "Neutral", 58_600, 54_100);
-        state.Inventories[korHome.Id] = new() { [WorldResourceKind.Wood] = 200, [WorldResourceKind.Stone] = 80, [WorldResourceKind.Food] = 120, [WorldResourceKind.Alloy] = 25 };
+        state.Inventories[korHome.Id] = new() { [WorldResourceKind.Wood] = 20, [WorldResourceKind.Stone] = 14, [WorldResourceKind.Food] = 32, [WorldResourceKind.Alloy] = 8, [WorldResourceKind.Components] = 4 };
         state.Inventories[morrowstead.Id] = new() { [WorldResourceKind.Food] = 90, [WorldResourceKind.Stone] = 35 };
         state.Inventories[vesper.Id] = new() { [WorldResourceKind.Wood] = 75, [WorldResourceKind.Food] = 60 };
         state.Inventories[ironwood.Id] = new() { [WorldResourceKind.Alloy] = 45, [WorldResourceKind.Stone] = 70 };
