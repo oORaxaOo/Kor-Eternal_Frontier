@@ -60,6 +60,7 @@ internal static class Program
             bool managementOpen = false;
             int managementPage = 1;
             int catalogBuildingPage = 0;
+            int researchPage = 0;
             string? selectedCatalogBuildingId = null;
             bool commandMode = false;
             host.RenderBackbufferPostScene += canvas =>
@@ -67,7 +68,7 @@ internal static class Program
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
                 else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
                 menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage);
+                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, researchPage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -317,12 +318,20 @@ internal static class Program
                                              logicalMouse.Y >= 194 && logicalMouse.Y < 594)
                                     {
                                         int index = (int)((logicalMouse.Y - 194) / 50);
-                                        var project = simulation.ManagementResearch.ElementAtOrDefault(index);
+                                        var project = simulation.ManagementResearch(researchPage).ElementAtOrDefault(index);
                                         if (project == null)
                                             simulation.SetMessage("No local research project is listed at that position.");
                                         else
-                                            simulation.ResearchProject(project.Id, campaign);
+                                        {
+                                            bool researched = simulation.ResearchProject(project.Id, campaign);
+                                            if (researched && researchPage >= simulation.ManagementResearchPageCount)
+                                                researchPage = Math.Max(0, simulation.ManagementResearchPageCount - 1);
+                                        }
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 && logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        researchPage = Math.Max(0, researchPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 && logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        researchPage = Math.Min(simulation.ManagementResearchPageCount - 1, researchPage + 1);
                                     break;
                                 case 8:
                                     if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
