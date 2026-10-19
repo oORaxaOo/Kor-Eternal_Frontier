@@ -24,7 +24,7 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 
 ## Known gaps
 
-The local colony and regional world now advance through one `WorldSimulation` clock. Regional production, army upkeep/movement, and Blight progression run automatically on elapsed-time intervals; there is no player-issued end-turn action. Pause affects both layers, and a bounded speed multiplier is available in the simulation API. This is a migration slice rather than completion: regional stock remains in a legacy campaign state, I/E still use a temporary transfer bridge, and the world is still a nine-region model rather than a connected map with detailed local settlements. Next, resource ownership must move to shared world entities and I/E must be replaced by real shipments. Shared save state, population migration, and region/local-settlement continuity remain required.
+The local colony and temporary legacy regional model currently advance through one `WorldSimulation` clock. The gameplay interface is mouse-first: visible controls expose pause/resume, speed, save/load, zoom, construction, object placement and cancellation; middle-mouse drag pans the camera. This is not completion of the world redesign. The nine-region linked-hex model is explicitly legacy scaffolding and must not be expanded into the new world. Regional stock remains separate, the old transfer bridge remains in code but is not exposed as a gameplay key, and a continuous world-space model, canonical resources, travel-time shipments, population continuity and one complete world save are still required.
 
 ## Implementation priority
 
@@ -41,10 +41,17 @@ The local colony and regional world now advance through one `WorldSimulation` cl
 
 This is an incremental migration, not a wholesale replacement of the established construction/gathering scheduler: non-food materials and construction/recipe jobs still use the legacy inventory and task pipeline. The food grid maps the starter stockpile and completed storage-rack footprints to bounded storage slots while respecting the existing pooled inventory cap; all-resource grid ownership remains follow-up work. Existing save schemas are unchanged; the runtime ecosystem is rebuilt from restored worker and inventory state. See `docs/colony-systems.md` for core contracts and migration boundaries.
 
-## Integrated alpha controls
+## Mouse-first controls
 
-- **I** — legacy temporary import bridge: transfers up to 20 strategic Supplies as local Food and up to 10 Alloy, limited by local storage. This is scheduled for replacement by actual shipments.
-- **E** — legacy temporary export bridge: transfers up to 20 local Food as strategic Supplies and up to 10 local Alloy. This is scheduled for replacement by actual shipments.
-- **F5 / F9** — save/load one session containing both colony and campaign state at `~/.local/share/kor-eternal-frontier/session.json` (or under `$XDG_DATA_HOME`). Legacy colony-only and campaign-only saves are not overwritten by these controls.
+- **Pause / Resume** — pause or resume the shared simulation clock.
+- **Speed − / Speed +** — change the world speed between 0.25x and 4x.
+- **Save / Load** — persist or restore the current session.
+- **Zoom − / Zoom +** — change camera zoom.
+- **Wall / Floor / Path / Door / Conduit** — select a tile architecture mode.
+- **Bench / Pod / Rack / Gen / Garden** — select a placeable object.
+- **Cancel** — exit the active placement mode.
+- **Left click** — select colonists or place blueprints; **right click** issues a colonist command; **middle-mouse drag** pans the camera.
 
-The deterministic self-test checks import/export conservation, full-storage rejection, and unified disk save/load in addition to the existing colony and campaign checks.
+The old keyboard-only import/export shortcuts are no longer part of the player-facing interface. The transfer bridge remains legacy implementation and must be replaced with real world shipments before the redesign is complete.
+
+The deterministic self-test continues to check resource conservation and session persistence in addition to colony and regional migration checks.
