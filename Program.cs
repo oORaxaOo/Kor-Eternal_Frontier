@@ -135,9 +135,9 @@ internal static class Program
                                 simulation.SetMessage("Choose a different destination settlement.");
                             else
                             {
-                                bool created = world.SpatialWorld.CreateShipment(selectedWorldEntityId.Value, home.Id, hit.Entity.Id, selectedShipmentResource.Value, 25, 1_000);
+                                bool created = world.SpatialWorld.CreateShipment(selectedWorldEntityId.Value, home.Id, hit.Entity.Id, selectedShipmentResource.Value, 10, 1_000);
                                 simulation.SetMessage(created
-                                    ? $"Shipment dispatched: 25 {selectedShipmentResource.Value} to {hit.Entity.Name}."
+                                    ? $"Shipment dispatched: 10 {selectedShipmentResource.Value} to {hit.Entity.Name}."
                                     : $"Shipment unavailable: Kor Hearthhold lacks {selectedShipmentResource.Value}.");
                                 if (created) selectedShipmentResource = null;
                             }
