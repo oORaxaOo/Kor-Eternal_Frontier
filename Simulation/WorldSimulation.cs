@@ -1,4 +1,5 @@
 using KorTheBlight.Campaign;
+using KorTheBlight.WorldModel;
 
 namespace KorTheBlight.Simulation;
 
@@ -16,6 +17,7 @@ internal sealed class WorldSimulation
 
     public ColonySimulation Colony { get; private set; }
     public CampaignSimulation World { get; private set; }
+    public ContinuousWorldState SpatialWorld { get; private set; }
     public double ElapsedSeconds { get; private set; }
     public bool IsPaused { get; set; } = false;
     public float SpeedMultiplier { get; private set; } = 1f;
@@ -29,6 +31,7 @@ internal sealed class WorldSimulation
     {
         Colony = colony ?? throw new ArgumentNullException(nameof(colony));
         World = world ?? throw new ArgumentNullException(nameof(world));
+        SpatialWorld = ContinuousWorldState.Generate(World.State.Seed);
     }
 
     /// <summary>Advances the unified simulation clock. deltaSeconds is real elapsed time.</summary>
@@ -49,7 +52,8 @@ internal sealed class WorldSimulation
             Colony.Step(FixedStepSeconds);
             _simulationAccumulator -= FixedStepSeconds;
         }
-        ElapsedSeconds += scaledSeconds;
+        SpatialWorld.Step(scaledSeconds);
+        ElapsedSeconds = SpatialWorld.ClockSeconds;
         _campaignElapsedSeconds += scaledSeconds;
 
         // Regional systems evolve automatically on the same clock; the player does not end turns.
@@ -72,8 +76,9 @@ internal sealed class WorldSimulation
         ArgumentNullException.ThrowIfNull(session);
         Colony = session.Colony;
         World = session.Campaign;
+        SpatialWorld = session.ContinuousWorld;
         _campaignElapsedSeconds = 0f;
         _simulationAccumulator = 0f;
-        ElapsedSeconds = 0d;
+        ElapsedSeconds = SpatialWorld.ClockSeconds;
     }
 }
