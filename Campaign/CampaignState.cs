@@ -1,4 +1,5 @@
 using System.Text.Json;
+using KorTheBlight.Simulation;
 
 namespace KorTheBlight.Campaign;
 
@@ -19,6 +20,7 @@ internal sealed class CampaignState
     public int ActiveBattleRegionId { get; set; } = -1;
     public bool WardProtocolResearched { get; set; }
     public string LastEvent { get; set; } = "The Kor frontier is ready to expand.";
+    public List<string> RecruitedUnits { get; set; } = [];
     public List<RegionState> Regions { get; set; } = [];
 
     public void Validate()
@@ -28,6 +30,14 @@ internal sealed class CampaignState
             throw new InvalidDataException("Campaign map has an unexpected region count.");
         if (Turn < 1 || Supplies < 0 || Alloy < 0 || Energy < 0 || Knowledge < 0 || ArmyStrength < 0 || ArmyReadiness is < 0 or > 100)
             throw new InvalidDataException("Campaign contains invalid turn, resource, or army values.");
+        if (RecruitedUnits is null)
+            throw new InvalidDataException("Campaign unit roster is missing.");
+        var unitById = ProgressionCatalog.Units.ToDictionary(unit => unit.Id, StringComparer.Ordinal);
+        if (RecruitedUnits.Any(id => string.IsNullOrWhiteSpace(id) || !unitById.ContainsKey(id)))
+            throw new InvalidDataException("Campaign unit roster contains an unknown unit ID.");
+        int rosterStrength = RecruitedUnits.Sum(id => unitById[id].CombatStrength);
+        if (rosterStrength > ArmyStrength)
+            throw new InvalidDataException("Campaign unit roster exceeds the army's recorded strength.");
         if (Regions.Select(region => region.Id).Distinct().Count() != Regions.Count || Regions.Any(region =>
                 region.Id < 0 || region.Id >= Regions.Count ||
                 region.Owner is not ("Kor" or "Neutral" or "Blight") ||
