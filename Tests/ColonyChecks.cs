@@ -265,6 +265,26 @@ internal static class ColonyChecks
             if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
 
+        var miningCampaign = new CampaignSimulation(711);
+        miningCampaign.State.Knowledge = 1000;
+        miningCampaign.State.Energy = 1000;
+        var miningColony = new ColonySimulation();
+        Check(miningColony.ResearchProject("research.logistics.field_operations.era0", miningCampaign) &&
+              miningColony.ResearchProject("research.exploration.geological_survey.era0", miningCampaign),
+            "the logistics and geological-survey technologies should unlock automated mining");
+        int mineId = miningColony.PlaceCatalogBuildingBlueprint("building.mine.tier0", 27, 9);
+        Check(mineId > 0, "a researched mining complex should be placeable beside a finite ore site");
+        for (int i = 0; i < 1500; i++) miningColony.Step(0.1f);
+        var completedMine = miningColony.Objects.Single(item => item.Id == mineId);
+        var minedOreDeposit = miningColony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
+        Check(completedMine.IsBuilt && miningColony.MaterialCount("ore") > 0 && minedOreDeposit.Amount < 100,
+            "completed mining complexes should passively extract nearby raw materials into shared storage");
+        string miningSave = ColonySaveService.Serialize(miningColony);
+        var restoredMiningColony = ColonySaveService.Deserialize(miningSave);
+        Check(restoredMiningColony.Objects.Single(item => item.Id == mineId).ExtractionProgress == completedMine.ExtractionProgress &&
+              restoredMiningColony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore").Amount == minedOreDeposit.Amount,
+            "save/load must preserve automated extraction progress and finite deposit depletion");
+
         var validationColony = new ColonySimulation();
         Check(validationColony.DesignTileConstruction(5, 5, ArchitectureKind.Wall),
             "validation fixture should contain a tile construction order");

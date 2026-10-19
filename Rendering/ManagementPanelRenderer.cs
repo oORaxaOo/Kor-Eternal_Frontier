@@ -162,7 +162,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     bool canPlace = colony.CanPlaceCatalogBuilding(building.Id, out string buildingReason);
                     string cost = building.Inputs.Count == 0 ? "No material cost" :
                         string.Join(" + ", building.Inputs.Select(item => $"{item.Value} {buildingNames.GetValueOrDefault(item.Key, item.Key)}"));
-                    ActionRow(c, building.Name, 670, catalogY, 365);
+                    ActionRow(c, building.Family == "mine" ? $"{building.Name} • Auto-extractor" : building.Name, 670, catalogY, 365);
                     Note(c, $"Tier {building.Era + 1} • {cost} • {(canPlace ? "READY TO PLACE" : buildingReason)}",
                         670, catalogY + 24, 365);
                     catalogY += 40;

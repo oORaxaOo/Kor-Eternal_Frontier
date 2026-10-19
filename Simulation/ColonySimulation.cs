@@ -40,6 +40,7 @@ internal sealed class PlaceableObjectState(int id, PlaceableKind kind, CellPosit
     public float WorkDone { get; internal set; }
     public int WorkRequired { get; } = workRequired;
     public string? CatalogBuildingId { get; internal set; }
+    public float ExtractionProgress { get; internal set; }
     public bool IsBuilt => Status == ConstructionStatus.Complete;
 
     public bool Occupies(CellPosition cell) =>
@@ -218,7 +219,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 5,
+            SchemaVersion = 6,
             ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
@@ -259,7 +260,8 @@ internal sealed class ColonySimulation
         {
             Id = item.Id, Kind = item.Kind, X = item.Origin.X, Y = item.Origin.Y,
             Width = item.Width, Height = item.Height, Status = item.Status,
-            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, CatalogBuildingId = item.CatalogBuildingId
+            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, CatalogBuildingId = item.CatalogBuildingId,
+            ExtractionProgress = item.ExtractionProgress
         }));
         snapshot.Deposits.AddRange(_deposits.Select(deposit => new ResourceDepositSnapshot
         {
@@ -325,7 +327,8 @@ internal sealed class ColonySimulation
         simulation._objects.Clear();
         simulation._objects.AddRange(snapshot.Objects.Select(item => new PlaceableObjectState(
             item.Id, item.Kind, new CellPosition(item.X, item.Y), item.Width, item.Height,
-            item.WorkRequired, item.Status) { WorkDone = item.WorkDone, CatalogBuildingId = item.CatalogBuildingId }));
+            item.WorkRequired, item.Status) { WorkDone = item.WorkDone, CatalogBuildingId = item.CatalogBuildingId,
+                ExtractionProgress = item.ExtractionProgress }));
 
         simulation._deposits.Clear();
         simulation._deposits.AddRange(snapshot.Deposits.Select(deposit => new ResourceDeposit(
@@ -838,6 +841,38 @@ internal sealed class ColonySimulation
         {
             if (worker.Task == null) continue;
             AdvanceWorker(worker, deltaSeconds);
+        }
+        AdvanceAutomatedExtraction(deltaSeconds);
+    }
+
+    private void AdvanceAutomatedExtraction(float deltaSeconds)
+    {
+        foreach (var building in _objects.Where(item => item.IsBuilt && item.CatalogBuildingId != null))
+        {
+            var definition = ProgressionCatalog.Buildings.FirstOrDefault(item => item.Id == building.CatalogBuildingId);
+            if (definition?.Family != "mine") continue;
+
+            building.ExtractionProgress = Math.Min(10f, building.ExtractionProgress + deltaSeconds);
+            while (building.ExtractionProgress >= 10f)
+            {
+                float centerX = building.Origin.X + building.Width / 2f;
+                float centerY = building.Origin.Y + building.Height / 2f;
+                var deposit = _materialDeposits.Where(item => item.Amount > 0 &&
+                        Math.Abs(item.Cell.X + 0.5f - centerX) + Math.Abs(item.Cell.Y + 0.5f - centerY) <= 6f)
+                    .OrderBy(item => Math.Abs(item.Cell.X + 0.5f - centerX) + Math.Abs(item.Cell.Y + 0.5f - centerY))
+                    .FirstOrDefault();
+                if (deposit == null || InventoryFreeCapacity <= 0)
+                {
+                    building.ExtractionProgress = 10f;
+                    break;
+                }
+
+                deposit.Amount--;
+                AddMaterial(deposit.MaterialId, 1);
+                building.ExtractionProgress -= 10f;
+                string materialName = ProgressionCatalog.Resources.FirstOrDefault(item => item.Id == deposit.MaterialId)?.Name ?? deposit.MaterialId;
+                Message = $"{definition.Name} extracted 1 {materialName}; {deposit.Amount} remain at the site.";
+            }
         }
     }
 
