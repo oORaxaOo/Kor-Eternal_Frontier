@@ -87,9 +87,11 @@ internal static class Program
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
                 bool worldView = zoom < .65f;
-                var worldMouse = worldView
-                    ? ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, zoom)
-                    : OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                var continuousMouse = ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, zoom);
+                var colonyMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                (float X, float Y) worldMouse = worldView
+                    ? ((float)continuousMouse.X, (float)continuousMouse.Y)
+                    : colonyMouse;
                 bool inWorldView = logicalMouse.X < 770 && logicalMouse.Y >= 62 && logicalMouse.Y < 650;
                 bool left = (buttons & Sdl.ButtonLeftMask) != 0;
                 bool right = (buttons & Sdl.ButtonRightMask) != 0;
