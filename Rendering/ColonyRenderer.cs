@@ -64,6 +64,32 @@ internal sealed class ColonyRenderer : IDisposable
 
         canvas.Save();
         canvas.ClipRect(view);
+        // Region-sized overlays make ecological pressure legible at strategic zoom.
+        foreach (var hotspot in world.Ecology.Hotspots.Where(item => item.IsActive))
+        {
+            var center = ContinuousWorldProjection.WorldToScreen(hotspot.X, hotspot.Y, cameraX, cameraY, zoom);
+            float radius = Math.Clamp((float)(hotspot.Radius * scale), 8f, 210f);
+            byte alpha = (byte)(35 + hotspot.Intensity * 65);
+            _fill.Color = new SKColor(170, 22, 39, alpha);
+            canvas.DrawCircle(center.X, center.Y, radius, _fill);
+            _line.Color = new SKColor(236, 54, 69, (byte)(90 + hotspot.Intensity * 130));
+            _line.StrokeWidth = 1.5f;
+            canvas.DrawCircle(center.X, center.Y, radius, _line);
+        }
+        foreach (var herd in world.Ecology.Herds)
+        {
+            var point = ContinuousWorldProjection.WorldToScreen(herd.X, herd.Y, cameraX, cameraY, zoom);
+            _fill.Color = herd.Species switch
+            {
+                WildlifeSpecies.LonghornGrazer => new SKColor(184, 196, 137),
+                WildlifeSpecies.AshbackGrazer => new SKColor(114, 176, 155),
+                WildlifeSpecies.DuskStalker => new SKColor(173, 151, 207),
+                _ => Gold
+            };
+            canvas.DrawCircle(point.X, point.Y, 3.5f, _fill);
+            _text.Color = new SKColor(220, 224, 210);
+            canvas.DrawText($"H{herd.Population}", point.X + 5, point.Y - 4, SKTextAlign.Left, _smallFont, _text);
+        }
         foreach (var entity in world.Entities)
         {
             var point = ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, cameraX, cameraY, zoom);
@@ -320,18 +346,32 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText("POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
-        int row = 376;
-        foreach (var worker in simulation.Workers)
+        canvas.DrawText(worldView ? "WORLD ECOLOGY" : "POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
+        if (worldView)
         {
-            _text.Color = simulation.SelectedWorkerId == worker.Id ? Gold : TextColor;
-            var citizen = simulation.CitizenForWorker(worker.Id);
-            string legacyJob = worker.Task?.Kind.ToString() ?? "Idle";
-            string citizenState = citizen?.State.ToString() ?? "Idle";
-            canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)} | Mood {(citizen?.Happiness ?? 100f):0}", 790, row, SKTextAlign.Left, _smallFont, _text);
+            int animalCount = spatialWorld.Ecology.Herds.Sum(herd => herd.Population);
+            canvas.DrawText($"Herds {spatialWorld.Ecology.Herds.Count} | Estimated animals {animalCount}", 790, 376, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Active Blight hotspots {spatialWorld.Ecology.Hotspots.Count(item => item.IsActive)}", 790, 395, SKTextAlign.Left, _smallFont, _text);
+            var latestEvent = spatialWorld.Ecology.RecentEvents.LastOrDefault();
             _muted.Color = MutedColor;
-            canvas.DrawText($"{legacyJob} / {citizenState}", 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
-            row += 43;
+            canvas.DrawText(latestEvent == null ? "No world events recorded yet" : $"Latest: {latestEvent.Title}", 790, 417, SKTextAlign.Left, _smallFont, _muted);
+            if (latestEvent != null)
+                canvas.DrawText($"{latestEvent.Kind} | {latestEvent.OccurredAt / 60:0} min", 790, 435, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            int row = 376;
+            foreach (var worker in simulation.Workers)
+            {
+                _text.Color = simulation.SelectedWorkerId == worker.Id ? Gold : TextColor;
+                var citizen = simulation.CitizenForWorker(worker.Id);
+                string legacyJob = worker.Task?.Kind.ToString() ?? "Idle";
+                string citizenState = citizen?.State.ToString() ?? "Idle";
+                canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)} | Mood {(citizen?.Happiness ?? 100f):0}", 790, row, SKTextAlign.Left, _smallFont, _text);
+                _muted.Color = MutedColor;
+                canvas.DrawText($"{legacyJob} / {citizenState}", 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
+                row += 43;
+            }
         }
 
         _text.Color = Gold;
