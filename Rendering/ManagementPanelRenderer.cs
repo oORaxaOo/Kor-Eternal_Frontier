@@ -25,7 +25,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
     public static string[] PageNames => Pages;
 
     public void Draw(SKCanvas canvas, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0)
     {
         if (page <= 0) return;
         page = Math.Clamp(page, 1, Pages.Length);
@@ -52,12 +52,12 @@ internal sealed class ManagementPanelRenderer : IDisposable
         canvas.DrawRoundRect(new SKRect(232, 78, 1078, 690), 8, 8, _line);
         Text(canvas, Pages[page - 1].ToUpperInvariant(), 254, 109, _font, Gold);
         Text(canvas, "Select a category on the left. All displayed figures are live simulation values.", 254, 131, _tiny, Muted);
-        DrawPage(canvas, page, colony, campaign, world, worldMapMode);
+        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage);
         Text(canvas, "CLOSE: click Manage in the top bar  •  All core actions are mouse-accessible", 254, 674, _tiny, Muted);
     }
 
     private void DrawPage(SKCanvas c, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage)
     {
         switch (page)
         {
@@ -151,6 +151,21 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     Row(c, $"Tile {order.Cell.X},{order.Cell.Y} • {order.Target}", $"{order.Status} • {order.WorkDone:0}/{order.WorkRequired}", 254, oy);
                     oy += 39;
                 }
+                Section(c, $"Catalogue buildings • page {Math.Clamp(catalogBuildingPage + 1, 1, colony.ManagementBuildingPageCount)} / {colony.ManagementBuildingPageCount}", 670, 394);
+                int catalogY = 420;
+                var buildingNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
+                foreach (var building in colony.ManagementBuildings(catalogBuildingPage))
+                {
+                    bool canPlace = colony.CanPlaceCatalogBuilding(building.Id, out string buildingReason);
+                    string cost = building.Inputs.Count == 0 ? "No material cost" :
+                        string.Join(" + ", building.Inputs.Select(item => $"{item.Value} {buildingNames.GetValueOrDefault(item.Key, item.Key)}"));
+                    ActionRow(c, building.Name, 670, catalogY, 365);
+                    Note(c, $"Tier {building.Era + 1} • {cost} • {(canPlace ? "READY TO PLACE" : buildingReason)}",
+                        670, catalogY + 24, 365);
+                    catalogY += 40;
+                }
+                ActionRow(c, "◀ Previous page", 670, 632, 170);
+                ActionRow(c, "Next page ▶", 850, 632, 185);
                 break;
             case 5:
                 Section(c, "Workstations & orders", 254, 164);
