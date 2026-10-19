@@ -40,6 +40,21 @@ internal static class WorldSimulationChecks
 
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
+
+        var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor");
+        Check(world.SpatialWorld.OrderMove(home.Id, home.X + 100, home.Y, 10),
+            "unified world must expose continuous entity movement");
+        world.Step(0.5f);
+        double savedClock = world.ElapsedSeconds;
+        string sessionJson = GameSessionService.Serialize(world);
+        var restoredSession = GameSessionService.Deserialize(sessionJson);
+        Check(Math.Abs(restoredSession.ContinuousWorld.ClockSeconds - savedClock) < 0.0001 &&
+              restoredSession.ContinuousWorld.Entities.Single(entity => entity.Id == home.Id).IsMoving,
+            "the unified session must preserve continuous world time and in-flight movement");
+        world.Restore(restoredSession);
+        Check(Math.Abs(world.ElapsedSeconds - savedClock) < 0.0001 &&
+              Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001,
+            "restoring a session must restore the one continuous world clock");
     }
 
     private static void Check(bool condition, string reason)
