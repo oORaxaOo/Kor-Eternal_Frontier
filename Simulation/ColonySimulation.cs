@@ -412,9 +412,14 @@ internal sealed class ColonySimulation
 
     internal IReadOnlyList<ProgressionCatalog.ResearchDef> ManagementResearch => ProgressionCatalog.Research
         .Where(project => !_researchedProjects.Contains(project.Id))
-        .OrderBy(project => project.Era)
-        .ThenBy(project => project.Discipline, StringComparer.Ordinal)
-        .ThenBy(project => project.Name, StringComparer.Ordinal)
+        // Keep the live production unlock path visible without forcing players through every
+        // unrelated era-zero catalogue entry first.
+        .OrderBy(project => project.Id.StartsWith("research.industry.machine_tools.era", StringComparison.Ordinal)
+            ? project.Era * 2
+            : project.Id.StartsWith("research.logistics.field_operations.era", StringComparison.Ordinal)
+                ? project.Era * 2 + 1
+                : 1000 + project.Era)
+        .ThenBy(project => project.Id, StringComparer.Ordinal)
         .Take(8)
         .ToArray();
 
