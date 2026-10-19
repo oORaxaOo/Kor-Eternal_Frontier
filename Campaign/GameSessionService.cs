@@ -73,6 +73,8 @@ internal static class GameSessionService
         var continuousWorld = envelope.SchemaVersion == 1 || string.IsNullOrWhiteSpace(envelope.ContinuousWorldJson)
             ? ContinuousWorldState.Generate(campaign.State.Seed)
             : ContinuousWorldState.Deserialize(envelope.ContinuousWorldJson);
+        var home = continuousWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        colony.BindWorldInventory(continuousWorld, home.Id);
         return new LoadedGameSession(colony, campaign, continuousWorld);
     }
 
