@@ -60,6 +60,7 @@ internal sealed class ContinuousWorldState
     public Dictionary<long, Dictionary<WorldResourceKind, double>> Inventories { get; set; } = [];
     public Dictionary<long, double> InventoryCapacities { get; set; } = [];
     public List<WorldShipmentState> Shipments { get; set; } = [];
+    public WorldEcologyState Ecology { get; set; } = new();
 
     public static ContinuousWorldState Generate(int seed)
     {
@@ -80,6 +81,7 @@ internal sealed class ContinuousWorldState
         state.AddEntity(WorldEntityKind.BlightFront, "Blight Expanse", "Blight", 64_000, 46_500);
         state.AddEntity(WorldEntityKind.Army, "Kor Vanguard", "Kor", 51_200, 50_800);
         state.AddEntity(WorldEntityKind.Caravan, "Hearthhold Caravan", "Kor", 49_100, 50_400);
+        state.Ecology.Initialize(seed);
         state.Validate();
         return state;
     }
@@ -126,6 +128,9 @@ internal sealed class ContinuousWorldState
         if (deltaSeconds == 0) return;
 
         ClockSeconds += deltaSeconds;
+        Ecology ??= new WorldEcologyState();
+        if (Ecology.Herds.Count == 0 && Ecology.Hotspots.Count == 0) Ecology.Initialize(Seed);
+        Ecology.Step(deltaSeconds, ClockSeconds, Seed);
         // Continuous settlement food production is integrated directly against elapsed world time.
         foreach (var settlement in Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement))
         {
@@ -281,6 +286,8 @@ internal sealed class ContinuousWorldState
     {
         if (SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported continuous world schema version: {SchemaVersion}.");
+        Ecology ??= new WorldEcologyState();
+        Ecology.Validate();
         if (!double.IsFinite(ClockSeconds) || ClockSeconds < 0)
             throw new InvalidDataException("Continuous world clock is invalid.");
         if (Entities.Count > 100_000 || Entities.Select(entity => entity.Id).Distinct().Count() != Entities.Count)
