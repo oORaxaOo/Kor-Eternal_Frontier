@@ -31,7 +31,7 @@ The local colony and temporary legacy regional model currently advance through o
 1. Migrate the new GridManager/CitizenAgent/JobBroker core into the active colony scheduler through an adapter, preserving verified gather/carry/build behavior and save compatibility.
 2. Generalize production definitions, workplace queues, stockpile capacity and delivery rules.
 3. Add research projects that unlock actual buildings and recipes.
-4. Connect strategic regions to real local settlement state and resource/person flows.
+4. Replace the legacy nine-region linked-hex campaign with continuous world-space entities and spatial queries; unify settlement/population state, resources, movement and shipments.
 5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
 
 
