@@ -41,6 +41,11 @@ internal static class ContinuousWorldChecks
         world.Step(1);
         Check(world.Shipments.Single().Status == WorldShipmentStatus.InTransit,
             "cargo must remain in transit until travel distance is covered");
+        string inTransitJson = ContinuousWorldState.Serialize(world);
+        var inTransitRestore = ContinuousWorldState.Deserialize(inTransitJson);
+        Check(inTransitRestore.Shipments.Single().Status == WorldShipmentStatus.InTransit &&
+              Math.Abs(inTransitRestore.InventoryAt(home.Id, WorldResourceKind.Wood) - 150) < 0.0001,
+            "save/load must preserve in-flight cargo and the origin's already-debited inventory");
         world.Step(10);
         Check(world.Shipments.Single().Status == WorldShipmentStatus.Delivered &&
               Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 50) < 0.0001,
