@@ -204,6 +204,10 @@ internal sealed class ColonySimulation
         AddMaterialDeposit(new CellPosition(12, 20), "water", 100);
         AddMaterialDeposit(new CellPosition(11, 16), "biomass", 80);
         AddMaterialDeposit(new CellPosition(20, 18), "recycled_feedstock", 60);
+        AddMaterialDeposit(new CellPosition(7, 7), "clay", 90);
+        AddMaterialDeposit(new CellPosition(6, 23), "sand", 100);
+        AddMaterialDeposit(new CellPosition(35, 12), "copper_ore", 70);
+        AddMaterialDeposit(new CellPosition(36, 19), "silica", 80);
     }
 
     internal ColonySnapshot CaptureSnapshot()
