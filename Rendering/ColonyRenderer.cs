@@ -1,4 +1,3 @@
-using KorTheBlight.Campaign;
 using KorTheBlight.Simulation;
 using KorTheBlight.WorldModel;
 using SkiaSharp;
@@ -29,7 +28,7 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign,
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         canvas.Clear(Background);
@@ -42,7 +41,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
         }
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, campaign, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
