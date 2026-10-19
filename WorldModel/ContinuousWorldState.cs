@@ -190,6 +190,9 @@ internal sealed class ContinuousWorldState
     public double InventoryAt(long entityId, WorldResourceKind resource)
         => Inventories.TryGetValue(entityId, out var inventory) ? inventory.GetValueOrDefault(resource) : 0d;
 
+    public double InventoryTotalAt(long entityId)
+        => Inventories.TryGetValue(entityId, out var inventory) ? inventory.Values.Sum() : 0d;
+
     public double InventoryCapacityFor(long entityId)
         => InventoryCapacities.GetValueOrDefault(entityId, 500d);
 
