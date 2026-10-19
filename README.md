@@ -56,7 +56,7 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 - Simulation/ColonySimulation.cs: current local settlement state and rules.
 - WorldModel/ContinuousWorldState.cs: continuous world-space entities, canonical per-settlement inventories and storage capacities, conserved cargo shipments with travel time, spatial queries and the shared world clock.
 - Simulation/ColonySaveService.cs: validated versioned JSON persistence.
-- Campaign/: legacy campaign model retained temporarily for old-save migration.
+- Simulation/GameSessionService.cs: atomic session persistence for the colony and continuous world; legacy campaign migration is intentionally unsupported.
 - Rendering/ColonyRenderer.cs: presentation-only local square-grid and continuous strategic world views.
 - Rendering/ContinuousWorldProjection.cs: continuous world coordinate/screen projection.
 - Rendering/OrthogonalGridProjection.cs: screen/world coordinate conversion.
@@ -72,6 +72,6 @@ Keep simulation logic independent of rendering and input. Extend the game throug
 
 The WorldSimulation advances the colony and continuous world under one clock; the legacy campaign turn counter no longer advances during active play. Strategic settlement food production integrates continuously from elapsed time. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
 
-The obsolete instant campaign-to-colony transfer bridge has been removed. Colony construction, production, worker hauling and strategic shipments now read or mutate the same settlement-owned resource ledger; a session snapshot does not duplicate the colony inventory. Settlement storage capacity is shared across the local and strategic views, and deliveries wait at their destination if storage is full. The legacy campaign save payload and migration code are still scheduled for removal. A dynamic Blight ecosystem and population-level strategic simulation remain unfinished. The old nine-region linked-hex map must not be extended as the new world.
+The obsolete instant campaign transfer bridge and linked-hex campaign model have been removed. Colony construction, production, worker hauling and strategic shipments read or mutate the same settlement-owned resource ledger; a session snapshot does not duplicate the colony inventory. Settlement storage capacity is shared across local and strategic views, and deliveries wait at their destination if storage is full. The session format now represents the active unified world directly; old saves are intentionally not migrated. A dynamic Blight ecosystem and population-level strategic simulation remain unfinished.
 
-Save / Load in the mouse menu saves or restores the current session. Run the self-test command shown above to check colony behavior, shared-ledger debits, continuous production, the shared clock, shipment conservation, and session persistence.
+Save / Load in the mouse menu saves or restores the current session. Run the self-test command shown above to check colony behavior, shared-ledger debits, capacity-aware storage, continuous production, the shared clock, shipment conservation, and session persistence.
