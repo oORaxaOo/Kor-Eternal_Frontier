@@ -1,5 +1,6 @@
 using KorTheBlight.Campaign;
 using KorTheBlight.Simulation;
+using KorTheBlight.WorldModel;
 using SkiaSharp;
 
 namespace KorTheBlight.Rendering;
@@ -28,14 +29,86 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign)
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign,
+        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId)
     {
         canvas.Clear(Background);
-        DrawMap(canvas, simulation, cameraX, cameraY, zoom);
-        DrawDeposits(canvas, simulation, cameraX, cameraY, zoom);
-        DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
-        DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, campaign);
+        bool worldView = zoom < .65f;
+        if (worldView) DrawContinuousWorld(canvas, spatialWorld, worldCameraX, worldCameraY, zoom, selectedWorldEntityId);
+        else
+        {
+            DrawMap(canvas, simulation, cameraX, cameraY, zoom);
+            DrawDeposits(canvas, simulation, cameraX, cameraY, zoom);
+            DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
+            DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
+        }
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, campaign, worldView, spatialWorld, selectedWorldEntityId);
+    }
+
+    private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
+    {
+        var view = new SKRect(0, 62, 770, 650);
+        _fill.Color = new SKColor(12, 19, 20);
+        canvas.DrawRect(view, _fill);
+
+        // Continuous-coordinate backdrop: no linked cells, hexes, or campaign regions.
+        _line.Color = new SKColor(35, 54, 48, 170);
+        _line.StrokeWidth = 1;
+        float scale = ContinuousWorldProjection.Scale(zoom);
+        for (int i = 0; i <= 10; i++)
+        {
+            float x = view.Left + i * view.Width / 10f;
+            float y = view.Top + i * view.Height / 10f;
+            canvas.DrawLine(x, view.Top, x, view.Bottom, _line);
+            canvas.DrawLine(view.Left, y, view.Right, y, _line);
+        }
+
+        foreach (var entity in world.Entities)
+        {
+            var point = ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, cameraX, cameraY, zoom);
+            if (entity.IsMoving)
+            {
+                var destination = ContinuousWorldProjection.WorldToScreen(entity.DestinationX!.Value, entity.DestinationY!.Value, cameraX, cameraY, zoom);
+                _line.Color = entity.Kind == WorldEntityKind.BlightFront ? Crimson : Gold;
+                _line.StrokeWidth = 1.5f;
+                canvas.DrawLine(point.X, point.Y, destination.X, destination.Y, _line);
+                _fill.Color = Gold;
+                canvas.DrawCircle(destination.X, destination.Y, 3, _fill);
+            }
+
+            _fill.Color = entity.Kind switch
+            {
+                WorldEntityKind.Settlement when entity.Faction == "Kor" => Crimson,
+                WorldEntityKind.Settlement => new SKColor(120, 157, 147),
+                WorldEntityKind.ResourceSite => new SKColor(114, 160, 93),
+                WorldEntityKind.Caravan => Gold,
+                WorldEntityKind.Army => new SKColor(211, 210, 194),
+                WorldEntityKind.BlightFront => new SKColor(112, 36, 47),
+                _ => MutedColor
+            };
+            float radius = entity.Kind switch
+            {
+                WorldEntityKind.Settlement => 7,
+                WorldEntityKind.BlightFront => 10,
+                _ => 5
+            };
+            canvas.DrawCircle(point.X, point.Y, radius, _fill);
+            if (entity.Id == selectedId)
+            {
+                _line.Color = Gold;
+                _line.StrokeWidth = 2;
+                canvas.DrawCircle(point.X, point.Y, radius + 5, _line);
+            }
+            _text.Color = entity.Kind == WorldEntityKind.BlightFront ? new SKColor(238, 116, 122) : TextColor;
+            canvas.DrawText(entity.Name, point.X + radius + 5, point.Y - 3, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText(entity.Faction, point.X + radius + 5, point.Y + 10, SKTextAlign.Left, _smallFont, _muted);
+        }
+
+        _text.Color = Gold;
+        canvas.DrawText("CONTINUOUS WORLD SPACE", 18, 86, SKTextAlign.Left, _headingFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"World clock {world.ClockSeconds / 60:0} min  |  {world.Entities.Count} entities  |  scale {scale:0.0000} px/unit", 18, 105, SKTextAlign.Left, _smallFont, _muted);
     }
 
     private void DrawMap(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom)
@@ -187,7 +260,8 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign)
+        PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign, bool worldView,
+        ContinuousWorldState spatialWorld, long? selectedWorldEntityId)
     {
         _fill.Color = Background;
         canvas.DrawRect(new SKRect(0, 0, 1100, 62), _fill);
@@ -203,7 +277,7 @@ internal sealed class ColonyRenderer : IDisposable
         _text.Color = Crimson;
         canvas.DrawText("KOR ETERNAL FRONTIER", 18, 27, SKTextAlign.Left, _titleFont, _text);
         _muted.Color = MutedColor;
-        canvas.DrawText("COLONY / WORLD SIMULATION FOUNDATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "COLONY / WORLD SIMULATION FOUNDATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
 
         int x = 405;
         foreach (var resource in Enum.GetValues<ResourceKind>())
@@ -226,10 +300,19 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"Storage: {simulation.InventoryUsed}/{simulation.InventoryCapacity}", 790, 263, SKTextAlign.Left, _normalFont, _text);
 
         _text.Color = Gold;
-        canvas.DrawText("STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText(worldView ? "WORLD ENTITY INSPECTOR" : "STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
         _text.Color = TextColor;
-        canvas.DrawText($"World pulse {campaign.State.Turn} | S {campaign.State.Supplies} A {campaign.State.Alloy}", 790, 309, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText($"E {campaign.State.Energy} | K {campaign.State.Knowledge} | Blight {campaign.State.Regions.Count(region => region.Owner == "Blight")}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+        if (worldView)
+        {
+            var selected = selectedWorldEntityId.HasValue ? spatialWorld.Entities.FirstOrDefault(entity => entity.Id == selectedWorldEntityId.Value) : null;
+            canvas.DrawText(selected == null ? "Click a symbol to inspect" : $"{selected.Name} / {selected.Kind}", 790, 309, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText(selected == null ? "Select army/caravan to move" : $"Faction: {selected.Faction}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+        }
+        else
+        {
+            canvas.DrawText($"World pulse {campaign.State.Turn} | S {campaign.State.Supplies} A {campaign.State.Alloy}", 790, 309, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"E {campaign.State.Energy} | K {campaign.State.Knowledge} | Blight {campaign.State.Regions.Count(region => region.Owner == "Blight")}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+        }
 
         _text.Color = Gold;
         canvas.DrawText("POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
@@ -275,8 +358,8 @@ internal sealed class ColonyRenderer : IDisposable
         DrawButton(canvas, "CANCEL", 1039, 593, 47, 22);
 
         _muted.Color = MutedColor;
-        canvas.DrawText("Left click: select/place  |  Right click: order", 790, 635, SKTextAlign.Left, _smallFont, _muted);
-        canvas.DrawText("Middle-mouse drag: pan camera", 790, 646, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? "Left click: inspect/select entity" : "Left click: select/place", 790, 635, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
