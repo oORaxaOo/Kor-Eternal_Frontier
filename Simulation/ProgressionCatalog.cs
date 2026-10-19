@@ -181,7 +181,7 @@ internal static class ProgressionCatalog
             int multiplier = era + 1;
             var inputs = new Dictionary<string, int>
             {
-                ["building_material"] = 4 * multiplier,
+                [$"material.masonry.stage{Math.Min(era, 7)}"] = 4 * multiplier,
                 ["alloy"] = era == 0 ? 0 : 2 * multiplier,
                 ["components"] = era < 2 ? 0 : multiplier
             }.Where(p => p.Value > 0).ToDictionary(p => p.Key, p => p.Value);
