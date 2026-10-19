@@ -177,6 +177,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                         $"Position {bench.Origin.X},{bench.Origin.Y} • {(bench.IsBuilt ? "Ready" : "Construction required")}", 254, py);
                     py += 42;
                 }
+                Pair(c, "Workstation slots active", $"{colony.BusyWorkstations} / {colony.WorkstationCapacity}", 254, 322);
                 var firstBench = colony.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
                 if (firstBench != null)
                     ActionRow(c, $"Queue legacy component batch at #{firstBench.Id}", 254, 350, 365);
@@ -194,7 +195,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 if (colony.ProductionOrders.Count == 0)
                     Note(c, "No production orders yet. Select a recipe on the right.", 254, 438, 365);
 
-                Section(c, "Recipe queue • click to manufacture", 670, 164);
+                Section(c, $"Recipe queue • local power {colony.AvailablePowerCapacity}/{colony.PowerCapacity}", 670, 164);
                 int recipeY = 194;
                 var names = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
                 foreach (var recipe in colony.ManagementRecipes)
@@ -205,11 +206,11 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     string recipeOutputsText = string.Join(" + ", recipe.Outputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, recipe.Name, 670, recipeY, 365);
-                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • {(canQueue ? "READY" : recipeReason)}",
+                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • power {recipe.Stage} • {(canQueue ? "READY" : recipeReason)}",
                         670, recipeY + 27, 365);
                     recipeY += 50;
                 }
-                Note(c, "Inputs are reserved when queued; colonists must walk to the Workbench and perform the work.", 670, 602, 365);
+                Note(c, "Inputs and local power capacity are reserved when queued. Each Workbench runs one active order; spare power increases work speed.", 670, 602, 365);
                 break;
             case 6:
                 Section(c, "Strategic research", 254, 164);
