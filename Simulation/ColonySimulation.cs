@@ -177,7 +177,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 1,
+            SchemaVersion = 2,
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -224,6 +224,7 @@ internal sealed class ColonySimulation
         snapshot.Workers.AddRange(_workers.Select(worker => new ColonyWorkerSnapshot
         {
             Id = worker.Id, Name = worker.Name, X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
+            CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -317,6 +318,11 @@ internal sealed class ColonySimulation
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
         simulation.InitializeEcosystem();
+        foreach (var workerState in snapshot.Workers)
+        {
+            var citizen = simulation.CitizenForWorker(workerState.Id);
+            if (citizen != null) citizen.Fatigue = workerState.CitizenFatigue;
+        }
         return simulation;
     }
 

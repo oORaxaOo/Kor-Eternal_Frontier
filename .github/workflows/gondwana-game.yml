@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - rebuild/kor-foundation-cleanup
+      - 'feature/**'
     paths:
       - "**.cs"
       - "**.csproj"
