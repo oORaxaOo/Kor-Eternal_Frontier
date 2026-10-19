@@ -60,6 +60,7 @@ internal static class Program
             bool managementOpen = false;
             int managementPage = 1;
             int catalogBuildingPage = 0;
+            int recipeCatalogPage = 0;
             int researchCatalogPage = 0;
             int catalogUnitPage = 0;
             string? selectedCatalogBuildingId = null;
@@ -69,7 +70,7 @@ internal static class Program
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
                 else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
                 menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, researchCatalogPage, catalogUnitPage);
+                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -301,7 +302,7 @@ internal static class Program
                                              logicalMouse.Y >= 194 && logicalMouse.Y < 594)
                                     {
                                         int index = (int)((logicalMouse.Y - 194) / 50);
-                                        var recipe = simulation.ManagementRecipes.ElementAtOrDefault(index);
+                                        var recipe = simulation.ManagementRecipes(recipeCatalogPage).ElementAtOrDefault(index);
                                         var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
                                         if (recipe == null)
                                             simulation.SetMessage("No recipe is listed at that position.");
@@ -310,6 +311,12 @@ internal static class Program
                                         else
                                             simulation.QueueRecipeProduction(bench.Id, recipe.Id);
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        recipeCatalogPage = Math.Max(0, recipeCatalogPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        recipeCatalogPage = Math.Min(simulation.ManagementRecipePageCount - 1, recipeCatalogPage + 1);
                                     break;
                                 case 6:
                                     if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
