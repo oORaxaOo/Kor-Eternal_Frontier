@@ -184,6 +184,7 @@ internal static class ColonyChecks
             .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
             .Replace(",\"ResearchedProjects\":[]", "", StringComparison.Ordinal)
             .Replace(",\"ProductionTargets\":[]", "", StringComparison.Ordinal)
+            .Replace(",\"GatherTargets\":[]", "", StringComparison.Ordinal)
             .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
         var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
         Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
@@ -366,6 +367,24 @@ internal static class ColonyChecks
         Check(plannerRestored.SetProductionTarget("recipe.sawmill.stage0", 0) &&
               plannerRestored.ProductionTarget("recipe.sawmill.stage0") == 0,
             "setting a target to zero should disable automatic production");
+
+        var gatherPlannerColony = new ColonySimulation();
+        Check(gatherPlannerColony.SetGatherTarget("ore", 10),
+            "players should be able to set a stock target for an existing finite raw-material site");
+        gatherPlannerColony.Step(0.1f);
+        var oreSite = gatherPlannerColony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
+        Check(gatherPlannerColony.Workers.Any(worker => worker.Task?.Kind == ColonyTaskKind.Gather &&
+              worker.Task.MaterialDepositId == oreSite.Id),
+            "automatic extraction should assign an idle colonist to a deposit while stock is below target");
+        string gatherPlannerSave = ColonySaveService.Serialize(gatherPlannerColony);
+        var gatherPlannerRestored = ColonySaveService.Deserialize(gatherPlannerSave);
+        Check(gatherPlannerRestored.GatherTarget("ore") == 10 &&
+              gatherPlannerRestored.Workers.Any(worker => worker.Task?.Kind == ColonyTaskKind.Gather &&
+                  worker.Task.MaterialDepositId == oreSite.Id),
+            "save/load must preserve extraction targets and the worker's assigned gathering task");
+        Check(gatherPlannerRestored.SetGatherTarget("ore", 0) &&
+              gatherPlannerRestored.GatherTarget("ore") == 0,
+            "setting a raw-material target to zero should disable automatic extraction");
     }
 
     private static void Check(bool condition, string message)
