@@ -135,7 +135,7 @@ internal static class Program
                         }
                         else if (Hit(mx, my, 784, 527, 850, 549))
                         {
-                            try { GameSessionService.Save(simulation, campaign); simulation.SetMessage("World session saved."); }
+                            try { GameSessionService.Save(world); simulation.SetMessage("World session saved."); }
                             catch (Exception ex) { simulation.SetMessage($"Save failed: {ex.Message}"); }
                         }
                         else if (Hit(mx, my, 854, 527, 920, 549))
