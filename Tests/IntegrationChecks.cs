@@ -61,6 +61,17 @@ internal static class IntegrationChecks
               restored.Colony.ResourceCount(ResourceKind.Alloy) == colony.ResourceCount(ResourceKind.Alloy),
             "unified save must preserve local inventory alongside campaign state");
 
+        string legacyJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            SchemaVersion = 1,
+            ColonyJson = ColonySaveService.Serialize(colony),
+            CampaignJson = CampaignSaveService.Serialize(campaign.State)
+        });
+        var migratedLegacy = GameSessionService.Deserialize(legacyJson);
+        Check(migratedLegacy.ContinuousWorld.Entities.Count > 0 &&
+              migratedLegacy.ContinuousWorld.ClockSeconds == 0,
+            "legacy session saves must migrate into a generated continuous world without interpreting hexes as geometry");
+
         string directory = Path.Combine(Path.GetTempPath(), "kor-session-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "session.json");
         try
