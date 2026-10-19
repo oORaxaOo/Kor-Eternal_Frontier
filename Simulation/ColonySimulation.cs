@@ -483,6 +483,7 @@ internal sealed class ColonySimulation
             int pendingOutput = _productionOrders.Where(order => !order.Complete && order.RecipeId == recipeId)
                 .Sum(_ => primaryOutput.Value);
             if (MaterialCount(primaryOutput.Key) + pendingOutput >= targetAmount) continue;
+            if (!CanQueueRecipe(recipeId, out _)) continue;
             // At most one order per plan per simulation step; pending output is counted above,
             // so frame rate cannot flood the queue past its target.
             QueueRecipeProduction(workstation.Id, recipeId);
