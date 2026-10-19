@@ -143,6 +143,9 @@ internal static class ColonyChecks
         Check(new[] { "clay", "sand", "copper_ore", "silica", "fuel", "medicine_precursor", "blight_sample", "exotic_matter" }
                 .All(materialId => colony.MaterialDeposits.Any(deposit => deposit.MaterialId == materialId && deposit.Amount > 0)),
             "all eight expanded finite raw-material deposits should be available on the colony map");
+        Check(colony.MaterialDeposits.Count == 15 && colony.ManagementMaterialDepositPageCount == 3 &&
+              colony.ManagementMaterialDeposits(2).Count == 5,
+            "all fifteen finite raw-material sites should be accessible through three pages of the Resources panel");
         Check(ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.masonry.stage0").Inputs.ContainsKey("clay") &&
               ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.metallurgy.stage0").Inputs.ContainsKey("copper_ore") &&
               ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.glass.stage0").Inputs.ContainsKey("silica") &&
