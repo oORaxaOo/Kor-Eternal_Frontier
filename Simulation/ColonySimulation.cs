@@ -131,7 +131,9 @@ internal sealed class ColonySimulation
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _objects.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _productionOrders.Count(x => !x.Complete);
-    public int InventoryUsed => Enum.GetValues<ResourceKind>().Sum(resource => (int)Math.Ceiling(InventoryAmount(resource)));
+    public int InventoryUsed => _sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue
+        ? _inventory.Values.Sum()
+        : (int)Math.Ceiling(_sharedInventoryWorld.Inventories[_sharedInventoryOwnerId.Value].Values.Sum());
     public int InventoryCapacity =>
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
@@ -338,6 +340,7 @@ internal sealed class ColonySimulation
         if (!world.Inventories.ContainsKey(settlementId)) world.Inventories[settlementId] = [];
         _sharedInventoryWorld = world;
         _sharedInventoryOwnerId = settlementId;
+        world.SetInventoryCapacity(settlementId, InventoryCapacity);
 
         // The ecosystem grid is an operational buffer for citizen needs and garden jobs, not a
         // second authority. Reconcile it from the canonical settlement ledger at bind time.
