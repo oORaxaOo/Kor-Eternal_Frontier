@@ -43,8 +43,9 @@ The primary controls are visible mouse-operated menus in the right panel:
 - **Wall / Floor / Path / Door / Conduit** — select a tile-construction mode, then left-click a tile.
 - **Bench / Pod / Rack / Gen / Garden** — select a placeable object, then left-click a location.
 - **Cancel** — cancel the active placement mode.
-- **Left click** — at settlement scale, select a colonist or place a blueprint; at strategic scale, inspect a world entity.
-- **Right click** — at settlement scale, issue a colonist command; at strategic scale, order the selected Kor army or caravan to move in continuous world coordinates.
+- **Left click** — at settlement scale, select a colonist or place a blueprint; at strategic scale, inspect entities or dispatch selected cargo to a settlement.
+- **Right click** — at settlement scale, issue a colonist command; at strategic scale, order the selected Kor army or idle caravan to move in continuous world coordinates.
+- **Strategic cargo controls** — choose Wood, Stone, Food or Alloy; select a caravan; then click a destination settlement. Cargo is deducted at dispatch and only credited on arrival.
 - **Middle-mouse drag** — pan the camera.
 
 No keyboard shortcut is required for core gameplay. The local map remains a square-tile settlement view; the wider world is being redesigned around continuous space rather than the old linked-hex campaign map.
@@ -53,7 +54,7 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 
 - Program.cs: SDL startup, input mapping, simulation stepping.
 - Simulation/ColonySimulation.cs: current local settlement state and rules.
-- WorldModel/ContinuousWorldState.cs: continuous world-space entities, spatial queries, travel-time movement and world clock state.
+- WorldModel/ContinuousWorldState.cs: continuous world-space entities, per-settlement strategic inventories, conserved cargo shipments with travel time, spatial queries and the shared world clock.
 - Simulation/ColonySaveService.cs: validated versioned JSON persistence.
 - Campaign/: deterministic strategic model and campaign save data.
 - Rendering/ColonyRenderer.cs: presentation-only local square-grid and continuous strategic world views.
@@ -72,6 +73,6 @@ Keep simulation logic independent of rendering and input. Extend the game throug
 
 The new `WorldSimulation` coordinates colony and temporary legacy regional updates under one clock. The mouse-first UI now exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
 
-This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The continuous world-space entity model is now rendered at strategic zoom, with mouse selection/inspection, middle-drag navigation, and movement orders for the seeded Kor army and caravan. The legacy regional production/Blight rules and separate strategic resources are still adapters to replace; canonical resource ownership and real cargo shipments remain unfinished. The old nine-region linked-hex map must not be extended as the new world.
+This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The continuous world-space entity model is rendered at strategic zoom, with mouse selection/inspection, middle-drag navigation, movement orders, strategic settlement inventories and real cargo shipments that travel with caravans. Tests cover origin reservation, delayed delivery, conservation and in-flight save/load. The legacy regional production/Blight rules remain an adapter to replace, and local colony inventory still needs migration into the canonical world ledger. The old nine-region linked-hex map must not be extended as the new world.
 
 **Save / Load** in the mouse menu save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, regional progression, the shared clock, resource accounting, and session persistence.
