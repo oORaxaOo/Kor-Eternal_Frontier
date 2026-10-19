@@ -206,7 +206,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     string recipeOutputsText = string.Join(" + ", recipe.Outputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, recipe.Name, 670, recipeY, 365);
-                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • power {recipe.Stage} • {(canQueue ? "READY" : recipeReason)}",
+                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • tier {recipe.Stage + 1} • {(canQueue ? "READY" : recipeReason)}",
                         670, recipeY + 27, 365);
                     recipeY += 50;
                 }
