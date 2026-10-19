@@ -1,5 +1,6 @@
 using KorTheBlight.Campaign;
 using KorTheBlight.Simulation;
+using KorTheBlight.WorldModel;
 
 namespace KorTheBlight.Tests;
 
@@ -41,7 +42,7 @@ internal static class WorldSimulationChecks
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
 
-        var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor");
+        var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
         Check(world.SpatialWorld.OrderMove(home.Id, home.X + 100, home.Y, 10),
             "unified world must expose continuous entity movement");
         world.Step(0.5f);
