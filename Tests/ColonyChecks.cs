@@ -140,6 +140,14 @@ internal static class ColonyChecks
         Check(colony.InventoryUsed == legacyResourceTotal + 12,
             "stable-ID industry materials must count against the same physical storage capacity as legacy resources");
 
+        Check(new[] { "clay", "sand", "copper_ore", "silica" }.All(materialId =>
+                colony.MaterialDeposits.Any(deposit => deposit.MaterialId == materialId && deposit.Amount > 0)),
+            "new finite clay, sand, copper-ore and silica deposits should be available on the colony map");
+        Check(ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.masonry.stage0").Inputs.ContainsKey("clay") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.metallurgy.stage0").Inputs.ContainsKey("copper_ore") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.glass.stage0").Inputs.ContainsKey("silica") &&
+              ProgressionCatalog.Recipes.Single(recipe => recipe.Id == "recipe.glass.stage0").Inputs.ContainsKey("sand"),
+            "masonry, metallurgy and glass recipes should consume their new natural raw-material inputs");
         var oreDeposit = colony.MaterialDeposits.Single(deposit => deposit.MaterialId == "ore");
         int oreDepositBefore = oreDeposit.Amount;
         int oreStockBefore = colony.MaterialCount("ore");
