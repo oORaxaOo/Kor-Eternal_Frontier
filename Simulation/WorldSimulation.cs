@@ -11,6 +11,8 @@ internal sealed class WorldSimulation
     public const float CampaignUpdateIntervalSeconds = 10f;
 
     private float _campaignElapsedSeconds;
+    private float _simulationAccumulator;
+    private const float FixedStepSeconds = 0.1f;
 
     public ColonySimulation Colony { get; private set; }
     public CampaignSimulation World { get; private set; }
@@ -40,8 +42,13 @@ internal sealed class WorldSimulation
         if (!float.IsFinite(scaledSeconds))
             throw new ArgumentOutOfRangeException(nameof(deltaSeconds), "Scaled elapsed time must be finite.");
 
-        // The local simulation already supports small fixed steps; the host supplies 0.1s steps.
-        Colony.Step(scaledSeconds);
+        // Use a stable fixed step even if callers supply uneven frame times.
+        _simulationAccumulator += scaledSeconds;
+        while (_simulationAccumulator >= FixedStepSeconds)
+        {
+            Colony.Step(FixedStepSeconds);
+            _simulationAccumulator -= FixedStepSeconds;
+        }
         ElapsedSeconds += scaledSeconds;
         _campaignElapsedSeconds += scaledSeconds;
 
@@ -66,6 +73,7 @@ internal sealed class WorldSimulation
         Colony = session.Colony;
         World = session.Campaign;
         _campaignElapsedSeconds = 0f;
+        _simulationAccumulator = 0f;
         ElapsedSeconds = 0d;
     }
 }
