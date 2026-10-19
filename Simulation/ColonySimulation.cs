@@ -590,6 +590,7 @@ internal sealed class ColonySimulation
     {
         const int pageSize = 5;
         return ProgressionCatalog.Buildings.OrderBy(item => item.Era)
+            .ThenBy(item => _researchedProjects.Contains(item.UnlockResearchId) ? 0 : 1)
             .ThenBy(item => item.Family, StringComparer.Ordinal)
             .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
     }
