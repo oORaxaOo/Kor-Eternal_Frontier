@@ -203,7 +203,7 @@ internal static class ColonyChecks
             "save/load must preserve catalogue building identity and footprint state");
         for (int i = 0; i < 1000; i++) colony.Step(0.1f);
         Check(colony.Objects.Single(item => item.Id == catalogWorkshopId).IsBuilt &&
-              colony.MaterialCount("building_material") == 4,
+              colony.MaterialCount("material.masonry.stage0") == 4,
             "catalogue building construction must consume its real stable-ID costs and complete worker labor");
         Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
               .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
