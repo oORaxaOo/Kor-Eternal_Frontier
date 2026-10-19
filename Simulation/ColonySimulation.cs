@@ -542,10 +542,12 @@ internal sealed class ColonySimulation
     internal IReadOnlyList<ProgressionCatalog.RecipeDef> ManagementRecipes(int page)
     {
         const int pageSize = 8;
+        // Stable catalogue order prevents a recipe from jumping between pages when stock,
+        // power, or research changes while the player is selecting a row.
         return ProgressionCatalog.Recipes
-            .OrderBy(recipe => CanQueueRecipe(recipe.Id, out _) ? 0 : 1)
-            .ThenBy(recipe => recipe.Stage)
+            .OrderBy(recipe => recipe.Stage)
             .ThenBy(recipe => recipe.Industry, StringComparer.Ordinal)
+            .ThenBy(recipe => recipe.Id, StringComparer.Ordinal)
             .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
     }
 
