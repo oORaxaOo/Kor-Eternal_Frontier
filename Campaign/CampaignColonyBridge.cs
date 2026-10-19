@@ -14,6 +14,52 @@ internal static class CampaignColonyBridge
     public const int MaxFoodExportPerOrder = 20;
     public const int MaxAlloyExportPerOrder = 10;
 
+    public static IReadOnlyList<ProgressionCatalog.UnitDef> ManagementUnits(int page)
+    {
+        const int pageSize = 5;
+        return ProgressionCatalog.Units.OrderBy(unit => unit.Era)
+            .ThenBy(unit => unit.Role, StringComparer.Ordinal)
+            .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
+    }
+
+    public static int UnitPageCount => (ProgressionCatalog.Units.Count + 4) / 5;
+
+    public static bool CanRecruitUnit(CampaignSimulation campaign, ColonySimulation colony, string unitId, out string reason)
+    {
+        var unit = ProgressionCatalog.Units.FirstOrDefault(item => item.Id == unitId);
+        if (unit == null)
+        {
+            reason = "Unknown catalogue unit.";
+            return false;
+        }
+        if (!colony.IsResearchComplete(unit.UnlockResearchId))
+        {
+            string researchName = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == unit.UnlockResearchId)?.Name ?? unit.UnlockResearchId;
+            reason = $"Locked by research: {researchName}.";
+            return false;
+        }
+        if (campaign.State.Supplies < unit.SupplyCost || campaign.State.Alloy < unit.AlloyCost)
+        {
+            reason = $"Needs {unit.SupplyCost} Supplies and {unit.AlloyCost} Alloy.";
+            return false;
+        }
+        reason = "Ready to recruit.";
+        return true;
+    }
+
+    public static bool RecruitUnit(CampaignSimulation campaign, ColonySimulation colony, string unitId)
+    {
+        if (!CanRecruitUnit(campaign, colony, unitId, out string reason))
+        {
+            campaign.State.LastEvent = reason;
+            colony.SetMessage(reason);
+            return false;
+        }
+        bool recruited = campaign.RecruitUnit(unitId);
+        colony.SetMessage(campaign.Message);
+        return recruited;
+    }
+
     public static int ImportToColony(CampaignSimulation campaign, ColonySimulation colony)
     {
         ArgumentNullException.ThrowIfNull(campaign);
