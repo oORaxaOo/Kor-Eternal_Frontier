@@ -25,7 +25,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
     public static string[] PageNames => Pages;
 
     public void Draw(SKCanvas canvas, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0, int researchPage = 0)
     {
         if (page <= 0) return;
         page = Math.Clamp(page, 1, Pages.Length);
@@ -52,12 +52,12 @@ internal sealed class ManagementPanelRenderer : IDisposable
         canvas.DrawRoundRect(new SKRect(232, 78, 1078, 690), 8, 8, _line);
         Text(canvas, Pages[page - 1].ToUpperInvariant(), 254, 109, _font, Gold);
         Text(canvas, "Select a category on the left. All displayed figures are live simulation values.", 254, 131, _tiny, Muted);
-        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage);
+        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage, researchPage);
         Text(canvas, "CLOSE: click Manage in the top bar  •  All core actions are mouse-accessible", 254, 674, _tiny, Muted);
     }
 
     private void DrawPage(SKCanvas c, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage, int researchPage)
     {
         switch (page)
         {
