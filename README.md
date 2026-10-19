@@ -72,4 +72,4 @@ The new `WorldSimulation` coordinates colony and temporary legacy regional updat
 
 This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The next slices must replace it with canonical resource ownership and real shipments, build a continuous world-space model with travel time, integrate population and settlements, and save one complete world state. The old nine-region linked-hex map must not be extended as the new world.
 
-**F5 / F9** save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, regional progression, the shared clock, resource accounting, and session persistence.
+**Save / Load** in the mouse menu save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, regional progression, the shared clock, resource accounting, and session persistence.
