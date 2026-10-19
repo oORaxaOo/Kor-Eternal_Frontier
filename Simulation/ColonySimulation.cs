@@ -340,6 +340,7 @@ internal sealed class ColonySimulation
         if (!world.Inventories.ContainsKey(settlementId)) world.Inventories[settlementId] = [];
         _sharedInventoryWorld = world;
         _sharedInventoryOwnerId = settlementId;
+        _inventory.Clear(); // No second resource balance remains once the canonical ledger is attached.
         world.SetInventoryCapacity(settlementId, InventoryCapacity);
 
         // The ecosystem grid is an operational buffer for citizen needs and garden jobs, not a
