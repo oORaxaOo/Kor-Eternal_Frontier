@@ -168,6 +168,11 @@ internal static class ColonyChecks
         legacySnapshot.Materials.Clear();
         legacySnapshot.ResearchedProjects.Clear();
         legacySnapshot.Objects.RemoveAll(item => item.CatalogBuildingId != null);
+        var legacyObjectIds = legacySnapshot.Objects.Select(item => item.Id).ToHashSet();
+        foreach (var workerSnapshot in legacySnapshot.Workers)
+            if (workerSnapshot.Task?.Kind == ColonyTaskKind.BuildObject &&
+                !legacyObjectIds.Contains(workerSnapshot.Task.TargetId))
+                workerSnapshot.Task = null;
         foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
         string legacyJson = JsonSerializer.Serialize(legacySnapshot)
             .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
