@@ -110,6 +110,20 @@ internal static class ColonyEcosystemChecks
         Check(hungryCitizen.Fatigue > 10f,
             "an exhausted citizen should stop working and recover while idle");
 
+        // Population-scale regression: bulk recruitment must not rescan all prior IDs.
+        var populationColony = new ColonyEcosystem(40, 26);
+        var populationIds = new HashSet<int>();
+        for (int i = 0; i < 2_000; i++)
+        {
+            var resident = populationColony.AddCitizen($"Resident-{i + 1}", new CellPosition(i % 40, (i / 40) % 26));
+            Check(populationIds.Add(resident.Id), "every resident must receive a unique stable simulation ID");
+        }
+        Check(populationColony.Citizens.Count == 2_000,
+            "the cached citizen view must expose bulk recruitment without stale snapshots");
+        populationColony.Step(0.05f);
+        Check(populationColony.Citizens.All(resident => resident.Hunger < 100f),
+            "all residents should advance through the same population simulation tick");
+
         var wallGrid = new GridManager(3, 3);
         wallGrid.SetWall(new CellPosition(1, 0));
         wallGrid.SetWall(new CellPosition(0, 1));

@@ -1,6 +1,6 @@
 # KOR ETERNAL FRONTIER
 
-Kor Eternal Frontier is a developing colony, civilization, and world simulation. The intended game centers on autonomous population, construction, logistics, production, research, regional development, and the evolving Blight ecosystem—not conventional RTS unit combat.
+Kor Eternal Frontier is a developing colony, civilization, and world simulation. The goal is Dwarf-Fortress-inspired simulation depth with a deliberately legible, low-detail symbolic presentation: residents should have persistent lives and needs, logistics should emerge from real constraints, and wildlife, settlements and the Blight should evolve even when the player is looking elsewhere. This is an inspiration target, not a verbatim copy of Dwarf Fortress assets or interface. The game centers on autonomous population, construction, logistics, production, research, regional development, and an evolving Blight ecosystem—not conventional RTS unit combat.
 
 ## Current foundation
 
@@ -19,7 +19,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 - Versioned colony save/load for terrain, architecture orders, objects, colonists, cargo, tasks/routes, deposits, inventory, production orders, IDs, selection, and simulation time.
 - A unified real-time coordinator (Simulation/WorldSimulation.cs) advances the colony and continuous world under one clock. The colony and strategic layer read and mutate the same settlement inventory; session saves store that inventory only in the world ledger.
 
-This is a playable foundation, not the complete game. A reusable central job board, material reservations, capacity-aware stockpiles, multiple production chains, fuller population simulation, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
+This is a playable foundation, not the complete game. The simulation now has a regression check for 2,000 individually represented citizen agents, and citizen ID allocation is linear-time across bulk recruitment. This is an early scalability guardrail, not a claim that thousands of complete colony workers already run at target frame rates: pathfinding, job allocation, UI rendering, save size, and simulation level-of-detail still need profiling and dedicated optimization. Richer resident needs and relationships, material reservations, capacity-aware stockpiles, multiple production chains, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
 
 ## Run on Linux
 
