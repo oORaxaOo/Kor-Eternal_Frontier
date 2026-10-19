@@ -129,6 +129,10 @@ internal sealed class ColonyRenderer : IDisposable
                 "water" => new SKColor(73, 145, 206),
                 "biomass" => new SKColor(93, 163, 91),
                 "recycled_feedstock" => new SKColor(151, 159, 151),
+                "clay" => new SKColor(168, 111, 86),
+                "sand" => new SKColor(205, 184, 112),
+                "copper_ore" => new SKColor(190, 113, 76),
+                "silica" => new SKColor(116, 174, 193),
                 _ => new SKColor(176, 116, 91)
             };
             canvas.DrawRect(rect, _fill);
@@ -137,7 +141,11 @@ internal sealed class ColonyRenderer : IDisposable
             string letter = deposit.MaterialId switch
             {
                 "rare_earth" => "R",
-                "recycled_feedstock" => "S",
+                "recycled_feedstock" => "Rf",
+                "copper_ore" => "Cu",
+                "silica" => "Si",
+                "clay" => "Cl",
+                "sand" => "Sa",
                 _ => deposit.MaterialId[..1].ToUpperInvariant()
             };
             canvas.DrawText(letter, point.X, point.Y + 4f * zoom, SKTextAlign.Center, _smallFont, _text);
