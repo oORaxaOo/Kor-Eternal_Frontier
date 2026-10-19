@@ -38,8 +38,30 @@ internal static class Program
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
 
-            var simulation = new ColonySimulation();
-            var campaign = new CampaignSimulation(70241);
+            ColonySimulation simulation;
+            CampaignSimulation campaign;
+            if (File.Exists(GameSessionService.SavePath))
+            {
+                try
+                {
+                    var restoredSession = GameSessionService.Load();
+                    simulation = restoredSession.Colony;
+                    campaign = restoredSession.Campaign;
+                    simulation.SetMessage("Previous colony and campaign session restored.");
+                }
+                catch (Exception ex)
+                {
+                    // Preserve the existing save for recovery; never silently overwrite it.
+                    simulation = new ColonySimulation();
+                    campaign = new CampaignSimulation(70241);
+                    simulation.SetMessage($"Session restore failed; started a fresh session without overwriting the save: {ex.Message}");
+                }
+            }
+            else
+            {
+                simulation = new ColonySimulation();
+                campaign = new CampaignSimulation(70241);
+            }
             var worldMap = new WorldMapSimulation(70241);
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
@@ -60,6 +82,7 @@ internal static class Program
             bool managementOpen = false;
             int managementPage = 1;
             int catalogBuildingPage = 0;
+            int recipeCatalogPage = 0;
             int researchCatalogPage = 0;
             int catalogUnitPage = 0;
             string? selectedCatalogBuildingId = null;
@@ -69,7 +92,7 @@ internal static class Program
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
                 else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
                 menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, researchCatalogPage, catalogUnitPage);
+                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -158,7 +181,7 @@ internal static class Program
                 if (spaceDown && !wasSpace) paused = !paused;
                 if (tDown && !wasT)
                 {
-                    try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
+                    try { campaign.EndTurn(); worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
                     catch (Exception ex) { simulation.SetMessage($"Campaign turn failed: {ex.Message}"); }
                 }
                 if (iDown && !wasI)
@@ -301,7 +324,7 @@ internal static class Program
                                              logicalMouse.Y >= 194 && logicalMouse.Y < 594)
                                     {
                                         int index = (int)((logicalMouse.Y - 194) / 50);
-                                        var recipe = simulation.ManagementRecipes.ElementAtOrDefault(index);
+                                        var recipe = simulation.ManagementRecipes(recipeCatalogPage).ElementAtOrDefault(index);
                                         var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
                                         if (recipe == null)
                                             simulation.SetMessage("No recipe is listed at that position.");
@@ -310,6 +333,12 @@ internal static class Program
                                         else
                                             simulation.QueueRecipeProduction(bench.Id, recipe.Id);
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        recipeCatalogPage = Math.Max(0, recipeCatalogPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        recipeCatalogPage = Math.Min(simulation.ManagementRecipePageCount - 1, recipeCatalogPage + 1);
                                     break;
                                 case 6:
                                     if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
@@ -323,7 +352,11 @@ internal static class Program
                                         if (project == null)
                                             simulation.SetMessage("No local research project is listed at that position.");
                                         else
-                                            simulation.ResearchProject(project.Id, campaign);
+                                        {
+                                            bool completed = simulation.ResearchProject(project.Id, campaign);
+                                            if (completed)
+                                                researchCatalogPage = Math.Min(researchCatalogPage, simulation.ManagementResearchPageCount - 1);
+                                        }
                                     }
                                     else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 &&
                                              logicalMouse.Y >= 632 && logicalMouse.Y < 666)
@@ -397,7 +430,7 @@ internal static class Program
                                         else { architectureMode = ArchitectureKind.None; placingObject = false; activeMenu = 0; }
                                         break;
                                     case 3:
-                                        if (index == 0) { try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); } catch (Exception ex) { simulation.SetMessage($"Turn failed: {ex.Message}"); } }
+                                        if (index == 0) { try { campaign.EndTurn(); worldMap.EndTurn(); simulation.SetMessage(campaign.Message); } catch (Exception ex) { simulation.SetMessage($"Turn failed: {ex.Message}"); } }
                                         else if (index == 1) activeMenu = 9;
                                         else if (index == 2 && worldMapMode) worldMap.ClaimSelected();
                                         else if (index == 2) simulation.SetMessage("Open Colony → Strategic World Map before claiming frontier territory.");

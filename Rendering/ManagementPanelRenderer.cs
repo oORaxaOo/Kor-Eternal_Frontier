@@ -26,7 +26,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
 
     public void Draw(SKCanvas canvas, int page, ColonySimulation colony, CampaignSimulation campaign,
         WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0,
-        int researchCatalogPage = 0, int catalogUnitPage = 0)
+        int recipeCatalogPage = 0, int researchCatalogPage = 0, int catalogUnitPage = 0)
     {
         if (page <= 0) return;
         page = Math.Clamp(page, 1, Pages.Length);
@@ -53,12 +53,12 @@ internal sealed class ManagementPanelRenderer : IDisposable
         canvas.DrawRoundRect(new SKRect(232, 78, 1078, 690), 8, 8, _line);
         Text(canvas, Pages[page - 1].ToUpperInvariant(), 254, 109, _font, Gold);
         Text(canvas, "Select a category on the left. All displayed figures are live simulation values.", 254, 131, _tiny, Muted);
-        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage, researchCatalogPage, catalogUnitPage);
+        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage);
         Text(canvas, "CLOSE: click Manage in the top bar  •  All core actions are mouse-accessible", 254, 674, _tiny, Muted);
     }
 
     private void DrawPage(SKCanvas c, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage, int researchCatalogPage, int catalogUnitPage)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage, int recipeCatalogPage, int researchCatalogPage, int catalogUnitPage)
     {
         switch (page)
         {
@@ -177,6 +177,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                         $"Position {bench.Origin.X},{bench.Origin.Y} • {(bench.IsBuilt ? "Ready" : "Construction required")}", 254, py);
                     py += 42;
                 }
+                Pair(c, "Workstation slots active", $"{colony.BusyWorkstations} / {colony.WorkstationCapacity}", 254, 322);
                 var firstBench = colony.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
                 if (firstBench != null)
                     ActionRow(c, $"Queue legacy component batch at #{firstBench.Id}", 254, 350, 365);
@@ -194,10 +195,10 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 if (colony.ProductionOrders.Count == 0)
                     Note(c, "No production orders yet. Select a recipe on the right.", 254, 438, 365);
 
-                Section(c, "Recipe queue • click to manufacture", 670, 164);
+                Section(c, $"Production recipes • page {recipeCatalogPage + 1}/{colony.ManagementRecipePageCount} • power {colony.AvailablePowerCapacity}/{colony.PowerCapacity}", 670, 164);
                 int recipeY = 194;
                 var names = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
-                foreach (var recipe in colony.ManagementRecipes)
+                foreach (var recipe in colony.ManagementRecipes(recipeCatalogPage))
                 {
                     bool canQueue = colony.CanQueueRecipe(recipe.Id, out string recipeReason);
                     string recipeInputsText = string.Join(" + ", recipe.Inputs.Select(item =>
@@ -205,11 +206,13 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     string recipeOutputsText = string.Join(" + ", recipe.Outputs.Select(item =>
                         $"{item.Value} {names.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, recipe.Name, 670, recipeY, 365);
-                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • {(canQueue ? "READY" : recipeReason)}",
+                    Note(c, $"{recipeInputsText} → {recipeOutputsText} • tier {recipe.Stage + 1} • {(canQueue ? "READY" : recipeReason)}",
                         670, recipeY + 27, 365);
                     recipeY += 50;
                 }
-                Note(c, "Inputs are reserved when queued; colonists must walk to the Workbench and perform the work.", 670, 602, 365);
+                Note(c, "Inputs and local power capacity are reserved when queued. Each Workbench runs one active order; spare power increases work speed.", 670, 602, 365);
+                ActionRow(c, "◀ Previous page", 670, 632, 170);
+                ActionRow(c, "Next page ▶", 850, 632, 185);
                 break;
             case 6:
                 Section(c, "Strategic research", 254, 164);
