@@ -63,16 +63,6 @@ internal static class CampaignSaveService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public static string SavePath
-    {
-        get
-        {
-            string root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-            return Path.Combine(root, "kor-eternal-frontier", "campaign.json");
-        }
-    }
-
     public static string Serialize(CampaignState state)
     {
         state.Validate();
@@ -87,18 +77,5 @@ internal static class CampaignSaveService
         return state;
     }
 
-    public static void Save(CampaignState state)
-    {
-        string path = SavePath;
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string temporary = path + ".tmp";
-        File.WriteAllText(temporary, Serialize(state));
-        File.Move(temporary, path, true);
-    }
 
-    public static CampaignState Load()
-    {
-        if (!File.Exists(SavePath)) throw new FileNotFoundException("No Kor-Eternal Frontier campaign save exists yet.", SavePath);
-        return Deserialize(File.ReadAllText(SavePath));
-    }
 }
