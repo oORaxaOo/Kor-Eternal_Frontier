@@ -262,7 +262,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign, bool worldView,
+        PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         _fill.Color = Background;
