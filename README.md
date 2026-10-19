@@ -17,7 +17,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 - A workstation recipe that consumes alloy and wood when queued; a worker performs the job before a component is added to inventory.
 - A minimal symbolic renderer: square tiles and buildings, colonists as dots, resource markers as squares.
 - Versioned colony save/load for terrain, architecture orders, objects, colonists, cargo, tasks/routes, deposits, inventory, production orders, IDs, selection, and simulation time.
-- A unified real-time coordinator (`Simulation/WorldSimulation.cs`) that currently shares a clock between colony simulation and the temporary legacy regional model. This is an interim migration layer, not the target continuous world.
+- A unified real-time coordinator (`Simulation/WorldSimulation.cs`) advances the colony and continuous world under one clock. The legacy campaign object is retained only as a save-migration compatibility snapshot and no longer receives active world ticks.
 
 This is a playable foundation, not the complete game. A reusable central job board, material reservations, capacity-aware stockpiles, multiple production chains, fuller population simulation, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
 
@@ -39,12 +39,13 @@ The primary controls are visible mouse-operated menus in the right panel:
 - **Pause / Resume** — pause or resume the shared real-time simulation.
 - **Speed − / Speed +** — slow down or speed up the world clock.
 - **Save / Load** — save or restore the current session.
-- **Zoom − / Zoom +** — zoom the view in or out.
+- **Zoom − / Zoom +** — continuously zoom between the local settlement and continuous strategic world view.
 - **Wall / Floor / Path / Door / Conduit** — select a tile-construction mode, then left-click a tile.
 - **Bench / Pod / Rack / Gen / Garden** — select a placeable object, then left-click a location.
 - **Cancel** — cancel the active placement mode.
-- **Left click** — select a colonist or place the selected blueprint.
-- **Right click** — issue a movement/work command to the selected colonist.
+- **Left click** — at settlement scale, select a colonist or place a blueprint; at strategic scale, inspect entities or dispatch selected cargo to a settlement.
+- **Right click** — at settlement scale, issue a colonist command; at strategic scale, order the selected Kor army or idle caravan to move in continuous world coordinates.
+- **Strategic cargo controls** — choose Wood, Stone, Food or Alloy; select a caravan; then click a destination settlement. Cargo is deducted at dispatch and only credited on arrival.
 - **Middle-mouse drag** — pan the camera.
 
 No keyboard shortcut is required for core gameplay. The local map remains a square-tile settlement view; the wider world is being redesigned around continuous space rather than the old linked-hex campaign map.
@@ -53,10 +54,11 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 
 - Program.cs: SDL startup, input mapping, simulation stepping.
 - Simulation/ColonySimulation.cs: current local settlement state and rules.
-- WorldModel/ContinuousWorldState.cs: continuous world-space entities, spatial queries, travel-time movement and world clock state.
+- WorldModel/ContinuousWorldState.cs: continuous world-space entities, per-settlement strategic inventories, conserved cargo shipments with travel time, spatial queries and the shared world clock.
 - Simulation/ColonySaveService.cs: validated versioned JSON persistence.
 - Campaign/: deterministic strategic model and campaign save data.
-- Rendering/ColonyRenderer.cs: presentation-only square-grid view.
+- Rendering/ColonyRenderer.cs: presentation-only local square-grid and continuous strategic world views.
+- Rendering/ContinuousWorldProjection.cs: continuous world coordinate/screen projection.
 - Rendering/OrthogonalGridProjection.cs: screen/world coordinate conversion.
 - Tests/: automated colony and campaign checks.
 - build-linux.sh and launch-kor.sh: Linux package and launch scripts.
@@ -69,8 +71,8 @@ Keep simulation logic independent of rendering and input. Extend the game throug
 
 ## Unified real-time world migration
 
-The new `WorldSimulation` coordinates colony and temporary legacy regional updates under one clock. The mouse-first UI now exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
+The new `WorldSimulation` advances the colony and continuous world under one clock; the legacy campaign turn counter no longer advances during active play. Settlement food production integrates continuously from elapsed time. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
 
-This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The continuous world-space entity model now exists and is stepped/saved with the shared clock. The next slices must make it the active world renderer/simulation, replace the legacy regional production/Blight rules, and add canonical resource ownership and real shipments. The old nine-region linked-hex map must not be extended as the new world.
+This is the first migration slice, not the finished unified-world architecture. Regional resources are still held in a separate legacy campaign state, and the old transfer bridge remains in code for migration/tests but is no longer exposed as a gameplay keyboard control. The continuous world-space entity model is rendered at strategic zoom, with mouse selection/inspection, middle-drag navigation, movement orders, strategic settlement inventories and real cargo shipments that travel with caravans. Tests cover origin reservation, delayed delivery, conservation and in-flight save/load. Local colony inventory still needs migration into the canonical world ledger. A dynamic Blight ecosystem, population-level strategic simulation, and replacement of the legacy campaign save payload remain unfinished. The old nine-region linked-hex map must not be extended as the new world.
 
-**Save / Load** in the mouse menu save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, regional progression, the shared clock, resource accounting, and session persistence.
+**Save / Load** in the mouse menu save or restore the current session. Run `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test` to check colony behavior, legacy campaign compatibility, continuous production, the shared clock, shipment conservation, and session persistence.

@@ -4,14 +4,11 @@ using KorTheBlight.WorldModel;
 namespace KorTheBlight.Simulation;
 
 /// <summary>
-/// Coordinates the local settlement, continuous world entities, and temporary legacy regional adapter under one clock.
+/// Coordinates the local settlement and continuous world entities under one clock. CampaignSimulation remains a save-migration compatibility snapshot, not an active world simulation.
 /// The renderer is a consumer of this state; it does not advance either simulation.
 /// </summary>
 internal sealed class WorldSimulation
 {
-    public const float CampaignUpdateIntervalSeconds = 10f;
-
-    private float _campaignElapsedSeconds;
     private float _simulationAccumulator;
     private const float FixedStepSeconds = 0.1f;
 
@@ -54,14 +51,6 @@ internal sealed class WorldSimulation
         }
         SpatialWorld.Step(scaledSeconds);
         ElapsedSeconds = SpatialWorld.ClockSeconds;
-        _campaignElapsedSeconds += scaledSeconds;
-
-        // Regional systems evolve automatically on the same clock; the player does not end turns.
-        while (_campaignElapsedSeconds >= CampaignUpdateIntervalSeconds)
-        {
-            _campaignElapsedSeconds -= CampaignUpdateIntervalSeconds;
-            World.AdvanceWorldInterval();
-        }
     }
 
     public void SetSpeed(float multiplier)
@@ -78,7 +67,6 @@ internal sealed class WorldSimulation
         World = session.Campaign;
         SpatialWorld = session.ContinuousWorld;
         ElapsedSeconds = SpatialWorld.ClockSeconds;
-        _campaignElapsedSeconds = (float)(ElapsedSeconds % CampaignUpdateIntervalSeconds);
         _simulationAccumulator = 0f;
     }
 }
