@@ -26,7 +26,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
 
     public void Draw(SKCanvas canvas, int page, ColonySimulation colony, CampaignSimulation campaign,
         WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0,
-        int recipeCatalogPage = 0, int researchCatalogPage = 0, int catalogUnitPage = 0)
+        int recipeCatalogPage = 0, int researchCatalogPage = 0, int catalogUnitPage = 0, int rawDepositPage = 0)
     {
         if (page <= 0) return;
         page = Math.Clamp(page, 1, Pages.Length);
@@ -53,12 +53,12 @@ internal sealed class ManagementPanelRenderer : IDisposable
         canvas.DrawRoundRect(new SKRect(232, 78, 1078, 690), 8, 8, _line);
         Text(canvas, Pages[page - 1].ToUpperInvariant(), 254, 109, _font, Gold);
         Text(canvas, "Select a category on the left. All displayed figures are live simulation values.", 254, 131, _tiny, Muted);
-        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage);
+        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage, recipeCatalogPage, researchCatalogPage, catalogUnitPage, rawDepositPage);
         Text(canvas, "CLOSE: click Manage in the top bar  •  All core actions are mouse-accessible", 254, 674, _tiny, Muted);
     }
 
     private void DrawPage(SKCanvas c, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage, int recipeCatalogPage, int researchCatalogPage, int catalogUnitPage)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage, int recipeCatalogPage, int researchCatalogPage, int catalogUnitPage, int rawDepositPage)
     {
         switch (page)
         {
@@ -120,16 +120,18 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Storage used", $"{colony.InventoryUsed} / {colony.InventoryCapacity}", 670, 300);
                 Pair(c, "Storage available", colony.InventoryFreeCapacity.ToString(), 670, 326);
                 Note(c, "Storage is shared by legacy resources and every stable-ID industry material.", 670, 372, 365);
-                Section(c, "Raw-material sites • click on map to extract", 670, 420);
+                Section(c, $"Raw-material sites • page {rawDepositPage + 1}/{colony.ManagementMaterialDepositPageCount}", 670, 420);
                 int rawY = 450;
                 var rawNames = ProgressionCatalog.Resources.ToDictionary(item => item.Id, item => item.Name, StringComparer.Ordinal);
-                foreach (var deposit in colony.MaterialDeposits.Where(item => item.Amount > 0).Take(5))
+                foreach (var deposit in colony.ManagementMaterialDeposits(rawDepositPage))
                 {
                     Row(c, rawNames.GetValueOrDefault(deposit.MaterialId, deposit.MaterialId),
                         $"{deposit.Amount} remaining • tile {deposit.Cell.X},{deposit.Cell.Y}", 670, rawY);
-                    rawY += 35;
+                    rawY += 30;
                 }
-                Note(c, "Select a colonist, then click a marked raw-material site on the map. Workers haul up to five units per trip.", 670, 632, 365);
+                ActionRow(c, "◀ Previous page", 670, 602, 170);
+                ActionRow(c, "Next page ▶", 850, 602, 185);
+                Note(c, "Select a colonist, then click a marked raw-material site on the map. Workers haul up to five units per trip.", 670, 644, 365);
                 break;
             case 4:
                 Section(c, "Construction & blueprints", 254, 164);
