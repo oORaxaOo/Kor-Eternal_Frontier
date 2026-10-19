@@ -28,14 +28,14 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, CampaignSimulation campaign)
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign)
     {
         canvas.Clear(Background);
         DrawMap(canvas, simulation, cameraX, cameraY, zoom);
         DrawDeposits(canvas, simulation, cameraX, cameraY, zoom);
         DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
         DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, campaign);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, campaign);
     }
 
     private void DrawMap(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom)
@@ -187,7 +187,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool paused, CampaignSimulation campaign)
+        PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, CampaignSimulation campaign)
     {
         _fill.Color = Background;
         canvas.DrawRect(new SKRect(0, 0, 1100, 62), _fill);
@@ -247,14 +247,36 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText("BUILD / CAMPAIGN", 790, 493, SKTextAlign.Left, _headingFont, _text);
-        _text.Color = TextColor;
-        canvas.DrawText("1 Wall 2 Floor 3 Path | 4 Door 5 Conduit", 790, 515, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText($"O place {objectType} | Tab next | Esc cancel", 790, 536, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Left click design/select", 790, 557, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("Right click move/gather", 790, 578, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("WASD camera | +/- zoom | Space pause", 790, 599, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("World runs in real time | I/E legacy transfer | F5/F9 save", 790, 620, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("WORLD CONTROLS", 790, 493, SKTextAlign.Left, _headingFont, _text);
+        DrawButton(canvas, paused ? "RESUME" : "PAUSE", 784, 501, 66, 22, paused);
+        DrawButton(canvas, "SPEED -", 856, 501, 58, 22);
+        DrawButton(canvas, "SPEED +", 920, 501, 58, 22);
+        DrawButton(canvas, "CANCEL", 984, 501, 66, 22);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"{speedMultiplier:0.##}x speed", 1054, 516, SKTextAlign.Left, _smallFont, _muted);
+
+        DrawButton(canvas, "SAVE", 784, 527, 66, 22);
+        DrawButton(canvas, "LOAD", 854, 527, 66, 22);
+        DrawButton(canvas, "ZOOM -", 924, 527, 66, 22);
+        DrawButton(canvas, "ZOOM +", 994, 527, 66, 22);
+
+        _text.Color = Gold;
+        canvas.DrawText("BUILD MENU", 790, 558, SKTextAlign.Left, _headingFont, _text);
+        DrawButton(canvas, "WALL", 784, 566, 54, 22, architectureMode == ArchitectureKind.Wall);
+        DrawButton(canvas, "FLOOR", 842, 566, 54, 22, architectureMode == ArchitectureKind.Floor);
+        DrawButton(canvas, "PATH", 900, 566, 54, 22, architectureMode == ArchitectureKind.Path);
+        DrawButton(canvas, "DOOR", 958, 566, 54, 22, architectureMode == ArchitectureKind.Door);
+        DrawButton(canvas, "CONDUIT", 1016, 566, 54, 22, architectureMode == ArchitectureKind.Conduit);
+        DrawButton(canvas, "BENCH", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Workbench);
+        DrawButton(canvas, "POD", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.SleepingPod);
+        DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
+        DrawButton(canvas, "GEN", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.Generator);
+        DrawButton(canvas, "GARDEN", 988, 593, 47, 22, placingObject && objectType == PlaceableKind.Garden);
+        DrawButton(canvas, "CANCEL", 1039, 593, 47, 22);
+
+        _muted.Color = MutedColor;
+        canvas.DrawText("Left click: select/place  |  Right click: order", 790, 635, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText("Middle-mouse drag: pan camera", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
@@ -262,6 +284,17 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"{mode}{(paused ? "  [PAUSED]" : "")}", 18, 675, SKTextAlign.Left, _normalFont, _text);
         _text.Color = TextColor;
         canvas.DrawText(simulation.Message, 18, 700, SKTextAlign.Left, _smallFont, _text);
+    }
+
+    private void DrawButton(SKCanvas canvas, string label, float x, float y, float width, float height, bool active = false)
+    {
+        _fill.Color = active ? new SKColor(92, 38, 43) : new SKColor(31, 39, 37);
+        canvas.DrawRoundRect(new SKRect(x, y, x + width, y + height), 3, 3, _fill);
+        _line.Color = active ? Gold : Border;
+        _line.StrokeWidth = 1;
+        canvas.DrawRoundRect(new SKRect(x, y, x + width, y + height), 3, 3, _line);
+        _text.Color = active ? Gold : TextColor;
+        canvas.DrawText(label, x + width / 2, y + height / 2 + 4, SKTextAlign.Center, _smallFont, _text);
     }
 
     private static SKRect Inset(SKRect rect, float amount)
