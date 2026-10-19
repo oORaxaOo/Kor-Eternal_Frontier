@@ -136,7 +136,10 @@ internal sealed class CampaignSimulation
         State.ActiveBattleRegionId = -1;
     }
 
-    public void EndTurn()
+    [Obsolete("The player no longer ends campaign turns. Regional simulation advances through WorldSimulation.")]
+    public void EndTurn() => AdvanceWorldInterval();
+
+    public void AdvanceWorldInterval()
     {
         State.Turn++;
         var income = new Dictionary<string, int> { ["Supplies"] = 8, ["Alloy"] = 3, ["Energy"] = 3, ["Knowledge"] = 2 };
