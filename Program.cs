@@ -330,7 +330,11 @@ internal static class Program
                                         if (project == null)
                                             simulation.SetMessage("No local research project is listed at that position.");
                                         else
-                                            simulation.ResearchProject(project.Id, campaign);
+                                        {
+                                            bool completed = simulation.ResearchProject(project.Id, campaign);
+                                            if (completed)
+                                                researchCatalogPage = Math.Min(researchCatalogPage, simulation.ManagementResearchPageCount - 1);
+                                        }
                                     }
                                     else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 &&
                                              logicalMouse.Y >= 632 && logicalMouse.Y < 666)
