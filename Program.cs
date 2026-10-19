@@ -59,13 +59,15 @@ internal static class Program
             int activeMenu = 0;
             bool managementOpen = false;
             int managementPage = 1;
+            int catalogBuildingPage = 0;
+            string? selectedCatalogBuildingId = null;
             bool commandMode = false;
             host.RenderBackbufferPostScene += canvas =>
             {
                 if (worldMapMode) worldPainter.Draw(canvas, worldMap);
                 else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
                 menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode);
+                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode, catalogBuildingPage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -135,10 +137,11 @@ internal static class Program
                 if (threeDown && !was3) { architectureMode = ArchitectureKind.Path; placingObject = false; }
                 if (fourDown && !was4) { architectureMode = ArchitectureKind.Door; placingObject = false; }
                 if (fiveDown && !was5) { architectureMode = ArchitectureKind.Conduit; placingObject = false; }
-                if (objectDown && !wasObject) { placingObject = !placingObject; if (placingObject) architectureMode = ArchitectureKind.None; }
+                if (objectDown && !wasObject) { placingObject = !placingObject; if (placingObject) { architectureMode = ArchitectureKind.None; selectedCatalogBuildingId = null; if (objectType == PlaceableKind.IndustryBuilding) objectType = PlaceableKind.Workbench; } }
                 if (tabDown && !wasTab)
                 {
                     objectType = NextPlaceable(objectType);
+                    selectedCatalogBuildingId = null;
                     placingObject = true;
                     architectureMode = ArchitectureKind.None;
                 }
@@ -248,7 +251,7 @@ internal static class Program
                                         if (action >= 0 && action < 5)
                                         {
                                             architectureMode = action switch { 0 => ArchitectureKind.Wall, 1 => ArchitectureKind.Floor, 2 => ArchitectureKind.Path, 3 => ArchitectureKind.Door, _ => ArchitectureKind.Conduit };
-                                            placingObject = false; managementOpen = false;
+                                            placingObject = false; selectedCatalogBuildingId = null; managementOpen = false;
                                         }
                                         else if (action >= 5 && action < 12)
                                         {
@@ -258,9 +261,29 @@ internal static class Program
                                                 8 => PlaceableKind.Generator, 9 => PlaceableKind.Garden, 10 => PlaceableKind.Habitat,
                                                 _ => PlaceableKind.Stockpile
                                             };
+                                            selectedCatalogBuildingId = null;
                                             placingObject = true; architectureMode = ArchitectureKind.None; managementOpen = false;
                                         }
                                     }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
+                                             logicalMouse.Y >= 416 && logicalMouse.Y < 616)
+                                    {
+                                        int index = (int)((logicalMouse.Y - 416) / 40);
+                                        var building = simulation.ManagementBuildings(catalogBuildingPage).ElementAtOrDefault(index);
+                                        if (building == null) simulation.SetMessage("No catalogue building is listed at that position.");
+                                        else if (!simulation.CanPlaceCatalogBuilding(building.Id, out string buildingReason)) simulation.SetMessage(buildingReason);
+                                        else
+                                        {
+                                            selectedCatalogBuildingId = building.Id;
+                                            objectType = PlaceableKind.IndustryBuilding;
+                                            placingObject = true; architectureMode = ArchitectureKind.None; managementOpen = false;
+                                            simulation.SetMessage($"{building.Name} selected. Click clear ground to place its blueprint.");
+                                        }
+                                    }
+                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 840 && logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        catalogBuildingPage = Math.Max(0, catalogBuildingPage - 1);
+                                    else if (logicalMouse.X >= 850 && logicalMouse.X <= 1035 && logicalMouse.Y >= 632 && logicalMouse.Y < 666)
+                                        catalogBuildingPage = Math.Min(simulation.ManagementBuildingPageCount - 1, catalogBuildingPage + 1);
                                     break;
                                 case 5:
                                     if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
@@ -406,7 +429,12 @@ internal static class Program
                         {
                             int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
                             if (commandMode) { simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y); commandMode = false; }
-                            else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
+                            else if (placingObject)
+                             {
+                                 if (objectType == PlaceableKind.IndustryBuilding && selectedCatalogBuildingId != null)
+                                     simulation.PlaceCatalogBuildingBlueprint(selectedCatalogBuildingId, tileX, tileY);
+                                 else simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
+                             }
                             else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
                             else simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                         }
