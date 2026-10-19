@@ -117,7 +117,14 @@ internal static class Program
 
                 if (left && !wasLeft)
                 {
-                    if (inWorldView && worldView)
+                    if (!worldView && Hit(logicalMouse.X, logicalMouse.Y, 920, 660, 1085, 687))
+                    {
+                        int recruited = simulation.RecruitColonists(10);
+                        simulation.SetMessage(recruited > 0
+                            ? $"Recruited {recruited} residents. Population: {simulation.Workers.Count}."
+                            : "Recruitment failed: no walkable ground is available.");
+                    }
+                    else if (inWorldView && worldView)
                     {
                         var hit = world.SpatialWorld.Entities
                             .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))

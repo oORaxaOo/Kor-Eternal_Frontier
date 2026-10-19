@@ -114,6 +114,8 @@ internal sealed class ColonySimulation
     private readonly Dictionary<int, int> _gardenJobsByObject = [];
     private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
+    private int _nextWorkerId = 4;
+    private int _nextSpawnCellIndex = 12 * Width + 14;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
     private int _nextProductionId = 1;
@@ -297,6 +299,7 @@ internal sealed class ColonySimulation
             };
             return restored;
         }));
+        simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
 
         if (!snapshot.InventoryOwnedByWorld)
         {
@@ -386,6 +389,47 @@ internal sealed class ColonySimulation
     /// <summary>Live citizen/job state from the shared colony ecosystem.</summary>
     public CitizenAgent? CitizenForWorker(int workerId) =>
         _citizensByWorker.TryGetValue(workerId, out var citizen) ? citizen : null;
+
+    /// <summary>
+    /// Recruits a batch of named, individually simulated residents. A batch is bounded to keep
+    /// accidental UI calls from freezing a frame; the settlement itself has no small population cap.
+    /// </summary>
+    public int RecruitColonists(int count)
+    {
+        if (count is < 1 or > 1_000)
+            throw new ArgumentOutOfRangeException(nameof(count), "Recruitment batches must contain between 1 and 1,000 colonists.");
+
+        int recruited = 0;
+        int mapArea = Width * Height;
+        for (int requested = 0; requested < count; requested++)
+        {
+            CellPosition? spawn = null;
+            // Rotate across the grid to spread new residents across available ground.
+            // Residents may share a tile; population is not artificially capped by map area.
+            for (int scanned = 0; scanned < mapArea; scanned++)
+            {
+                int index = _nextSpawnCellIndex;
+                _nextSpawnCellIndex = (_nextSpawnCellIndex + 1) % mapArea;
+                var candidate = new CellPosition(index % Width, index / Width);
+                if (!IsWalkable(candidate)) continue;
+                spawn = candidate;
+                break;
+            }
+            if (!spawn.HasValue) break;
+
+            int id = _nextWorkerId++;
+            var cell = spawn.Value;
+            var worker = new ColonyWorker(id, $"Kor-{id:0000}", cell.X + 0.5f, cell.Y + 0.5f, 0f);
+            _workers.Add(worker);
+            _citizensByWorker[id] = _ecosystem.AddCitizen(worker.Name, cell);
+            recruited++;
+        }
+
+        Message = recruited == 0
+            ? "Recruitment failed: no walkable ground is available."
+            : $"Recruited {recruited} colonist{(recruited == 1 ? "" : "s")}. Population: {_workers.Count}.";
+        return recruited;
+    }
 
     private void InitializeEcosystem()
     {
@@ -604,14 +648,23 @@ internal sealed class ColonySimulation
 
     public bool SelectWorkerAt(float worldX, float worldY)
     {
-        var worker = _workers.OrderBy(w => Distance(worldX, worldY, w.X, w.Y)).FirstOrDefault();
-        if (worker == null || Distance(worldX, worldY, worker.X, worker.Y) > 0.65f)
+        // A linear nearest-resident scan avoids sorting the entire population on every click.
+        ColonyWorker? nearest = null;
+        float nearestDistance = float.MaxValue;
+        foreach (var worker in _workers)
+        {
+            float distance = Distance(worldX, worldY, worker.X, worker.Y);
+            if (distance >= nearestDistance) continue;
+            nearest = worker;
+            nearestDistance = distance;
+        }
+        if (nearest == null || nearestDistance > 0.65f)
         {
             SelectedWorkerId = null;
             return false;
         }
-        SelectedWorkerId = worker.Id;
-        Message = $"{worker.Name} selected.";
+        SelectedWorkerId = nearest.Id;
+        Message = $"{nearest.Name} selected.";
         return true;
     }
 

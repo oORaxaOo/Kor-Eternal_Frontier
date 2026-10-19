@@ -124,6 +124,26 @@ internal static class ColonyEcosystemChecks
         Check(populationColony.Citizens.All(resident => resident.Hunger < 100f),
             "all residents should advance through the same population simulation tick");
 
+        var recruitmentSimulation = new ColonySimulation();
+        int recruited = recruitmentSimulation.RecruitColonists(25);
+        Check(recruited == 25 && recruitmentSimulation.Workers.Count == 28,
+            "the colony should recruit real individual residents in batches without a tiny population cap");
+        Check(recruitmentSimulation.Workers.Select(worker => worker.Id).Distinct().Count() == 28 &&
+              recruitmentSimulation.Workers.Select(worker => worker.Name).Distinct().Count() == 28,
+            "recruited residents must receive unique IDs and names");
+        Check(recruitmentSimulation.Workers.Skip(3).All(worker =>
+                recruitmentSimulation.CitizenForWorker(worker.Id) != null),
+            "every recruited resident must be connected to the needs and job simulation");
+        string recruitmentSave = ColonySaveService.Serialize(recruitmentSimulation);
+        var restoredRecruitment = ColonySaveService.Deserialize(recruitmentSave);
+        Check(restoredRecruitment.Workers.Count == 28 &&
+              restoredRecruitment.Workers.Select(worker => worker.Id).Distinct().Count() == 28,
+            "recruited population and unique identities must survive save/load");
+        int afterLoadRecruitment = restoredRecruitment.RecruitColonists(1);
+        Check(afterLoadRecruitment == 1 && restoredRecruitment.Workers.Count == 29 &&
+              restoredRecruitment.Workers.Select(worker => worker.Id).Distinct().Count() == 29,
+            "recruitment after loading must continue the ID sequence without collisions");
+
         var wallGrid = new GridManager(3, 3);
         wallGrid.SetWall(new CellPosition(1, 0));
         wallGrid.SetWall(new CellPosition(0, 1));
