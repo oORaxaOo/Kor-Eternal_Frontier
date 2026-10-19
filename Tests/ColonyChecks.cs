@@ -207,13 +207,13 @@ internal static class ColonyChecks
             "save/load must preserve extracted raw materials in the shared inventory");
         Check(restored.Objects.Any(item => item.CatalogBuildingId == "building.workshop.tier0"),
             "save/load must preserve catalogue building identity and footprint state");
+        Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
+              .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
+            "save/load must preserve worker positions, needs, cargo, and task kinds");
         for (int i = 0; i < 1000; i++) colony.Step(0.1f);
         Check(colony.Objects.Single(item => item.Id == catalogWorkshopId).IsBuilt &&
               colony.MaterialCount("material.masonry.stage0") == 4,
             "catalogue building construction must consume its real stable-ID costs and complete worker labor");
-        Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
-              .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
-            "save/load must preserve worker positions, needs, cargo, and task kinds");
 
         string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "colony.json");
