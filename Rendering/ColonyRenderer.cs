@@ -310,8 +310,8 @@ internal sealed class ColonyRenderer : IDisposable
         }
         else
         {
-            canvas.DrawText($"World pulse {campaign.State.Turn} | S {campaign.State.Supplies} A {campaign.State.Alloy}", 790, 309, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"E {campaign.State.Energy} | K {campaign.State.Knowledge} | Blight {campaign.State.Regions.Count(region => region.Owner == "Blight")}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Settlements {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.Settlement)} | Caravans {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.Caravan)} | Cargo {spatialWorld.Shipments.Count(shipment => shipment.Status == WorldShipmentStatus.InTransit)}", 790, 309, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"World clock {spatialWorld.ClockSeconds / 60:0} min | Blight fronts {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront)}", 790, 326, SKTextAlign.Left, _smallFont, _text);
         }
 
         _text.Color = Gold;
