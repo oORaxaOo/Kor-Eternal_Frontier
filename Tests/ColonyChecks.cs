@@ -113,6 +113,13 @@ internal static class ColonyChecks
         Check(liveCitizen!.Happiness >= 0 && liveCitizen.Happiness <= 100,
             "the live colony HUD must receive bounded citizen mood from the ecosystem");
 
+        liveCitizen.Fatigue = 37.5f;
+        string fatigueSave = ColonySaveService.Serialize(needsColony);
+        var restoredNeedsColony = ColonySaveService.Deserialize(fatigueSave);
+        var restoredCitizen = restoredNeedsColony.CitizenForWorker(needsWorker.Id);
+        Check(restoredCitizen != null && MathF.Abs(restoredCitizen.Fatigue - 37.5f) < 0.001f,
+            "save/load must preserve citizen fatigue instead of resetting population needs");
+
         var gardenColony = new ColonySimulation();
         int gardenFoodBefore = gardenColony.ResourceCount(ResourceKind.Food);
         int liveGardenId = gardenColony.PlaceObjectBlueprint(PlaceableKind.Garden, 24, 17);

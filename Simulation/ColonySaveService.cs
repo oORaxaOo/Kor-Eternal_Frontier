@@ -42,7 +42,7 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
@@ -63,7 +63,7 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion != 1) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion != 2) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -172,7 +172,9 @@ internal sealed class ColonySnapshot
             if (string.IsNullOrWhiteSpace(worker.Name) ||
                 !float.IsFinite(worker.X) || !float.IsFinite(worker.Y) ||
                 worker.X < 0 || worker.Y < 0 || worker.X >= Width || worker.Y >= Height ||
-                !float.IsFinite(worker.Hunger) || worker.Hunger is < 0 or > 100 || worker.CarriedAmount < 0)
+                !float.IsFinite(worker.Hunger) || worker.Hunger is < 0 or > 100 ||
+                !float.IsFinite(worker.CitizenFatigue) || worker.CitizenFatigue is < 0 or > 100 ||
+                worker.CarriedAmount < 0)
                 throw new InvalidDataException("Colony save contains an invalid colonist state.");
             if (worker.CarriedResource.HasValue != (worker.CarriedAmount > 0) ||
                 (worker.CarriedResource.HasValue && !Enum.IsDefined(worker.CarriedResource.Value)))
@@ -289,6 +291,7 @@ internal sealed class ColonyWorkerSnapshot
     public float X { get; set; }
     public float Y { get; set; }
     public float Hunger { get; set; }
+    public float CitizenFatigue { get; set; } = 100f;
     public ResourceKind? CarriedResource { get; set; }
     public int CarriedAmount { get; set; }
     public WorkerTaskSnapshot? Task { get; set; }

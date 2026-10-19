@@ -6,7 +6,7 @@ This module is the first deterministic core for the next colony-simulation slice
 
 - **GridManager** owns a flat GridTile[] array. Each tile has a kind, zone ID, optional resource type, amount, and maximum stack size. Resource-specific stockpile zones must be in-bounds, non-overlapping, and connected through orthogonal neighbours.
 - **Storage reservations** let a workplace reserve output capacity before work begins. CommitReservation converts the reservation into a real stack; CancelReservation releases it. Direct additions and withdrawals are bounded by the same stack and zone rules.
-- **CitizenAgent** stores needs, happiness, position, current job, movement route, and work progress in a lightweight simulation class. Hunger and fatigue are satisfaction values: they decay over time, food is physically withdrawn from a stockpile, and exhausted citizens recover while idle.
+- **CitizenAgent** stores needs, happiness, position, current job, movement route, and work progress in a lightweight simulation class. Citizen fatigue is persisted in the versioned colony snapshot and restored with the worker it belongs to. Hunger and fatigue are satisfaction values: they decay over time, food is physically withdrawn from a stockpile, and exhausted citizens recover while idle.
 - **JobBroker** registers workplaces with worker capacity, output resource, output amount, and work duration. It assigns the nearest available workplace deterministically and releases assignments when a workplace is removed.
 - **ColonyEcosystem** coordinates needs, grid pathfinding, movement, workplace assignment, work completion, and reserved output delivery in a fixed-step update.
 
