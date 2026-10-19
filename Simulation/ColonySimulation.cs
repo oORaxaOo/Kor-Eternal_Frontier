@@ -484,8 +484,8 @@ internal sealed class ColonySimulation
             if (MaterialCount(materialId) >= targetAmount) continue;
             var deposit = _materialDeposits.FirstOrDefault(item => item.MaterialId == materialId && item.Amount > 0);
             if (deposit == null) continue;
-            int activeGatherers = _workers.Count(worker => worker.Task?.Kind == ColonyTaskKind.Gather &&
-                worker.Task.MaterialDepositId == deposit.Id);
+            int activeGatherers = _workers.Count(worker =>
+                worker.Task is { Kind: ColonyTaskKind.Gather } task && task.MaterialDepositId == deposit.Id);
             int cargoInTransit = _workers.Where(worker => worker.CarriedMaterialId == materialId)
                 .Sum(worker => worker.CarriedAmount);
             if (MaterialCount(materialId) + activeGatherers * CarryCapacity + cargoInTransit >= targetAmount) continue;
