@@ -129,11 +129,6 @@ internal static class Program
                             selectedWorldEntityId = hit.Entity.Id;
                             simulation.SetMessage($"Selected world entity: {hit.Entity.Name} ({hit.Entity.Kind}).");
                         }
-                        else if (selectedWorldEntityId.HasValue && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
-                        {
-                            world.SpatialWorld.OrderMove(selectedWorldEntityId.Value, worldMouse.X, worldMouse.Y, 240d);
-                            simulation.SetMessage("Movement order issued in continuous world space.");
-                        }
                     }
                     else if (inWorldView)
                     {
