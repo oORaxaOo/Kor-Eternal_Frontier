@@ -4,7 +4,7 @@ namespace KorTheBlight.Simulation;
 
 internal enum TerrainKind { Ground, Rock, Water }
 internal enum ArchitectureKind { None, Floor, Wall, Door, Path, Conduit }
-internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden }
+internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden, IndustryBuilding }
 internal enum ResourceKind { Wood, Stone, Food, Alloy, Components }
 internal enum ConstructionStatus { Planned, WaitingForMaterials, UnderConstruction, Complete, Blocked }
 internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce }
@@ -39,6 +39,7 @@ internal sealed class PlaceableObjectState(int id, PlaceableKind kind, CellPosit
     public ConstructionStatus Status { get; internal set; } = status;
     public float WorkDone { get; internal set; }
     public int WorkRequired { get; } = workRequired;
+    public string? CatalogBuildingId { get; internal set; }
     public bool IsBuilt => Status == ConstructionStatus.Complete;
 
     public bool Occupies(CellPosition cell) =>
@@ -146,7 +147,10 @@ internal sealed class ColonySimulation
     public int InventoryUsed => _inventory.Values.Sum() + _industryInventory.Values.Sum();
     public int InventoryCapacity =>
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
-        _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
+        _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity) +
+        _objects.Where(item => item.CatalogBuildingId != null && item.IsBuilt)
+            .Sum(item => ProgressionCatalog.Buildings.FirstOrDefault(def => def.Id == item.CatalogBuildingId) is { Family: "storage" } def
+                ? StorageRackCapacity * (def.Era + 1) : 0);
     public int InventoryFreeCapacity => Math.Max(0, InventoryCapacity - InventoryUsed);
     private int UnreservedInventoryFreeCapacity => Math.Max(0, InventoryFreeCapacity - PendingProductionOutputCapacity);
 
@@ -169,6 +173,7 @@ internal sealed class ColonySimulation
         _inventory[ResourceKind.Food] = 32;
         _inventory[ResourceKind.Alloy] = 8;
         _inventory[ResourceKind.Components] = 4;
+        _industryInventory["building_material"] = 8;
 
         AddBuiltObject(PlaceableKind.Habitat, new CellPosition(15, 8), 2, 2);
         AddBuiltObject(PlaceableKind.Stockpile, new CellPosition(18, 8), 3, 2);
@@ -194,7 +199,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 4,
+            SchemaVersion = 5,
             ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
@@ -235,7 +240,7 @@ internal sealed class ColonySimulation
         {
             Id = item.Id, Kind = item.Kind, X = item.Origin.X, Y = item.Origin.Y,
             Width = item.Width, Height = item.Height, Status = item.Status,
-            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired
+            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, CatalogBuildingId = item.CatalogBuildingId, CatalogBuildingId = item.CatalogBuildingId
         }));
         snapshot.Deposits.AddRange(_deposits.Select(deposit => new ResourceDepositSnapshot
         {
@@ -301,7 +306,7 @@ internal sealed class ColonySimulation
         simulation._objects.Clear();
         simulation._objects.AddRange(snapshot.Objects.Select(item => new PlaceableObjectState(
             item.Id, item.Kind, new CellPosition(item.X, item.Y), item.Width, item.Height,
-            item.WorkRequired, item.Status) { WorkDone = item.WorkDone }));
+            item.WorkRequired, item.Status) { WorkDone = item.WorkDone, CatalogBuildingId = item.CatalogBuildingId }));
 
         simulation._deposits.Clear();
         simulation._deposits.AddRange(snapshot.Deposits.Select(deposit => new ResourceDeposit(
@@ -563,6 +568,63 @@ internal sealed class ColonySimulation
         return true;
     }
 
+    public bool CanPlaceCatalogBuilding(string buildingId, out string reason)
+    {
+        var building = ProgressionCatalog.Buildings.FirstOrDefault(item => item.Id == buildingId);
+        if (building == null)
+        {
+            reason = "Unknown catalogue building.";
+            return false;
+        }
+        if (!_researchedProjects.Contains(building.UnlockResearchId))
+        {
+            string projectName = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == building.UnlockResearchId)?.Name ?? building.UnlockResearchId;
+            reason = $"Locked by research: {projectName}.";
+            return false;
+        }
+        reason = "Ready to place.";
+        return true;
+    }
+
+    internal IReadOnlyList<ProgressionCatalog.BuildingDef> ManagementBuildings(int page)
+    {
+        const int pageSize = 5;
+        return ProgressionCatalog.Buildings.OrderBy(item => item.Era)
+            .ThenBy(item => item.Family, StringComparer.Ordinal)
+            .Skip(Math.Max(0, page) * pageSize).Take(pageSize).ToArray();
+    }
+
+    internal int ManagementBuildingPageCount => (ProgressionCatalog.Buildings.Count + 4) / 5;
+
+    public int PlaceCatalogBuildingBlueprint(string buildingId, int x, int y)
+    {
+        if (!CanPlaceCatalogBuilding(buildingId, out string reason))
+        {
+            Message = reason;
+            return 0;
+        }
+        var building = ProgressionCatalog.Buildings.First(item => item.Id == buildingId);
+        int width = (int)Math.Ceiling(Math.Sqrt(building.Footprint));
+        int height = (int)Math.Ceiling(building.Footprint / (double)width);
+        var origin = new CellPosition(x, y);
+        for (int ty = y; ty < y + height; ty++)
+        for (int tx = x; tx < x + width; tx++)
+        {
+            if (!InBounds(tx, ty) || _tiles[tx, ty].Terrain != TerrainKind.Ground ||
+                _tiles[tx, ty].Architecture == ArchitectureKind.Wall ||
+                _tiles[tx, ty].ConstructionOrderId.HasValue || ObjectAt(tx, ty) != null)
+            {
+                Message = "The full catalogue-building footprint must be clear ground.";
+                return 0;
+            }
+        }
+        var item = new PlaceableObjectState(_nextObjectId++, PlaceableKind.IndustryBuilding, origin,
+            width, height, building.Work, ConstructionStatus.Planned) { CatalogBuildingId = building.Id };
+        _objects.Add(item);
+        Message = $"{building.Name} blueprint placed at ({x}, {y}); materials and worker time are still required.";
+        return item.Id;
+    }
+
     public int PlaceObjectBlueprint(PlaceableKind kind, int x, int y)
     {
         if (kind is PlaceableKind.Habitat or PlaceableKind.Stockpile)
@@ -820,18 +882,18 @@ internal sealed class ColonySimulation
     {
         foreach (var item in _objects.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
         {
-            if (!TryGetFootprint(item.Kind, out _, out _, out _)) continue;
+            if (item.CatalogBuildingId == null && !TryGetFootprint(item.Kind, out _, out _, out _)) continue;
             var workCell = FindWorkCell(worker, item.Origin, item.Width, item.Height);
             if (!workCell.HasValue) { item.Status = ConstructionStatus.Blocked; continue; }
-            var cost = ObjectCost(item.Kind);
-            if (!TryConsume(cost))
+            var cost = ObjectMaterialCost(item);
+            if (!TryConsumeMaterials(cost))
             {
                 item.Status = ConstructionStatus.WaitingForMaterials;
                 continue;
             }
             if (!TryFindPath(worker, workCell.Value, out var route))
             {
-                AddMany(cost);
+                AddMaterials(cost);
                 item.Status = ConstructionStatus.WaitingForMaterials;
                 continue;
             }
@@ -869,8 +931,8 @@ internal sealed class ColonySimulation
                 if (ResourceCount(need.Key) < need.Value) required.Add(need.Key);
 
         foreach (var item in _objects.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
-            foreach (var need in ObjectCost(item.Kind))
-                if (ResourceCount(need.Key) < need.Value) required.Add(need.Key);
+            foreach (var need in ObjectMaterialCost(item))
+                if (MaterialCount(need.Key) < need.Value && TryMapLegacyMaterial(need.Key, out var legacy)) required.Add(legacy);
 
         var deposit = _deposits.Where(d => d.Amount > 0 && required.Contains(d.Resource))
             .OrderBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f)).FirstOrDefault();
@@ -1043,7 +1105,9 @@ internal sealed class ColonySimulation
         if (item.WorkDone < item.WorkRequired) return;
         item.Status = ConstructionStatus.Complete;
         worker.Task = null;
-        Message = $"{item.Kind} completed and is now operational.";
+        string completedName = item.CatalogBuildingId == null ? item.Kind.ToString() :
+            ProgressionCatalog.Buildings.FirstOrDefault(def => def.Id == item.CatalogBuildingId)?.Name ?? item.CatalogBuildingId;
+        Message = $"{completedName} completed and is now operational.";
     }
 
     private void WorkOnProduction(ColonyWorker worker, WorkerTask task, float deltaSeconds)
@@ -1263,6 +1327,23 @@ internal sealed class ColonySimulation
         ArchitectureKind.Conduit => new() { [ResourceKind.Alloy] = 1 },
         _ => new()
     };
+
+    private Dictionary<string, int> ObjectMaterialCost(PlaceableObjectState item)
+    {
+        if (item.CatalogBuildingId != null)
+            return ProgressionCatalog.Buildings.First(building => building.Id == item.CatalogBuildingId).Inputs
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        return ObjectCost(item.Kind).ToDictionary(pair => pair.Key switch
+        {
+            ResourceKind.Wood => "wood", ResourceKind.Stone => "stone", ResourceKind.Food => "food",
+            ResourceKind.Alloy => "alloy", ResourceKind.Components => "components", _ => pair.Key.ToString().ToLowerInvariant()
+        }, pair => pair.Value, StringComparer.Ordinal);
+    }
+
+    private void AddMaterials(IReadOnlyDictionary<string, int> materials)
+    {
+        foreach (var (materialId, amount) in materials) AddMaterial(materialId, amount);
+    }
 
     private static Dictionary<ResourceKind, int> ObjectCost(PlaceableKind kind) => kind switch
     {
