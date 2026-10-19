@@ -14,7 +14,6 @@ internal sealed class CampaignSimulation
     public RegionState SelectedRegion => State.Regions.Single(region => region.Id == State.SelectedRegionId);
     public int PendingArmyDestination => State.ArmyDestinationRegionId;
     public string Message => State.LastEvent;
-    public bool HasSave => File.Exists(CampaignSaveService.SavePath);
     public int TacticalGuardianDamage => State.WardProtocolResearched ? 36 : 24;
 
     public CampaignSimulation(int seed)
