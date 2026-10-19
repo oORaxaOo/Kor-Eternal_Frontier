@@ -1,3 +1,5 @@
+using KorTheBlight.WorldModel;
+
 namespace KorTheBlight.Simulation;
 
 internal enum TerrainKind { Ground, Rock, Water }
@@ -105,6 +107,8 @@ internal sealed class ColonySimulation
     private readonly List<ColonyWorker> _workers = [];
     private readonly List<ProductionOrder> _productionOrders = [];
     private readonly Dictionary<ResourceKind, int> _inventory = Enum.GetValues<ResourceKind>().ToDictionary(k => k, _ => 0);
+    private ContinuousWorldState? _sharedInventoryWorld;
+    private long? _sharedInventoryOwnerId;
     private ColonyEcosystem _ecosystem = null!;
     private readonly Dictionary<int, CitizenAgent> _citizensByWorker = [];
     private readonly Dictionary<int, int> _gardenJobsByObject = [];
@@ -127,7 +131,9 @@ internal sealed class ColonySimulation
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _objects.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _productionOrders.Count(x => !x.Complete);
-    public int InventoryUsed => _inventory.Values.Sum();
+    public int InventoryUsed => _sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue
+        ? _inventory.Values.Sum()
+        : (int)Math.Ceiling(_sharedInventoryWorld.InventoryTotalAt(_sharedInventoryOwnerId.Value));
     public int InventoryCapacity =>
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
@@ -227,10 +233,13 @@ internal sealed class ColonySimulation
                 WorkDone = worker.Task.WorkDone, DepositId = worker.Task.DepositId
             }
         }));
-        snapshot.Inventory.AddRange(_inventory.Select(item => new ResourceStackSnapshot
-        {
-            Resource = item.Key, Amount = item.Value
-        }));
+        if (_sharedInventoryWorld == null)
+            snapshot.Inventory.AddRange(_inventory.Select(item => new ResourceStackSnapshot
+            {
+                Resource = item.Key, Amount = item.Value
+            }));
+        else
+            snapshot.InventoryOwnedByWorld = true;
         snapshot.ProductionOrders.AddRange(_productionOrders.Select(order => new ProductionOrderSnapshot
         {
             Id = order.Id, WorkstationId = order.WorkstationId, WorkRequired = order.WorkRequired,
@@ -288,8 +297,11 @@ internal sealed class ColonySimulation
             return restored;
         }));
 
-        simulation._inventory.Clear();
-        foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
+        if (!snapshot.InventoryOwnedByWorld)
+        {
+            simulation._inventory.Clear();
+            foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
+        }
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired)
@@ -308,7 +320,60 @@ internal sealed class ColonySimulation
         return simulation;
     }
 
-    public int ResourceCount(ResourceKind resource) => _inventory.TryGetValue(resource, out int amount) ? amount : 0;
+    public int ResourceCount(ResourceKind resource)
+    {
+        double amount = InventoryAmount(resource);
+        return (int)Math.Floor(amount + 1e-9);
+    }
+
+    /// <summary>
+    /// Makes the settlement ledger the sole authority for colony resources. Standalone colony
+    /// simulations retain an in-memory inventory for isolated tests and tooling.
+    /// </summary>
+    public void BindWorldInventory(ContinuousWorldState world, long settlementId)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        if (!world.Entities.Any(entity => entity.Id == settlementId &&
+                                          entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("The shared inventory owner must be a settlement in this world.", nameof(settlementId));
+
+        _sharedInventoryWorld = world;
+        _sharedInventoryOwnerId = settlementId;
+        _inventory.Clear(); // No second resource balance remains once the canonical ledger is attached.
+        world.SetInventoryCapacity(settlementId, InventoryCapacity);
+
+        // The ecosystem grid is an operational buffer for citizen needs and garden jobs, not a
+        // second authority. Reconcile it from the canonical settlement ledger at bind time.
+        int ledgerFood = ResourceCount(ResourceKind.Food);
+        int gridFood = _ecosystem.Grid.ResourceCount(ResourceKind.Food);
+        if (ledgerFood > gridFood && !_ecosystem.Grid.TryAdd(ResourceKind.Food, ledgerFood - gridFood))
+            throw new InvalidOperationException("The ecosystem food buffer cannot mirror the settlement ledger.");
+        if (gridFood > ledgerFood) _ecosystem.Grid.TryTake(ResourceKind.Food, gridFood - ledgerFood);
+    }
+
+    private double InventoryAmount(ResourceKind resource)
+    {
+        if (_sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue)
+            return _inventory.GetValueOrDefault(resource);
+        var worldResource = Enum.Parse<WorldResourceKind>(resource.ToString(), ignoreCase: false);
+        return _sharedInventoryWorld.InventoryAt(_sharedInventoryOwnerId.Value, worldResource);
+    }
+
+    private void AdjustResource(ResourceKind resource, int delta)
+    {
+        if (_sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue)
+        {
+            _inventory[resource] = checked(ResourceCount(resource) + delta);
+            return;
+        }
+
+        var worldResource = Enum.Parse<WorldResourceKind>(resource.ToString(), ignoreCase: false);
+        bool changed = delta > 0
+            ? _sharedInventoryWorld.TryAddInventory(_sharedInventoryOwnerId.Value, worldResource, delta)
+            : _sharedInventoryWorld.TryTakeInventory(_sharedInventoryOwnerId.Value, worldResource, -delta);
+        if (!changed)
+            throw new InvalidOperationException("The canonical resource ledger rejected an invalid or over-capacity adjustment.");
+    }
 
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
 
@@ -410,13 +475,13 @@ internal sealed class ColonySimulation
         if (afterFood < beforeFood)
         {
             int consumed = beforeFood - afterFood;
-            _inventory[ResourceKind.Food] = Math.Max(0, ResourceCount(ResourceKind.Food) - consumed);
+            AdjustResource(ResourceKind.Food, -consumed);
         }
         else if (afterFood > beforeFood)
         {
             int produced = afterFood - beforeFood;
             int accepted = Math.Min(produced, InventoryFreeCapacity);
-            if (accepted > 0) _inventory[ResourceKind.Food] = checked(ResourceCount(ResourceKind.Food) + accepted);
+            if (accepted > 0) AdjustResource(ResourceKind.Food, accepted);
             if (accepted < produced) grid.TryTake(ResourceKind.Food, produced - accepted);
         }
 
@@ -1004,20 +1069,20 @@ internal sealed class ColonySimulation
     private bool TryConsume(Dictionary<ResourceKind, int> costs)
     {
         if (costs.Any(x => x.Value < 0 || ResourceCount(x.Key) < x.Value)) return false;
-        foreach (var (resource, amount) in costs) _inventory[resource] -= amount;
+        foreach (var (resource, amount) in costs) AdjustResource(resource, -amount);
         return true;
     }
 
     private bool TryTake(ResourceKind resource, int amount)
     {
         if (amount < 0 || ResourceCount(resource) < amount) return false;
-        _inventory[resource] -= amount;
+        AdjustResource(resource, -amount);
         return true;
     }
 
     private void AddResource(ResourceKind resource, int amount)
     {
-        if (amount > 0) _inventory[resource] = checked(ResourceCount(resource) + amount);
+        if (amount > 0) AdjustResource(resource, amount);
     }
 
     private void AddMany(Dictionary<ResourceKind, int> costs)

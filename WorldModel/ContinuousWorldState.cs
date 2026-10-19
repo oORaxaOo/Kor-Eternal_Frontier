@@ -58,6 +58,7 @@ internal sealed class ContinuousWorldState
     public long NextShipmentId { get; set; } = 1;
     public List<WorldEntityState> Entities { get; set; } = [];
     public Dictionary<long, Dictionary<WorldResourceKind, double>> Inventories { get; set; } = [];
+    public Dictionary<long, double> InventoryCapacities { get; set; } = [];
     public List<WorldShipmentState> Shipments { get; set; } = [];
 
     public static ContinuousWorldState Generate(int seed)
@@ -67,10 +68,14 @@ internal sealed class ContinuousWorldState
         var morrowstead = state.AddEntity(WorldEntityKind.Settlement, "Morrowstead", "Neutral", 54_200, 47_800);
         var vesper = state.AddEntity(WorldEntityKind.Settlement, "Vesper Crossing", "Neutral", 45_700, 53_600);
         var ironwood = state.AddEntity(WorldEntityKind.Settlement, "Ironwood Enclave", "Neutral", 58_600, 54_100);
-        state.Inventories[korHome.Id] = new() { [WorldResourceKind.Wood] = 200, [WorldResourceKind.Stone] = 80, [WorldResourceKind.Food] = 120, [WorldResourceKind.Alloy] = 25 };
+        state.Inventories[korHome.Id] = new() { [WorldResourceKind.Wood] = 20, [WorldResourceKind.Stone] = 14, [WorldResourceKind.Food] = 32, [WorldResourceKind.Alloy] = 8, [WorldResourceKind.Components] = 4 };
         state.Inventories[morrowstead.Id] = new() { [WorldResourceKind.Food] = 90, [WorldResourceKind.Stone] = 35 };
         state.Inventories[vesper.Id] = new() { [WorldResourceKind.Wood] = 75, [WorldResourceKind.Food] = 60 };
         state.Inventories[ironwood.Id] = new() { [WorldResourceKind.Alloy] = 45, [WorldResourceKind.Stone] = 70 };
+        state.InventoryCapacities[korHome.Id] = 120;
+        state.InventoryCapacities[morrowstead.Id] = 500;
+        state.InventoryCapacities[vesper.Id] = 500;
+        state.InventoryCapacities[ironwood.Id] = 500;
         state.AddEntity(WorldEntityKind.ResourceSite, "Westwood Deposit", "Neutral", 48_200, 51_900);
         state.AddEntity(WorldEntityKind.BlightFront, "Blight Expanse", "Blight", 64_000, 46_500);
         state.AddEntity(WorldEntityKind.Army, "Kor Vanguard", "Kor", 51_200, 50_800);
@@ -126,7 +131,9 @@ internal sealed class ContinuousWorldState
         {
             var inventory = InventoryFor(settlement.Id);
             double foodRate = settlement.Faction == "Blight" ? 0d : settlement.Faction == "Kor" ? 0.04d : 0.02d;
-            inventory[WorldResourceKind.Food] = inventory.GetValueOrDefault(WorldResourceKind.Food) + foodRate * deltaSeconds;
+            double freeCapacity = Math.Max(0d, InventoryCapacityFor(settlement.Id) - inventory.Values.Sum());
+            double producedFood = Math.Min(foodRate * deltaSeconds, freeCapacity);
+            inventory[WorldResourceKind.Food] = inventory.GetValueOrDefault(WorldResourceKind.Food) + producedFood;
         }
         var activeCarriers = Shipments.Where(shipment => shipment.Status == WorldShipmentStatus.InTransit).Select(shipment => shipment.CarrierEntityId).ToHashSet();
         foreach (var entity in Entities.Where(candidate => candidate.IsMoving && !activeCarriers.Contains(candidate.Id)))
@@ -162,8 +169,13 @@ internal sealed class ContinuousWorldState
                 shipment.X = shipment.DestinationX; shipment.Y = shipment.DestinationY;
                 carrier.X = shipment.X; carrier.Y = shipment.Y;
                 carrier.DestinationX = null; carrier.DestinationY = null; carrier.MovementSpeed = 0;
-                var inventory = InventoryFor(shipment.DestinationEntityId);
-                inventory[shipment.Resource] = inventory.GetValueOrDefault(shipment.Resource) + shipment.Amount;
+                if (!TryAddInventory(shipment.DestinationEntityId, shipment.Resource, shipment.Amount))
+                {
+                    // Keep the shipment and carrier at the destination until storage has room.
+                    shipment.X = shipment.DestinationX; shipment.Y = shipment.DestinationY;
+                    carrier.X = shipment.X; carrier.Y = shipment.Y;
+                    continue;
+                }
                 shipment.Status = WorldShipmentStatus.Delivered;
             }
             else
@@ -178,6 +190,48 @@ internal sealed class ContinuousWorldState
     public double InventoryAt(long entityId, WorldResourceKind resource)
         => Inventories.TryGetValue(entityId, out var inventory) ? inventory.GetValueOrDefault(resource) : 0d;
 
+    public double InventoryTotalAt(long entityId)
+        => Inventories.TryGetValue(entityId, out var inventory) ? inventory.Values.Sum() : 0d;
+
+    public double InventoryCapacityFor(long entityId)
+        => InventoryCapacities.GetValueOrDefault(entityId, 500d);
+
+    public void SetInventoryCapacity(long entityId, double capacity)
+    {
+        if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("Inventory capacity can only be assigned to a settlement.", nameof(entityId));
+        if (!double.IsFinite(capacity) || capacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(capacity), "Inventory capacity must be finite and non-negative.");
+        InventoryCapacities[entityId] = capacity;
+    }
+
+    public bool TryAddInventory(long entityId, WorldResourceKind resource, double amount)
+    {
+        if (!double.IsFinite(amount) || amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Inventory additions must be finite and non-negative.");
+        if (!Enum.IsDefined(resource)) throw new ArgumentOutOfRangeException(nameof(resource));
+        if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("Inventory owner must be a settlement.", nameof(entityId));
+        var inventory = InventoryFor(entityId);
+        if (inventory.Values.Sum() + amount > InventoryCapacityFor(entityId) + 1e-9) return false;
+        inventory[resource] = inventory.GetValueOrDefault(resource) + amount;
+        return true;
+    }
+
+    public bool TryTakeInventory(long entityId, WorldResourceKind resource, double amount)
+    {
+        if (!double.IsFinite(amount) || amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Inventory removals must be finite and non-negative.");
+        if (!Enum.IsDefined(resource)) throw new ArgumentOutOfRangeException(nameof(resource));
+        if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("Inventory owner must be a settlement.", nameof(entityId));
+        var inventory = InventoryFor(entityId);
+        double available = inventory.GetValueOrDefault(resource);
+        if (available + 1e-9 < amount) return false;
+        inventory[resource] = Math.Max(0d, available - amount);
+        return true;
+    }
+
     public bool CreateShipment(long carrierEntityId, long originEntityId, long destinationEntityId, WorldResourceKind resource, double amount, double speed)
     {
         if (!double.IsFinite(amount) || amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), "Shipment amount must be finite and positive.");
@@ -190,10 +244,7 @@ internal sealed class ContinuousWorldState
             throw new ArgumentException("A shipment requires a caravan and two settlement endpoints.");
         if (Shipments.Any(shipment => shipment.CarrierEntityId == carrierEntityId && shipment.Status == WorldShipmentStatus.InTransit))
             throw new InvalidOperationException("A caravan can carry only one active shipment.");
-        var sourceInventory = InventoryFor(originEntityId);
-        double available = sourceInventory.GetValueOrDefault(resource);
-        if (available < amount) return false;
-        sourceInventory[resource] = available - amount;
+        if (!TryTakeInventory(originEntityId, resource, amount)) return false;
         carrier.X = origin.X; carrier.Y = origin.Y;
         carrier.DestinationX = destination.X; carrier.DestinationY = destination.Y; carrier.MovementSpeed = speed;
         Shipments.Add(new WorldShipmentState
@@ -258,6 +309,8 @@ internal sealed class ContinuousWorldState
         var entityIds = Entities.Select(entity => entity.Id).ToHashSet();
         if (Inventories.Any(pair => !entityIds.Contains(pair.Key) || pair.Value.Any(item => !Enum.IsDefined(item.Key) || !double.IsFinite(item.Value) || item.Value < 0)))
             throw new InvalidDataException("World inventory contains an invalid owner or quantity.");
+        if (InventoryCapacities.Any(pair => !entityIds.Contains(pair.Key) || !double.IsFinite(pair.Value) || pair.Value < 0))
+            throw new InvalidDataException("World inventory capacity contains an invalid owner or quantity.");
         if (Shipments.Select(shipment => shipment.Id).Distinct().Count() != Shipments.Count || NextShipmentId <= Shipments.Select(shipment => shipment.Id).DefaultIfEmpty(0).Max())
             throw new InvalidDataException("World shipment IDs are invalid.");
         foreach (var shipment in Shipments)

@@ -1,4 +1,3 @@
-using KorTheBlight.Campaign;
 using KorTheBlight.Simulation;
 using KorTheBlight.WorldModel;
 
@@ -9,25 +8,23 @@ internal static class WorldSimulationChecks
     public static void Run()
     {
         var world = new WorldSimulation(seed: 70241);
-        int initialTurn = world.World.State.Turn;
-        int initialSupplies = world.World.State.Supplies;
         var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
-        double initialFood = world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food);
+        Check(world.Colony.ResourceCount(ResourceKind.Wood) ==
+              world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood),
+            "colony and strategic world must read the same authoritative resource balance");
 
         world.Step(10f);
-        Check(world.World.State.Turn == initialTurn && world.World.State.Supplies == initialSupplies,
-            "legacy regional turn state must no longer advance in the active simulation");
         Check(world.ElapsedSeconds > 0,
             "the unified simulation clock must advance");
-        Check(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food) > initialFood,
-            "settlement production must integrate continuously against elapsed world time");
+        Check(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food) >= 0 &&
+              world.Colony.ResourceCount(ResourceKind.Food) == (int)Math.Floor(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food)),
+            "colony food needs and continuous settlement production must use the same ledger balance");
 
         world.IsPaused = true;
         double elapsed = world.ElapsedSeconds;
-        int pausedTurn = world.World.State.Turn;
         world.Step(5f);
-        Check(world.ElapsedSeconds == elapsed && world.World.State.Turn == pausedTurn,
-            "paused world must not advance either clock");
+        Check(world.ElapsedSeconds == elapsed,
+            "paused world must not advance the unified clock");
 
         world.IsPaused = false;
         world.SetSpeed(2f);
@@ -37,6 +34,13 @@ internal static class WorldSimulationChecks
 
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
+
+        var caravan = world.SpatialWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
+        var destination = world.SpatialWorld.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+        Check(world.SpatialWorld.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 5, 1_000),
+            "the canonical home ledger must fund a strategic shipment");
+        Check(world.Colony.ResourceCount(ResourceKind.Wood) == 15,
+            "strategic shipment dispatch must immediately debit the same balance used by colony gameplay");
 
         Check(world.SpatialWorld.OrderMove(home.Id, home.X + 100, home.Y, 10),
             "unified world must expose continuous entity movement");
@@ -51,6 +55,8 @@ internal static class WorldSimulationChecks
         Check(Math.Abs(world.ElapsedSeconds - savedClock) < 0.0001 &&
               Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001,
             "restoring a session must restore the one continuous world clock");
+        Check(world.Colony.ResourceCount(ResourceKind.Wood) == 15,
+            "session persistence must store the shared resource balance only once and restore it into both views");
     }
 
     private static void Check(bool condition, string reason)

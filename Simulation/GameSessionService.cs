@@ -1,10 +1,9 @@
 using System.Text.Json;
-using KorTheBlight.Simulation;
 using KorTheBlight.WorldModel;
 
-namespace KorTheBlight.Campaign;
+namespace KorTheBlight.Simulation;
 
-/// <summary>Atomic, versioned save envelope for the local settlement and continuous world state.</summary>
+/// <summary>Atomic save envelope for the complete, canonical real-time world session.</summary>
 internal static class GameSessionService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -19,30 +18,20 @@ internal static class GameSessionService
         }
     }
 
-    /// <summary>Compatibility entry point for callers that do not yet own a WorldSimulation.</summary>
-    public static string Serialize(ColonySimulation colony, CampaignSimulation campaign)
-    {
-        ArgumentNullException.ThrowIfNull(campaign);
-        return Serialize(colony, campaign, ContinuousWorldState.Generate(campaign.State.Seed));
-    }
-
     public static string Serialize(WorldSimulation world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        return Serialize(world.Colony, world.World, world.SpatialWorld);
+        return Serialize(world.Colony, world.SpatialWorld);
     }
 
-    public static string Serialize(ColonySimulation colony, CampaignSimulation campaign, ContinuousWorldState continuousWorld)
+    public static string Serialize(ColonySimulation colony, ContinuousWorldState continuousWorld)
     {
         ArgumentNullException.ThrowIfNull(colony);
-        ArgumentNullException.ThrowIfNull(campaign);
         ArgumentNullException.ThrowIfNull(continuousWorld);
-        // Validate each subsystem before committing one atomic session snapshot.
         return JsonSerializer.Serialize(new SessionEnvelope
         {
-            SchemaVersion = 2,
+            SchemaVersion = 1,
             ColonyJson = ColonySaveService.Serialize(colony),
-            CampaignJson = CampaignSaveService.Serialize(campaign.State),
             ContinuousWorldJson = ContinuousWorldState.Serialize(continuousWorld)
         }, JsonOptions);
     }
@@ -61,19 +50,17 @@ internal static class GameSessionService
             throw new InvalidDataException($"Game session save is not valid JSON: {error.Message}", error);
         }
 
-        if (envelope.SchemaVersion is not (1 or 2))
+        if (envelope.SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported game session schema version: {envelope.SchemaVersion}.");
-        if (string.IsNullOrWhiteSpace(envelope.ColonyJson) || string.IsNullOrWhiteSpace(envelope.CampaignJson))
-            throw new InvalidDataException("Game session is missing its colony or legacy migration state.");
+        if (string.IsNullOrWhiteSpace(envelope.ColonyJson) || string.IsNullOrWhiteSpace(envelope.ContinuousWorldJson))
+            throw new InvalidDataException("Game session is missing its colony or continuous world state.");
 
         var colony = ColonySaveService.Deserialize(envelope.ColonyJson);
-        var campaign = new CampaignSimulation(CampaignSaveService.Deserialize(envelope.CampaignJson));
-        // Version 1 saves predate continuous world-space entities. Migrate them deterministically
-        // from the existing seed instead of trying to reinterpret hex adjacency as world geometry.
-        var continuousWorld = envelope.SchemaVersion == 1 || string.IsNullOrWhiteSpace(envelope.ContinuousWorldJson)
-            ? ContinuousWorldState.Generate(campaign.State.Seed)
-            : ContinuousWorldState.Deserialize(envelope.ContinuousWorldJson);
-        return new LoadedGameSession(colony, campaign, continuousWorld);
+        var continuousWorld = ContinuousWorldState.Deserialize(envelope.ContinuousWorldJson);
+        var home = continuousWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        colony.BindWorldInventory(continuousWorld, home.Id);
+        return new LoadedGameSession(colony, continuousWorld);
     }
 
     public static void Save(WorldSimulation world, string? path = null)
@@ -81,10 +68,6 @@ internal static class GameSessionService
         ArgumentNullException.ThrowIfNull(world);
         SaveJson(Serialize(world), path);
     }
-
-    /// <summary>Compatibility entry point; new gameplay must save the complete WorldSimulation.</summary>
-    public static void Save(ColonySimulation colony, CampaignSimulation campaign, string? path = null)
-        => SaveJson(Serialize(colony, campaign), path);
 
     private static void SaveJson(string json, string? path)
     {
@@ -113,14 +96,12 @@ internal static class GameSessionService
 
     private sealed class SessionEnvelope
     {
-        public int SchemaVersion { get; set; } = 2;
+        public int SchemaVersion { get; set; } = 1;
         public string ColonyJson { get; set; } = string.Empty;
-        public string CampaignJson { get; set; } = string.Empty;
         public string ContinuousWorldJson { get; set; } = string.Empty;
     }
 }
 
 internal sealed record LoadedGameSession(
     ColonySimulation Colony,
-    CampaignSimulation Campaign,
     ContinuousWorldState ContinuousWorld);

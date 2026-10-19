@@ -33,9 +33,9 @@ internal static class ContinuousWorldChecks
         var destination = world.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
         var caravan = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
         double woodBefore = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
-        Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 50, 1_000),
+        Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 10, 1_000),
             "a stocked settlement must be able to dispatch a real cargo shipment");
-        Check(Math.Abs(world.InventoryAt(home.Id, WorldResourceKind.Wood) - 150) < 0.0001 &&
+        Check(Math.Abs(world.InventoryAt(home.Id, WorldResourceKind.Wood) - 10) < 0.0001 &&
               Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood)) < 0.0001,
             "dispatch must reserve cargo at origin and must not teleport it to the destination");
         world.Step(1);
@@ -44,15 +44,29 @@ internal static class ContinuousWorldChecks
         string inTransitJson = ContinuousWorldState.Serialize(world);
         var inTransitRestore = ContinuousWorldState.Deserialize(inTransitJson);
         Check(inTransitRestore.Shipments.Single().Status == WorldShipmentStatus.InTransit &&
-              Math.Abs(inTransitRestore.InventoryAt(home.Id, WorldResourceKind.Wood) - 150) < 0.0001,
+              Math.Abs(inTransitRestore.InventoryAt(home.Id, WorldResourceKind.Wood) - 10) < 0.0001,
             "save/load must preserve in-flight cargo and the origin's already-debited inventory");
         world.Step(10);
         Check(world.Shipments.Single().Status == WorldShipmentStatus.Delivered &&
-              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 50) < 0.0001,
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 10) < 0.0001,
             "cargo must be delivered only after its caravan reaches the destination");
         double woodAfter = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
         Check(Math.Abs(woodBefore - woodAfter) < 0.0001,
             "world shipments must conserve resources across origin, cargo and destination");
+
+        // A full destination must hold the shipment in transit until storage capacity is available.
+        world.SetInventoryCapacity(destination.Id, world.InventoryTotalAt(destination.Id));
+        Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 5, 1_000),
+            "a second shipment must be funded from the same canonical origin ledger");
+        world.Step(10);
+        Check(world.Shipments.Last().Status == WorldShipmentStatus.InTransit &&
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 10) < 0.0001,
+            "cargo must wait at a full destination instead of overfilling or disappearing");
+        world.SetInventoryCapacity(destination.Id, 200);
+        world.Step(0.1);
+        Check(world.Shipments.Last().Status == WorldShipmentStatus.Delivered &&
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 15) < 0.0001,
+            "waiting cargo must be credited once storage capacity becomes available");
 
         string json = ContinuousWorldState.Serialize(world);
         var restored = ContinuousWorldState.Deserialize(json);

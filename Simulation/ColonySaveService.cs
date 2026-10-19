@@ -8,16 +8,6 @@ internal static class ColonySaveService
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
 
-    public static string SavePath
-    {
-        get
-        {
-            string root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-            return Path.Combine(root, "kor-eternal-frontier", "colony.json");
-        }
-    }
-
     public static string Serialize(ColonySimulation simulation)
     {
         ArgumentNullException.ThrowIfNull(simulation);
@@ -42,32 +32,6 @@ internal static class ColonySaveService
         return ColonySimulation.RestoreSnapshot(snapshot);
     }
 
-    public static void Save(ColonySimulation simulation, string? path = null)
-    {
-        string target = path ?? SavePath;
-        string directory = Path.GetDirectoryName(Path.GetFullPath(target))
-            ?? throw new InvalidOperationException("Could not determine the colony save directory.");
-        Directory.CreateDirectory(directory);
-        string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, Serialize(simulation));
-            File.Move(temporary, target, true);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
-    }
-
-    public static ColonySimulation Load(string? path = null)
-    {
-        string target = path ?? SavePath;
-        if (!File.Exists(target))
-            throw new FileNotFoundException("No Kor Eternal Frontier colony save exists yet.", target);
-        return Deserialize(File.ReadAllText(target));
-    }
-
     private static JsonSerializerOptions CreateOptions()
     {
         var options = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = false };
@@ -79,6 +43,7 @@ internal static class ColonySaveService
 internal sealed class ColonySnapshot
 {
     public int SchemaVersion { get; set; } = 1;
+    public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
     public float ElapsedSeconds { get; set; }
@@ -227,18 +192,22 @@ internal sealed class ColonySnapshot
         }
 
         var resourceKinds = Enum.GetValues<ResourceKind>().ToHashSet();
-        if (Inventory.Count != resourceKinds.Count || Inventory.Any(stack =>
-                !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
+        if ((!InventoryOwnedByWorld && Inventory.Count != resourceKinds.Count) ||
+            (InventoryOwnedByWorld && Inventory.Count != 0) ||
+            Inventory.Any(stack => !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
             Inventory.Select(stack => stack.Resource).Distinct().Count() != Inventory.Count)
             throw new InvalidDataException("Colony inventory is incomplete, duplicated, or contains an invalid amount.");
 
-        int availableStorageCapacity =
-            Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
-            Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.StorageRackCapacity);
-        if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
-            throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+        if (!InventoryOwnedByWorld)
+        {
+            int availableStorageCapacity =
+                Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
+                    .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
+                Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
+                    .Sum(_ => ColonySimulation.StorageRackCapacity);
+            if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
+                throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+        }
 
         var productionIds = new HashSet<int>();
         foreach (var order in ProductionOrders)
