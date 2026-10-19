@@ -228,7 +228,7 @@ internal sealed class ColonyRenderer : IDisposable
         _text.Color = Gold;
         canvas.DrawText("STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
         _text.Color = TextColor;
-        canvas.DrawText($"Turn {campaign.State.Turn} | S {campaign.State.Supplies} A {campaign.State.Alloy}", 790, 309, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText($"World pulse {campaign.State.Turn} | S {campaign.State.Supplies} A {campaign.State.Alloy}", 790, 309, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText($"E {campaign.State.Energy} | K {campaign.State.Knowledge} | Blight {campaign.State.Regions.Count(region => region.Owner == "Blight")}", 790, 326, SKTextAlign.Left, _smallFont, _text);
 
         _text.Color = Gold;
@@ -254,7 +254,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText("Left click design/select", 790, 557, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("Right click move/gather", 790, 578, SKTextAlign.Left, _smallFont, _text);
         canvas.DrawText("WASD camera | +/- zoom | Space pause", 790, 599, SKTextAlign.Left, _smallFont, _text);
-        canvas.DrawText("T turn | I import | E export | F5/F9 save", 790, 620, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText("World runs in real time | I/E legacy transfer | F5/F9 save", 790, 620, SKTextAlign.Left, _smallFont, _text);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
