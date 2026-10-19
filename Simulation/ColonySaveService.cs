@@ -296,7 +296,10 @@ internal sealed class ColonySnapshot
             Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
                 .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
             Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.StorageRackCapacity);
+                .Sum(_ => ColonySimulation.StorageRackCapacity) +
+            Objects.Where(item => item.CatalogBuildingId != null && item.Status == ConstructionStatus.Complete)
+                .Sum(item => ProgressionCatalog.Buildings.FirstOrDefault(building => building.Id == item.CatalogBuildingId) is { Family: "storage" } building
+                    ? ColonySimulation.StorageRackCapacity * (building.Era + 1) : 0);
         if (Inventory.Sum(stack => stack.Amount) + Materials.Sum(stack => stack.Amount) > availableStorageCapacity)
             throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
 
