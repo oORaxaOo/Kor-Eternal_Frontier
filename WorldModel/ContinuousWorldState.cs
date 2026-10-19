@@ -121,6 +121,13 @@ internal sealed class ContinuousWorldState
         if (deltaSeconds == 0) return;
 
         ClockSeconds += deltaSeconds;
+        // Continuous settlement food production is integrated directly against elapsed world time.
+        foreach (var settlement in Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement))
+        {
+            var inventory = InventoryFor(settlement.Id);
+            double foodRate = settlement.Faction == "Blight" ? 0d : settlement.Faction == "Kor" ? 0.04d : 0.02d;
+            inventory[WorldResourceKind.Food] = inventory.GetValueOrDefault(WorldResourceKind.Food) + foodRate * deltaSeconds;
+        }
         var activeCarriers = Shipments.Where(shipment => shipment.Status == WorldShipmentStatus.InTransit).Select(shipment => shipment.CarrierEntityId).ToHashSet();
         foreach (var entity in Entities.Where(candidate => candidate.IsMoving && !activeCarriers.Contains(candidate.Id)))
         {
