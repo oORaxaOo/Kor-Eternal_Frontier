@@ -306,6 +306,12 @@ internal static class Program
                                         var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
                                         if (recipe == null)
                                             simulation.SetMessage("No recipe is listed at that position.");
+                                        else if (logicalMouse.Y >= 194 + index * 50 + 25 && logicalMouse.Y < 194 + index * 50 + 46)
+                                        {
+                                            int currentTarget = simulation.ProductionTarget(recipe.Id);
+                                            int nextTarget = currentTarget switch { 0 => 5, 5 => 10, 10 => 20, _ => 0 };
+                                            simulation.SetProductionTarget(recipe.Id, nextTarget);
+                                        }
                                         else if (bench == null)
                                             simulation.SetMessage("Build and complete a Workbench before queuing catalog recipes.");
                                         else
