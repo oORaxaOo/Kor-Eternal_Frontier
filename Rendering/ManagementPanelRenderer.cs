@@ -217,16 +217,18 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Available", campaign.CanResearchWard ? "YES" : "NO — resources missing or already researched", 254, 272);
                 ActionRow(c, campaign.State.WardProtocolResearched ? "Ward Protocol already researched" : "Research Ward Protocol", 254, 316, 365);
                 Note(c, "Select a local research project on the right. Costs are paid from the strategic Knowledge and Energy reserves.", 254, 380, 365);
-                Section(c, "Local technology projects • click to research", 670, 164);
+                Section(c, $"Local technology projects • page {Math.Clamp(researchPage + 1, 1, colony.ManagementResearchPageCount)} / {colony.ManagementResearchPageCount}", 670, 164);
                 int localResearchY = 194;
-                foreach (var project in colony.ManagementResearch)
+                foreach (var project in colony.ManagementResearch(researchPage))
                 {
                     bool canResearch = colony.CanResearchProject(project.Id, campaign, out string researchReason);
                     string status = canResearch ? "READY" : researchReason;
-                    Row(c, project.Name, $"{project.CostKnowledge} Knowledge • {project.CostEnergy} Energy • {status}", 670, localResearchY);
+                    Row(c, project.Name, $"{project.Discipline} • {project.CostKnowledge} Knowledge • {project.CostEnergy} Energy • {status}", 670, localResearchY);
                     localResearchY += 50;
                 }
-                Note(c, $"Completed local technologies: {ProgressionCatalog.Research.Count(project => colony.IsResearchComplete(project.Id))} / {ProgressionCatalog.Research.Count}. Research persists with the colony save.", 670, 610, 365);
+                Note(c, $"Completed local technologies: {ProgressionCatalog.Research.Count(project => colony.IsResearchComplete(project.Id))} / {ProgressionCatalog.Research.Count}.", 670, 600, 365);
+                ActionRow(c, "◀ Previous page", 670, 632, 170);
+                ActionRow(c, "Next page ▶", 850, 632, 185);
                 break;
             case 7:
                 Section(c, "Colony statistics", 254, 164);
