@@ -84,7 +84,7 @@ internal static class ColonyChecks
             "a worker must finish the queued recipe and place the output in inventory");
         Check(!colony.QueueComponentProduction(999999), "production at a missing workstation must be rejected");
 
-        var researchCampaign = CampaignSimulation.Generate(31415);
+        var researchCampaign = new CampaignSimulation(CampaignSimulation.Generate(31415));
         researchCampaign.State.Knowledge = 500;
         researchCampaign.State.Energy = 500;
         const string machineToolsEra0 = "research.industry.machine_tools.era0";
