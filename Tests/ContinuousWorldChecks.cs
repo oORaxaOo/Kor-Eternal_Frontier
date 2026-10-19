@@ -30,6 +30,25 @@ internal static class ContinuousWorldChecks
         Check(world.ClockSeconds == 2,
             "continuous world state must maintain its own serializable simulation clock");
 
+        var destination = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+        var caravan = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
+        double woodBefore = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
+        Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 50, 1_000),
+            "a stocked settlement must be able to dispatch a real cargo shipment");
+        Check(Math.Abs(world.InventoryAt(home.Id, WorldResourceKind.Wood) - 150) < 0.0001 &&
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood)) < 0.0001,
+            "dispatch must reserve cargo at origin and must not teleport it to the destination");
+        world.Step(1);
+        Check(world.Shipments.Single().Status == WorldShipmentStatus.InTransit,
+            "cargo must remain in transit until travel distance is covered");
+        world.Step(10);
+        Check(world.Shipments.Single().Status == WorldShipmentStatus.Delivered &&
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 50) < 0.0001,
+            "cargo must be delivered only after its caravan reaches the destination");
+        double woodAfter = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
+        Check(Math.Abs(woodBefore - woodAfter) < 0.0001,
+            "world shipments must conserve resources across origin, cargo and destination");
+
         string json = ContinuousWorldState.Serialize(world);
         var restored = ContinuousWorldState.Deserialize(json);
         var restoredHome = restored.Entities.Single(entity => entity.Id == home.Id);
