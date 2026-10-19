@@ -196,12 +196,22 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Note(c, "Inputs are reserved when queued; colonists must walk to the Workbench and perform the work.", 670, 602, 365);
                 break;
             case 6:
-                Section(c, "Research projects", 254, 164);
-                Row(c, "Ward Protocol", campaign.State.WardProtocolResearched ? "RESEARCHED" : "Unlocks stronger guardians and slows Blight spread", 254, 194);
+                Section(c, "Strategic research", 254, 164);
+                Row(c, "Ward Protocol", campaign.State.WardProtocolResearched ? "RESEARCHED" : "Slows Blight spread and strengthens guardians", 254, 194);
                 Pair(c, "Cost", "30 Knowledge + 20 Energy", 254, 246);
                 Pair(c, "Available", campaign.CanResearchWard ? "YES" : "NO — resources missing or already researched", 254, 272);
-                ActionRow(c, campaign.State.WardProtocolResearched ? "Ward Protocol already researched" : "Research Ward Protocol", 254, 316, 790);
-                Note(c, "The research catalog currently contains one implemented strategic project. Local unlock trees and building prerequisites are not implemented yet.", 254, 380, 790);
+                ActionRow(c, campaign.State.WardProtocolResearched ? "Ward Protocol already researched" : "Research Ward Protocol", 254, 316, 365);
+                Note(c, "Select a local research project on the right. Costs are paid from the strategic Knowledge and Energy reserves.", 254, 380, 365);
+                Section(c, "Local technology projects • click to research", 670, 164);
+                int localResearchY = 194;
+                foreach (var project in colony.ManagementResearch)
+                {
+                    bool canResearch = colony.CanResearchProject(project.Id, campaign, out string researchReason);
+                    string status = canResearch ? "READY" : researchReason;
+                    Row(c, project.Name, $"{project.CostKnowledge} Knowledge • {project.CostEnergy} Energy • {status}", 670, localResearchY);
+                    localResearchY += 50;
+                }
+                Note(c, $"Completed local technologies: {ProgressionCatalog.Research.Count(project => colony.IsResearchComplete(project.Id))} / {ProgressionCatalog.Research.Count}. Research persists with the colony save.", 670, 610, 365);
                 break;
             case 7:
                 Section(c, "Colony statistics", 254, 164);
@@ -259,7 +269,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Unit variants", ProgressionCatalog.Units.Count.ToString(), 254, 268);
                 Pair(c, "Production recipes", ProgressionCatalog.Recipes.Count.ToString(), 254, 294);
                 Pair(c, "Total linked definitions", ProgressionCatalog.TotalDefinitions.ToString(), 254, 320);
-                Note(c, "Stable-ID material stock, live recipe queues and save/load support are now connected. Research unlocks and advanced extraction remain next.", 254, 362, 385);
+                Note(c, "Local research now consumes strategic Knowledge and Energy, persists with the colony, and gates production recipes by technology prerequisites.", 254, 362, 385);
                 Section(c, "Starter production chains", 670, 164);
                 int chainY = 194;
                 var materialNames = ProgressionCatalog.Resources.ToDictionary(r => r.Id, r => r.Name, StringComparer.Ordinal);
