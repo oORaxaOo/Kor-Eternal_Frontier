@@ -240,7 +240,7 @@ internal sealed class ColonySimulation
         {
             Id = item.Id, Kind = item.Kind, X = item.Origin.X, Y = item.Origin.Y,
             Width = item.Width, Height = item.Height, Status = item.Status,
-            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, CatalogBuildingId = item.CatalogBuildingId, CatalogBuildingId = item.CatalogBuildingId
+            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, CatalogBuildingId = item.CatalogBuildingId
         }));
         snapshot.Deposits.AddRange(_deposits.Select(deposit => new ResourceDepositSnapshot
         {
