@@ -25,7 +25,8 @@ internal sealed class ManagementPanelRenderer : IDisposable
     public static string[] PageNames => Pages;
 
     public void Draw(SKCanvas canvas, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage = 0,
+        int researchCatalogPage = 0, int catalogUnitPage = 0)
     {
         if (page <= 0) return;
         page = Math.Clamp(page, 1, Pages.Length);
@@ -52,12 +53,12 @@ internal sealed class ManagementPanelRenderer : IDisposable
         canvas.DrawRoundRect(new SKRect(232, 78, 1078, 690), 8, 8, _line);
         Text(canvas, Pages[page - 1].ToUpperInvariant(), 254, 109, _font, Gold);
         Text(canvas, "Select a category on the left. All displayed figures are live simulation values.", 254, 131, _tiny, Muted);
-        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage);
+        DrawPage(canvas, page, colony, campaign, world, worldMapMode, catalogBuildingPage, researchCatalogPage, catalogUnitPage);
         Text(canvas, "CLOSE: click Manage in the top bar  •  All core actions are mouse-accessible", 254, 674, _tiny, Muted);
     }
 
     private void DrawPage(SKCanvas c, int page, ColonySimulation colony, CampaignSimulation campaign,
-        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage)
+        WorldMapSimulation world, bool worldMapMode, int catalogBuildingPage, int researchCatalogPage, int catalogUnitPage)
     {
         switch (page)
         {
@@ -219,7 +220,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Note(c, "Select a local research project on the right. Costs are paid from the strategic Knowledge and Energy reserves.", 254, 380, 365);
                 Section(c, "Local technology projects • click to research", 670, 164);
                 int localResearchY = 194;
-                foreach (var project in colony.ManagementResearch)
+                foreach (var project in colony.ManagementResearch(researchCatalogPage))
                 {
                     bool canResearch = colony.CanResearchProject(project.Id, campaign, out string researchReason);
                     string status = canResearch ? "READY" : researchReason;
@@ -227,6 +228,8 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     localResearchY += 50;
                 }
                 Note(c, $"Completed local technologies: {ProgressionCatalog.Research.Count(project => colony.IsResearchComplete(project.Id))} / {ProgressionCatalog.Research.Count}. Research persists with the colony save.", 670, 610, 365);
+                ActionRow(c, "◀ Previous page", 670, 632, 170);
+                ActionRow(c, "Next page ▶", 850, 632, 185);
                 break;
             case 7:
                 Section(c, "Colony statistics", 254, 164);
@@ -284,7 +287,8 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Unit variants", ProgressionCatalog.Units.Count.ToString(), 254, 268);
                 Pair(c, "Production recipes", ProgressionCatalog.Recipes.Count.ToString(), 254, 294);
                 Pair(c, "Total linked definitions", ProgressionCatalog.TotalDefinitions.ToString(), 254, 320);
-                Note(c, "Local research now consumes strategic Knowledge and Energy, persists with the colony, and gates production recipes by technology prerequisites.", 254, 362, 385);
+                Pair(c, "Recruited units / army strength", $"{campaign.State.RecruitedUnits.Count} / {campaign.State.ArmyStrength}", 254, 346);
+                Note(c, "Local research gates production recipes, buildings and unit recruitment. Recruited units add army strength and require upkeep each strategic turn.", 254, 380, 385);
                 Section(c, "Starter production chains", 670, 164);
                 int chainY = 194;
                 var materialNames = ProgressionCatalog.Resources.ToDictionary(r => r.Id, r => r.Name, StringComparer.Ordinal);
@@ -302,18 +306,18 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     Row(c, node.Name, $"{node.CostKnowledge} Knowledge • {node.CostEnergy} Energy • unlock: {node.UnlockKind}", 254, researchY);
                     researchY += 39;
                 }
-                Section(c, "First infrastructure & units", 670, 424);
-                int assetsY = 450;
-                foreach (var item in ProgressionCatalog.Buildings.Where(b => b.Era == 0).Take(3))
+                Section(c, $"Recruit catalogue units • page {catalogUnitPage + 1} / {CampaignColonyBridge.UnitPageCount}", 670, 424);
+                int unitY = 448;
+                foreach (var unit in CampaignColonyBridge.ManagementUnits(catalogUnitPage))
                 {
-                    Row(c, item.Name, $"Footprint {item.Footprint} tiles • work {item.Work} • upkeep: {item.Upkeep}", 670, assetsY);
-                    assetsY += 39;
+                    bool canRecruit = CampaignColonyBridge.CanRecruitUnit(campaign, colony, unit.Id, out string recruitReason);
+                    ActionRow(c, unit.Name, 670, unitY, 365);
+                    Note(c, $"Cost {unit.SupplyCost} Supplies / {unit.AlloyCost} Alloy • upkeep {unit.Upkeep} • {(canRecruit ? "READY TO RECRUIT" : recruitReason)}",
+                        670, unitY + 23, 365);
+                    unitY += 36;
                 }
-                foreach (var item in ProgressionCatalog.Units.Where(u => u.Era == 0).Take(2))
-                {
-                    Row(c, item.Name, $"Cost {item.SupplyCost} supplies / {item.AlloyCost} alloy • upkeep {item.Upkeep}", 670, assetsY);
-                    assetsY += 39;
-                }
+                ActionRow(c, "◀ Previous page", 670, 632, 170);
+                ActionRow(c, "Next page ▶", 850, 632, 185);
                 break;
         }
     }
