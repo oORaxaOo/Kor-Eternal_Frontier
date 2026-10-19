@@ -1,3 +1,5 @@
+using KorTheBlight.Simulation;
+
 namespace KorTheBlight.Campaign;
 
 internal sealed class CampaignSimulation
@@ -78,6 +80,27 @@ internal sealed class CampaignSimulation
         return true;
     }
 
+    public bool RecruitUnit(string unitId)
+    {
+        var unit = ProgressionCatalog.Units.FirstOrDefault(item => item.Id == unitId);
+        if (unit == null)
+        {
+            State.LastEvent = "Recruitment failed: unknown catalogue unit.";
+            return false;
+        }
+        if (State.Supplies < unit.SupplyCost || State.Alloy < unit.AlloyCost)
+        {
+            State.LastEvent = $"Recruitment failed: {unit.Name} needs {unit.SupplyCost} Supplies and {unit.AlloyCost} Alloy.";
+            return false;
+        }
+        State.Supplies -= unit.SupplyCost;
+        State.Alloy -= unit.AlloyCost;
+        State.RecruitedUnits.Add(unit.Id);
+        State.ArmyStrength = checked(State.ArmyStrength + unit.CombatStrength);
+        State.LastEvent = $"Recruited {unit.Name}: +{unit.CombatStrength} army strength. Upkeep {unit.Upkeep} Supplies per turn.";
+        return true;
+    }
+
     public bool CanMarchSelected => SelectedRegion.Id != State.ArmyRegionId &&
         SelectedRegion.Owner != "Blight" && IsAdjacent(State.ArmyRegionId, SelectedRegion.Id) && State.ArmyStrength > 0;
 
@@ -127,7 +150,20 @@ internal sealed class CampaignSimulation
         }
         else
         {
-            State.ArmyStrength = Math.Max(0, State.ArmyStrength - 1);
+            var weakest = State.RecruitedUnits.Select((id, index) => new
+                {
+                    Index = index,
+                    Unit = ProgressionCatalog.Units.First(item => item.Id == id)
+                })
+                .OrderBy(item => item.Unit.CombatStrength)
+                .ThenBy(item => item.Unit.Era)
+                .FirstOrDefault();
+            if (weakest != null)
+            {
+                State.RecruitedUnits.RemoveAt(weakest.Index);
+                State.ArmyStrength = Math.Max(0, State.ArmyStrength - weakest.Unit.CombatStrength);
+            }
+            else State.ArmyStrength = Math.Max(0, State.ArmyStrength - 1);
             State.ArmyReadiness = Math.Max(0, State.ArmyReadiness - 35);
             State.LastEvent = State.ArmyStrength == 0
                 ? $"Defeat at {region.Name}. The field army was lost; rebuild it before another assault."
@@ -159,7 +195,14 @@ internal sealed class CampaignSimulation
             State.ArmyReadiness = Math.Max(25, State.ArmyReadiness - 5);
             State.ArmyDestinationRegionId = -1;
         }
-        if (State.Supplies >= State.ArmyStrength * 5) State.Supplies -= State.ArmyStrength * 5;
+        int recruitedStrength = State.RecruitedUnits.Sum(id =>
+            ProgressionCatalog.Units.First(unit => unit.Id == id).CombatStrength);
+        int unitUpkeep = State.RecruitedUnits.Sum(id =>
+            ProgressionCatalog.Units.First(unit => unit.Id == id).Upkeep);
+        int baseArmyUpkeep = Math.Max(0, State.ArmyStrength - recruitedStrength) * 5;
+        int totalUpkeep = baseArmyUpkeep + unitUpkeep;
+        bool upkeepPaid = State.Supplies >= totalUpkeep;
+        if (upkeepPaid) State.Supplies -= totalUpkeep;
         else State.ArmyReadiness = Math.Max(0, State.ArmyReadiness - 12);
 
         if (State.WardProtocolResearched)
@@ -169,7 +212,7 @@ internal sealed class CampaignSimulation
         if (State.Turn % (State.WardProtocolResearched ? 4 : 2) == 0)
             SpreadBlightOneRegion();
 
-        State.LastEvent = $"Turn {State.Turn}: +{income["Supplies"]} supplies, +{income["Alloy"]} alloy, +{income["Energy"]} energy, +{income["Knowledge"]} knowledge. Army readiness {State.ArmyReadiness}%.";
+        State.LastEvent = $"Turn {State.Turn}: +{income["Supplies"]} supplies, +{income["Alloy"]} alloy, +{income["Energy"]} energy, +{income["Knowledge"]} knowledge. Unit upkeep {unitUpkeep} Supplies; {(upkeepPaid ? "upkeep paid" : "upkeep unpaid")}. Army readiness {State.ArmyReadiness}%.";
     }
 
     private void SpreadBlightOneRegion()
