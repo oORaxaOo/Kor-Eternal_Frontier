@@ -116,8 +116,8 @@ internal static class ColonyChecks
         Check(colony.CanQueueRecipe("recipe.sawmill.stage0", out _),
             "researching Machine Tools Era I should unlock the stage-zero sawmill recipe");
         Check(!colony.CanQueueRecipe("recipe.sawmill.stage1", out string stageOneReason) &&
-              !stageOneReason.Contains("Locked by research", StringComparison.Ordinal),
-            "the next recipe tier should be technology-unlocked but still respect its actual material inputs");
+              stageOneReason.Contains("power capacity", StringComparison.Ordinal),
+            "the next recipe tier should require local power capacity even after its research unlock is complete");
         int woodBeforeRecipe = colony.ResourceCount(ResourceKind.Wood);
         Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage0"),
             "a catalogue recipe should be queueable after its real research prerequisite and material inputs are available");
