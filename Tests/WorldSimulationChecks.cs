@@ -1,4 +1,3 @@
-using KorTheBlight.Campaign;
 using KorTheBlight.Simulation;
 using KorTheBlight.WorldModel;
 
@@ -9,17 +8,12 @@ internal static class WorldSimulationChecks
     public static void Run()
     {
         var world = new WorldSimulation(seed: 70241);
-        int initialTurn = world.World.State.Turn;
-        int initialSupplies = world.World.State.Supplies;
         var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
-        double initialFood = world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food);
         Check(world.Colony.ResourceCount(ResourceKind.Wood) ==
               world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood),
             "colony and strategic world must read the same authoritative resource balance");
 
         world.Step(10f);
-        Check(world.World.State.Turn == initialTurn && world.World.State.Supplies == initialSupplies,
-            "legacy regional turn state must no longer advance in the active simulation");
         Check(world.ElapsedSeconds > 0,
             "the unified simulation clock must advance");
         Check(world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food) >= 0 &&
@@ -28,10 +22,9 @@ internal static class WorldSimulationChecks
 
         world.IsPaused = true;
         double elapsed = world.ElapsedSeconds;
-        int pausedTurn = world.World.State.Turn;
         world.Step(5f);
-        Check(world.ElapsedSeconds == elapsed && world.World.State.Turn == pausedTurn,
-            "paused world must not advance either clock");
+        Check(world.ElapsedSeconds == elapsed,
+            "paused world must not advance the unified clock");
 
         world.IsPaused = false;
         world.SetSpeed(2f);
