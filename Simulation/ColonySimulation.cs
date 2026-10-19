@@ -1,3 +1,5 @@
+using KorTheBlight.Campaign;
+
 namespace KorTheBlight.Simulation;
 
 internal enum TerrainKind { Ground, Rock, Water }
