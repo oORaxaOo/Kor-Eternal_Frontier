@@ -27,7 +27,7 @@ internal static class CampaignChecks
         Check(first.ResearchWard() && first.TacticalGuardianDamage == 36, "Ward research must produce a tactical damage effect");
         first.SelectRegion(4);
         Check(first.OrderMarch(), "adjacent neutral region should accept army march order");
-        var loadedOrder = CampaignSaveService.Deserialize(CampaignSaveService.Serialize(first.State));
+        var loadedOrder = LegacyCampaignPayloadCodec.Deserialize(LegacyCampaignPayloadCodec.Serialize(first.State));
         var resumed = new CampaignSimulation(loadedOrder);
         Check(resumed.PendingArmyDestination == 4, "pending army order must survive save/load");
         resumed.AdvanceWorldInterval();
@@ -44,7 +44,7 @@ internal static class CampaignChecks
         resumed.ResolveBattle(true, 31, 47);
         Check(resumed.State.Regions[3].Owner == "Kor" && resumed.State.ArmyRegionId == 3, "battle victory must change region control and army location");
         Check(resumed.State.Supplies == 31 && resumed.State.Alloy == 47 && resumed.State.ActiveBattleRegionId == -1, "remaining tactical resources must return exactly once");
-        var roundTrip = CampaignSaveService.Deserialize(CampaignSaveService.Serialize(resumed.State));
+        var roundTrip = LegacyCampaignPayloadCodec.Deserialize(LegacyCampaignPayloadCodec.Serialize(resumed.State));
         Check(roundTrip.Regions[3].Owner == "Kor" && roundTrip.Supplies == 31 && roundTrip.Alloy == 47, "campaign save must preserve battle consequences");
     }
 
