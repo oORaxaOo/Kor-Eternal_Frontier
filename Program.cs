@@ -9,6 +9,7 @@ using KorTheBlight.Campaign;
 using KorTheBlight.Rendering;
 using KorTheBlight.Simulation;
 using KorTheBlight.Tests;
+using KorTheBlight.WorldModel;
 using SkiaSharp;
 
 namespace KorTheBlight;
@@ -47,10 +48,12 @@ internal static class Program
             host.RedrawDirtyRectangleOnly = false;
 
             float cameraX = 0, cameraY = 0, zoom = 1;
+            float worldCameraX = (float)(ContinuousWorldState.WorldExtent / 2), worldCameraY = (float)(ContinuousWorldState.WorldExtent / 2);
+            long? selectedWorldEntityId = null;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, paused = false;
-            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, campaign);
+            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, campaign, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId);
             engine = Engine.Instance;
             engine.Initialize();
             engine.Configuration.TargetFPS = 60;
@@ -83,7 +86,10 @@ internal static class Program
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
-                var worldMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                bool worldView = zoom < .65f;
+                var worldMouse = worldView
+                    ? ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, zoom)
+                    : OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
                 bool inWorldView = logicalMouse.X < 770 && logicalMouse.Y >= 62 && logicalMouse.Y < 650;
                 bool left = (buttons & Sdl.ButtonLeftMask) != 0;
                 bool right = (buttons & Sdl.ButtonRightMask) != 0;
@@ -92,8 +98,17 @@ internal static class Program
                 // Middle-mouse drag pans the camera; no keyboard is required for navigation.
                 if (middle && wasMiddle)
                 {
-                    cameraX = Math.Clamp(cameraX - (logicalMouse.X - previousMouseX) / Math.Max(.65f, zoom), -350f, 350f);
-                    cameraY = Math.Clamp(cameraY - (logicalMouse.Y - previousMouseY) / Math.Max(.65f, zoom), -240f, 240f);
+                    if (worldView)
+                    {
+                        float worldScale = ContinuousWorldProjection.Scale(zoom);
+                        worldCameraX = Math.Clamp(worldCameraX - (logicalMouse.X - previousMouseX) / worldScale, 0f, (float)ContinuousWorldState.WorldExtent);
+                        worldCameraY = Math.Clamp(worldCameraY - (logicalMouse.Y - previousMouseY) / worldScale, 0f, (float)ContinuousWorldState.WorldExtent);
+                    }
+                    else
+                    {
+                        cameraX = Math.Clamp(cameraX - (logicalMouse.X - previousMouseX) / Math.Max(.65f, zoom), -350f, 350f);
+                        cameraY = Math.Clamp(cameraY - (logicalMouse.Y - previousMouseY) / Math.Max(.65f, zoom), -240f, 240f);
+                    }
                 }
                 previousMouseX = logicalMouse.X;
                 previousMouseY = logicalMouse.Y;
@@ -101,7 +116,24 @@ internal static class Program
 
                 if (left && !wasLeft)
                 {
-                    if (inWorldView)
+                    if (inWorldView && worldView)
+                    {
+                        var hit = world.SpatialWorld.Entities
+                            .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))
+                            .Select(item => (item.Entity, Distance: MathF.Sqrt(MathF.Pow(item.Screen.X - logicalMouse.X, 2) + MathF.Pow(item.Screen.Y - logicalMouse.Y, 2))))
+                            .Where(item => item.Distance <= 20f).OrderBy(item => item.Distance).FirstOrDefault();
+                        if (hit.Entity != null)
+                        {
+                            selectedWorldEntityId = hit.Entity.Id;
+                            simulation.SetMessage($"Selected world entity: {hit.Entity.Name} ({hit.Entity.Kind}).");
+                        }
+                        else if (selectedWorldEntityId.HasValue && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
+                        {
+                            world.SpatialWorld.OrderMove(selectedWorldEntityId.Value, worldMouse.X, worldMouse.Y, 240d);
+                            simulation.SetMessage("Movement order issued in continuous world space.");
+                        }
+                    }
+                    else if (inWorldView)
                     {
                         int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
                         if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
@@ -152,7 +184,7 @@ internal static class Program
                         }
                         else if (Hit(mx, my, 924, 527, 990, 549))
                         {
-                            zoom = Math.Max(.65f, zoom / 1.15f);
+                            zoom = Math.Max(.08f, zoom / 1.15f);
                         }
                         else if (Hit(mx, my, 994, 527, 1060, 549))
                         {
@@ -176,7 +208,15 @@ internal static class Program
                         }
                     }
                 }
-                if (inWorldView && right && !wasRight) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
+                if (inWorldView && right && !wasRight)
+                {
+                    if (worldView && selectedWorldEntityId.HasValue && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
+                    {
+                        world.SpatialWorld.OrderMove(selectedWorldEntityId.Value, worldMouse.X, worldMouse.Y, 240d);
+                        simulation.SetMessage("World movement order issued.");
+                    }
+                    else if (!worldView) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
+                }
                 wasLeft = left;
                 wasRight = right;
 
