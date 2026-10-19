@@ -35,8 +35,9 @@ internal static class Program
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
 
-            var simulation = new ColonySimulation();
-            var campaign = new CampaignSimulation(70241);
+            var world = new WorldSimulation(70241);
+            var simulation = world.Colony;
+            var campaign = world.World;
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
@@ -60,7 +61,7 @@ internal static class Program
             bool running = true, wasLeft = false, wasRight = false, wasEscape = false;
             bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
             bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
-            bool wasT = false, wasI = false, wasE = false;
+            bool wasI = false, wasE = false;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -77,7 +78,7 @@ internal static class Program
                 accumulator += frame;
                 if (!paused)
                 {
-                    while (accumulator >= .1) { simulation.Step(.1f); accumulator -= .1; }
+                    while (accumulator >= .1) { world.Step(.1f); simulation = world.Colony; campaign = world.World; accumulator -= .1; }
                 }
                 else accumulator = 0;
                 scene.FullRefreshNeeded = true;
@@ -101,7 +102,6 @@ internal static class Program
                 bool spaceDown = IsDown(keys, Sdl.ScancodeSpace);
                 bool f5Down = IsDown(keys, Sdl.ScancodeF5);
                 bool f9Down = IsDown(keys, Sdl.ScancodeF9);
-                bool tDown = IsDown(keys, Sdl.ScancodeT);
                 bool iDown = IsDown(keys, Sdl.ScancodeI);
                 bool eDown = IsDown(keys, Sdl.ScancodeE);
                 bool escapeDown = IsDown(keys, Sdl.ScancodeEscape);
@@ -119,12 +119,7 @@ internal static class Program
                     architectureMode = ArchitectureKind.None;
                 }
                 if (escapeDown && !wasEscape) { architectureMode = ArchitectureKind.None; placingObject = false; }
-                if (spaceDown && !wasSpace) paused = !paused;
-                if (tDown && !wasT)
-                {
-                    try { campaign.EndTurn(); simulation.SetMessage(campaign.Message); }
-                    catch (Exception ex) { simulation.SetMessage($"Campaign turn failed: {ex.Message}"); }
-                }
+                if (spaceDown && !wasSpace) { paused = !paused; world.IsPaused = paused; }
                 if (iDown && !wasI)
                 {
                     try { int moved = CampaignColonyBridge.ImportToColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Resupply unavailable: colony storage may be full."); }
@@ -145,8 +140,9 @@ internal static class Program
                     try
                     {
                         var loaded = GameSessionService.Load();
-                        simulation = loaded.Colony;
-                        campaign = loaded.Campaign;
+                        world.Restore(loaded);
+                        simulation = world.Colony;
+                        campaign = world.World;
                         simulation.SetMessage("Campaign and colony session loaded.");
                     }
                     catch (Exception ex) { simulation.SetMessage($"Session load failed: {ex.Message}"); }
@@ -155,7 +151,7 @@ internal static class Program
                 was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
                 wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
                 wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
-                wasT = tDown; wasI = iDown; wasE = eDown;
+                wasI = iDown; wasE = eDown;
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
