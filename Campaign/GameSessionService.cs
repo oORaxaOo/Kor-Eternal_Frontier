@@ -42,7 +42,7 @@ internal static class GameSessionService
         {
             SchemaVersion = 2,
             ColonyJson = ColonySaveService.Serialize(colony),
-            CampaignJson = CampaignSaveService.Serialize(campaign.State),
+            CampaignJson = LegacyCampaignPayloadCodec.Serialize(campaign.State),
             ContinuousWorldJson = ContinuousWorldState.Serialize(continuousWorld)
         }, JsonOptions);
     }
@@ -67,7 +67,7 @@ internal static class GameSessionService
             throw new InvalidDataException("Game session is missing its colony or legacy migration state.");
 
         var colony = ColonySaveService.Deserialize(envelope.ColonyJson);
-        var campaign = new CampaignSimulation(CampaignSaveService.Deserialize(envelope.CampaignJson));
+        var campaign = new CampaignSimulation(LegacyCampaignPayloadCodec.Deserialize(envelope.CampaignJson));
         // Version 1 saves predate continuous world-space entities. Migrate them deterministically
         // from the existing seed instead of trying to reinterpret hex adjacency as world geometry.
         var continuousWorld = envelope.SchemaVersion == 1 || string.IsNullOrWhiteSpace(envelope.ContinuousWorldJson)
