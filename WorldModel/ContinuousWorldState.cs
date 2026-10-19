@@ -210,6 +210,8 @@ internal sealed class ContinuousWorldState
         if (!double.IsFinite(amount) || amount < 0)
             throw new ArgumentOutOfRangeException(nameof(amount), "Inventory additions must be finite and non-negative.");
         if (!Enum.IsDefined(resource)) throw new ArgumentOutOfRangeException(nameof(resource));
+        if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("Inventory owner must be a settlement.", nameof(entityId));
         var inventory = InventoryFor(entityId);
         if (inventory.Values.Sum() + amount > InventoryCapacityFor(entityId) + 1e-9) return false;
         inventory[resource] = inventory.GetValueOrDefault(resource) + amount;
@@ -221,6 +223,8 @@ internal sealed class ContinuousWorldState
         if (!double.IsFinite(amount) || amount < 0)
             throw new ArgumentOutOfRangeException(nameof(amount), "Inventory removals must be finite and non-negative.");
         if (!Enum.IsDefined(resource)) throw new ArgumentOutOfRangeException(nameof(resource));
+        if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("Inventory owner must be a settlement.", nameof(entityId));
         var inventory = InventoryFor(entityId);
         double available = inventory.GetValueOrDefault(resource);
         if (available + 1e-9 < amount) return false;
