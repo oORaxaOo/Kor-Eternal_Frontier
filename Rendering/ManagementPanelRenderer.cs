@@ -163,7 +163,8 @@ internal sealed class ManagementPanelRenderer : IDisposable
                     string cost = building.Inputs.Count == 0 ? "No material cost" :
                         string.Join(" + ", building.Inputs.Select(item => $"{item.Value} {buildingNames.GetValueOrDefault(item.Key, item.Key)}"));
                     ActionRow(c, building.Name, 670, catalogY, 365);
-                    Note(c, $"Tier {building.Era + 1} • {cost} • {(canPlace ? "READY TO PLACE" : buildingReason)}",
+                    string effect = building.Family == "mine" ? " • Auto-mines nearby sites (1/10s, radius 6)" : "";
+                    Note(c, $"Tier {building.Era + 1} • {cost} • {(canPlace ? "READY TO PLACE" : buildingReason)}{effect}",
                         670, catalogY + 24, 365);
                     catalogY += 40;
                 }
