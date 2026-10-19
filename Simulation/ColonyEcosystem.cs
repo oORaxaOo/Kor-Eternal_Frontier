@@ -393,22 +393,28 @@ internal sealed class JobBroker
 internal sealed class ColonyEcosystem
 {
     private readonly List<CitizenAgent> _citizens = [];
+    private readonly IReadOnlyList<CitizenAgent> _citizenView;
+    private int _nextCitizenId = 1;
     public GridManager Grid { get; }
     public JobBroker JobBroker { get; } = new();
-    public IReadOnlyList<CitizenAgent> Citizens => _citizens.AsReadOnly();
+    // Cache the read-only wrapper: UI, save and simulation code may query this every frame.
+    public IReadOnlyList<CitizenAgent> Citizens => _citizenView;
     public float ElapsedSeconds { get; private set; }
     public string LastEvent { get; private set; } = "Colony systems online.";
 
     public ColonyEcosystem(int width, int height)
     {
         Grid = new GridManager(width, height);
+        _citizenView = _citizens.AsReadOnly();
     }
 
     public CitizenAgent AddCitizen(string name, CellPosition position)
     {
         if (!Grid.InBounds(position) || Grid.TileAt(position)?.Kind == GridTileKind.Wall)
             throw new ArgumentOutOfRangeException(nameof(position), "Citizen spawn must be on a walkable tile.");
-        var citizen = new CitizenAgent(_citizens.Count == 0 ? 1 : _citizens.Max(item => item.Id) + 1, name, position);
+        // Monotonic IDs keep bulk recruitment O(n), rather than rescanning the full population
+        // for every new citizen (which would make creating thousands of residents O(n²)).
+        var citizen = new CitizenAgent(_nextCitizenId++, name, position);
         _citizens.Add(citizen);
         return citizen;
     }
