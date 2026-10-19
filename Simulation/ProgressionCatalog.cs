@@ -228,6 +228,9 @@ internal static class ProgressionCatalog
             if (industry.Id == "masonry") inputs["clay"] = scale;
             if (industry.Id == "metallurgy") inputs["copper_ore"] = scale;
             if (industry.Id == "glass") inputs["sand"] = scale;
+            if (industry.Id == "power" && stage > 0) inputs["fuel"] = scale;
+            if (industry.Id == "medicine") inputs["medicine_precursor"] = scale;
+            if (industry.Id == "containment" && stage >= 5) inputs["exotic_matter"] = stage - 4;
             var outputs = new Dictionary<string, int> { [outputId] = scale * 2 };
             result.Add(new RecipeDef(recipeId, industry.Stages[stage], industry.Name, stage,
                 inputs, outputs, 4 * scale * (stage + 1),
