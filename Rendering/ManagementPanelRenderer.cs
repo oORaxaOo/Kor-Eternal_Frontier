@@ -218,7 +218,7 @@ internal sealed class ManagementPanelRenderer : IDisposable
                 Pair(c, "Available", campaign.CanResearchWard ? "YES" : "NO — resources missing or already researched", 254, 272);
                 ActionRow(c, campaign.State.WardProtocolResearched ? "Ward Protocol already researched" : "Research Ward Protocol", 254, 316, 365);
                 Note(c, "Select a local research project on the right. Costs are paid from the strategic Knowledge and Energy reserves.", 254, 380, 365);
-                Section(c, "Local technology projects • click to research", 670, 164);
+                Section(c, $"Local technology • page {Math.Clamp(researchCatalogPage + 1, 1, colony.ManagementResearchPageCount)} / {colony.ManagementResearchPageCount}", 670, 164);
                 int localResearchY = 194;
                 foreach (var project in colony.ManagementResearch(researchCatalogPage))
                 {
