@@ -160,14 +160,17 @@ internal static class ColonyChecks
         var legacySnapshot = colony.CaptureSnapshot();
         legacySnapshot.SchemaVersion = 1;
         legacySnapshot.Materials.Clear();
+        legacySnapshot.ResearchedProjects.Clear();
         foreach (var order in legacySnapshot.ProductionOrders) order.RecipeId = null;
         string legacyJson = JsonSerializer.Serialize(legacySnapshot)
             .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
+            .Replace(",\"ResearchedProjects\":[]", "", StringComparison.Ordinal)
             .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
         var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
         Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
-              migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0,
-            "schema v1 saves without stable-ID materials or recipe IDs must remain loadable");
+              migratedLegacySave.MaterialCount("material.sawmill.stage0") == 0 &&
+              !migratedLegacySave.IsResearchComplete(machineToolsEra0),
+            "schema v1 saves without stable-ID materials, recipe IDs or a research ledger must remain loadable");
         Check(restored.Workers.Count == colony.Workers.Count, "save/load must preserve the colony population");
         Check(restored.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
               restored.ResourceCount(ResourceKind.Components) == colony.ResourceCount(ResourceKind.Components),
