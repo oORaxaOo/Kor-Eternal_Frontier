@@ -13,6 +13,9 @@ internal static class WorldSimulationChecks
         int initialSupplies = world.World.State.Supplies;
         var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
         double initialFood = world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Food);
+        Check(world.Colony.ResourceCount(ResourceKind.Wood) ==
+              world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood),
+            "colony and strategic world must read the same authoritative resource balance");
 
         world.Step(10f);
         Check(world.World.State.Turn == initialTurn && world.World.State.Supplies == initialSupplies,
@@ -38,6 +41,13 @@ internal static class WorldSimulationChecks
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
 
+        var caravan = world.SpatialWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
+        var destination = world.SpatialWorld.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+        Check(world.SpatialWorld.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 5, 1_000),
+            "the canonical home ledger must fund a strategic shipment");
+        Check(world.Colony.ResourceCount(ResourceKind.Wood) == 15,
+            "strategic shipment dispatch must immediately debit the same balance used by colony gameplay");
+
         Check(world.SpatialWorld.OrderMove(home.Id, home.X + 100, home.Y, 10),
             "unified world must expose continuous entity movement");
         world.Step(0.5f);
@@ -51,6 +61,8 @@ internal static class WorldSimulationChecks
         Check(Math.Abs(world.ElapsedSeconds - savedClock) < 0.0001 &&
               Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001,
             "restoring a session must restore the one continuous world clock");
+        Check(world.Colony.ResourceCount(ResourceKind.Wood) == 15,
+            "session persistence must store the shared resource balance only once and restore it into both views");
     }
 
     private static void Check(bool condition, string reason)
