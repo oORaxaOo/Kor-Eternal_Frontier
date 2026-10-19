@@ -133,6 +133,10 @@ internal sealed class ColonyRenderer : IDisposable
                 "sand" => new SKColor(205, 184, 112),
                 "copper_ore" => new SKColor(190, 113, 76),
                 "silica" => new SKColor(116, 174, 193),
+                "fuel" => new SKColor(74, 77, 84),
+                "medicine_precursor" => new SKColor(101, 175, 143),
+                "blight_sample" => new SKColor(181, 49, 69),
+                "exotic_matter" => new SKColor(118, 88, 190),
                 _ => new SKColor(176, 116, 91)
             };
             canvas.DrawRect(rect, _fill);
@@ -146,6 +150,9 @@ internal sealed class ColonyRenderer : IDisposable
                 "silica" => "Si",
                 "clay" => "Cl",
                 "sand" => "Sa",
+                "medicine_precursor" => "Mp",
+                "blight_sample" => "B",
+                "exotic_matter" => "X",
                 _ => deposit.MaterialId[..1].ToUpperInvariant()
             };
             canvas.DrawText(letter, point.X, point.Y + 4f * zoom, SKTextAlign.Center, _smallFont, _text);
