@@ -123,6 +123,7 @@ internal sealed class ColonySimulation
     private readonly Dictionary<string, int> _industryInventory = new(StringComparer.Ordinal);
     private readonly HashSet<string> _researchedProjects = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _productionTargets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _gatherTargets = new(StringComparer.Ordinal);
     private int _nextOrderId = 1;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
@@ -211,10 +212,12 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 6,
+            SchemaVersion = 7,
             ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
             ProductionTargets = _productionTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
                 .Select(item => new ProductionTargetSnapshot { RecipeId = item.Key, TargetAmount = item.Value }).ToList(),
+            GatherTargets = _gatherTargets.OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new GatherTargetSnapshot { MaterialId = item.Key, TargetAmount = item.Value }).ToList(),
             ElapsedSeconds = ElapsedSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
@@ -359,6 +362,8 @@ internal sealed class ColonySimulation
         foreach (var projectId in snapshot.ResearchedProjects) simulation._researchedProjects.Add(projectId);
         simulation._productionTargets.Clear();
         foreach (var target in snapshot.ProductionTargets) simulation._productionTargets.Add(target.RecipeId, target.TargetAmount);
+        simulation._gatherTargets.Clear();
+        foreach (var target in snapshot.GatherTargets) simulation._gatherTargets.Add(target.MaterialId, target.TargetAmount);
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
@@ -445,6 +450,55 @@ internal sealed class ColonySimulation
     }
 
     internal int ManagementResearchPageCount => Math.Max(1, (ProgressionCatalog.Research.Count - _researchedProjects.Count + 7) / 8);
+
+    public int GatherTarget(string materialId) =>
+        _gatherTargets.TryGetValue(materialId, out int target) ? target : 0;
+
+    public bool SetGatherTarget(string materialId, int targetAmount)
+    {
+        if (!ProgressionCatalog.Resources.Any(item => item.Id == materialId) ||
+            ColonySimulation.IsLegacyMaterialId(materialId) ||
+            !_materialDeposits.Any(deposit => deposit.MaterialId == materialId))
+        {
+            Message = "No known local raw-material site exists for that material.";
+            return false;
+        }
+        if (targetAmount is not (0 or 10 or 25 or 50))
+        {
+            Message = "Raw-material target must be 0, 10, 25, or 50 units.";
+            return false;
+        }
+        if (targetAmount == 0) _gatherTargets.Remove(materialId);
+        else _gatherTargets[materialId] = targetAmount;
+        Message = targetAmount == 0
+            ? $"Automatic extraction disabled for {materialId}."
+            : $"Automatic extraction target set to {targetAmount} units for {materialId}.";
+        return true;
+    }
+
+    private void UpdateAutomaticGatheringPlans()
+    {
+        if (_gatherTargets.Count == 0 || UnreservedInventoryFreeCapacity <= 0) return;
+        foreach (var (materialId, targetAmount) in _gatherTargets.ToArray())
+        {
+            if (MaterialCount(materialId) >= targetAmount) continue;
+            var deposit = _materialDeposits.FirstOrDefault(item => item.MaterialId == materialId && item.Amount > 0);
+            if (deposit == null) continue;
+            int activeGatherers = _workers.Count(worker => worker.Task?.Kind == ColonyTaskKind.Gather &&
+                worker.Task.MaterialDepositId == deposit.Id);
+            int cargoInTransit = _workers.Where(worker => worker.CarriedMaterialId == materialId)
+                .Sum(worker => worker.CarriedAmount);
+            if (MaterialCount(materialId) + activeGatherers * CarryCapacity + cargoInTransit >= targetAmount) continue;
+            if (UnreservedInventoryFreeCapacity < Math.Min(CarryCapacity, deposit.Amount)) continue;
+            var worker = _workers.FirstOrDefault(item => item.Task == null &&
+                !item.CarriedResource.HasValue && string.IsNullOrWhiteSpace(item.CarriedMaterialId));
+            if (worker == null) continue;
+            if (!TryFindPath(worker, deposit.Cell, out var route)) continue;
+            worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route)
+                { MaterialDepositId = deposit.Id };
+            Message = $"{worker.Name} assigned to automatically extract {materialId} toward its stock target.";
+        }
+    }
 
     public int ProductionTarget(string recipeId) =>
         _productionTargets.TryGetValue(recipeId, out int target) ? target : 0;
@@ -867,6 +921,7 @@ internal sealed class ColonySimulation
         UpdateNeeds(deltaSeconds);
         UpdateAutomaticProductionPlans();
         AssignJobs();
+        UpdateAutomaticGatheringPlans();
 
         foreach (var worker in _workers)
         {
