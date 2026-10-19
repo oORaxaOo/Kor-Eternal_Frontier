@@ -63,6 +63,8 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawLine(view.Left, y, view.Right, y, _line);
         }
 
+        canvas.Save();
+        canvas.ClipRect(view);
         foreach (var entity in world.Entities)
         {
             var point = ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, cameraX, cameraY, zoom);
@@ -104,6 +106,7 @@ internal sealed class ColonyRenderer : IDisposable
             _muted.Color = MutedColor;
             canvas.DrawText(entity.Faction, point.X + radius + 5, point.Y + 10, SKTextAlign.Left, _smallFont, _muted);
         }
+        canvas.Restore();
 
         _text.Color = Gold;
         canvas.DrawText("CONTINUOUS WORLD SPACE", 18, 86, SKTextAlign.Left, _headingFont, _text);
@@ -306,7 +309,10 @@ internal sealed class ColonyRenderer : IDisposable
         {
             var selected = selectedWorldEntityId.HasValue ? spatialWorld.Entities.FirstOrDefault(entity => entity.Id == selectedWorldEntityId.Value) : null;
             canvas.DrawText(selected == null ? "Click a symbol to inspect" : $"{selected.Name} / {selected.Kind}", 790, 309, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText(selected == null ? "Select army/caravan to move" : $"Faction: {selected.Faction}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+            string inventorySummary = selected != null && spatialWorld.Inventories.TryGetValue(selected.Id, out var inventory)
+                ? $"W {inventory.GetValueOrDefault(WorldResourceKind.Wood):0} S {inventory.GetValueOrDefault(WorldResourceKind.Stone):0} F {inventory.GetValueOrDefault(WorldResourceKind.Food):0} A {inventory.GetValueOrDefault(WorldResourceKind.Alloy):0}"
+                : selected == null ? "Select army/caravan to move" : $"Faction: {selected.Faction}";
+            canvas.DrawText(inventorySummary, 790, 326, SKTextAlign.Left, _smallFont, _text);
         }
         else
         {
