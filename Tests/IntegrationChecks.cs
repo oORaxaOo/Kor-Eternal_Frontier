@@ -32,6 +32,24 @@ internal static class IntegrationChecks
               (int)restored.ContinuousWorld.InventoryAt(restoredHome.Id, WorldResourceKind.Wood) == wood,
             "session save/load must restore one inventory balance for both simulation views");
 
+        // A built garden must produce through the citizen/job bridge while the world settlement
+        // remains the only authoritative inventory owner.
+        var productionWorld = new WorldSimulation(70242);
+        var productionHome = productionWorld.SpatialWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        int foodBeforeGarden = productionWorld.Colony.ResourceCount(ResourceKind.Food);
+        int gardenId = productionWorld.Colony.PlaceObjectBlueprint(PlaceableKind.Garden, 24, 17);
+        Check(gardenId > 0, "the unified world should accept a garden blueprint");
+        for (int i = 0; i < 2500; i++) productionWorld.Step(0.1f);
+        Check(productionWorld.Colony.Objects.Single(item => item.Id == gardenId).IsBuilt,
+            "garden construction must progress under the unified world clock");
+        int foodAfterGarden = productionWorld.Colony.ResourceCount(ResourceKind.Food);
+        Check(foodAfterGarden > foodBeforeGarden,
+            "citizen jobs must deliver garden output into the canonical settlement inventory");
+        Check((int)productionWorld.SpatialWorld.InventoryAt(productionHome.Id, WorldResourceKind.Food) == foodAfterGarden &&
+              productionWorld.Colony.InventoryUsed <= productionWorld.Colony.InventoryCapacity,
+            "garden production must keep colony and world inventory consistent without exceeding storage");
+
         string directory = Path.Combine(Path.GetTempPath(), "kor-session-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "session.json");
         try
