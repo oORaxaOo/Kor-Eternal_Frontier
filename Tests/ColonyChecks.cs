@@ -183,6 +183,7 @@ internal static class ColonyChecks
         string legacyJson = JsonSerializer.Serialize(legacySnapshot)
             .Replace("\"Materials\":[],", "", StringComparison.Ordinal)
             .Replace(",\"ResearchedProjects\":[]", "", StringComparison.Ordinal)
+            .Replace(",\"ProductionTargets\":[]", "", StringComparison.Ordinal)
             .Replace("\"RecipeId\":null,", "", StringComparison.Ordinal);
         var migratedLegacySave = ColonySaveService.Deserialize(legacyJson);
         Check(migratedLegacySave.ResourceCount(ResourceKind.Wood) == colony.ResourceCount(ResourceKind.Wood) &&
@@ -335,6 +336,36 @@ internal static class ColonyChecks
         catch (InvalidDataException) { excessInventoryRejected = true; }
         Check(excessInventoryRejected,
             "save validation must reject inventory quantities above completed storage capacity");
+
+        var plannerColony = new ColonySimulation();
+        int plannerWorkbench = plannerColony.PlaceObjectBlueprint(PlaceableKind.Workbench, 13, 12);
+        Check(plannerWorkbench > 0, "automatic production test should place a workbench blueprint");
+        for (int i = 0; i < 700; i++) plannerColony.Step(0.1f);
+        Check(plannerColony.Objects.Single(item => item.Id == plannerWorkbench).IsBuilt,
+            "automatic production test should complete the workbench before planning");
+        var plannerCampaign = new CampaignSimulation(WorldGenerationService.Generate(27182));
+        plannerCampaign.State.Knowledge = 500;
+        plannerCampaign.State.Energy = 500;
+        Check(plannerColony.SetProductionTarget("recipe.sawmill.stage0", 5),
+            "players should be able to set a valid automatic production target");
+        plannerColony.Step(0.1f);
+        Check(!plannerColony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage0"),
+            "automatic production must not bypass a missing research unlock");
+        Check(plannerColony.ResearchProject("research.industry.machine_tools.era0", plannerCampaign),
+            "automatic production test should research the recipe prerequisite");
+        for (int i = 0; i < 3; i++) plannerColony.Step(0.1f);
+        Check(plannerColony.ProductionOrders.Count(order => order.RecipeId == "recipe.sawmill.stage0" && !order.Complete) == 3,
+            "automatic production should queue only enough two-unit batches to cover a five-unit target");
+        string plannerSave = ColonySaveService.Serialize(plannerColony);
+        var plannerRestored = ColonySaveService.Deserialize(plannerSave);
+        Check(plannerRestored.ProductionTarget("recipe.sawmill.stage0") == 5,
+            "save/load must preserve automatic production targets");
+        for (int i = 0; i < 5; i++) plannerRestored.Step(0.1f);
+        Check(plannerRestored.ProductionOrders.Count(order => order.RecipeId == "recipe.sawmill.stage0") == 3,
+            "pending output and persisted targets must prevent duplicate queue flooding after load");
+        Check(plannerRestored.SetProductionTarget("recipe.sawmill.stage0", 0) &&
+              plannerRestored.ProductionTarget("recipe.sawmill.stage0") == 0,
+            "setting a target to zero should disable automatic production");
     }
 
     private static void Check(bool condition, string message)
