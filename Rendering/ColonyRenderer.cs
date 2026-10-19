@@ -270,6 +270,8 @@ internal sealed class ColonyRenderer : IDisposable
         foreach (var worker in simulation.Workers)
         {
             var point = OrthogonalGridProjection.WorldToScreen(worker.X, worker.Y, cameraX, cameraY, zoom);
+            // Keep draw calls bounded to the visible colony viewport even for large populations.
+            if (point.X < -12 || point.X > 782 || point.Y < 50 || point.Y > 662) continue;
             float radius = Math.Max(3f, 4.5f * zoom);
             _fill.Color = worker.Hungry ? new SKColor(222, 149, 73) : WorkerColor;
             canvas.DrawCircle(point.X, point.Y, radius, _fill);
@@ -361,7 +363,9 @@ internal sealed class ColonyRenderer : IDisposable
         else
         {
             int row = 376;
-            foreach (var worker in simulation.Workers)
+            // The inspector has fixed height: show a small sample instead of drawing thousands
+            // of rows over the controls. A dedicated filterable resident inspector is a later UI slice.
+            foreach (var worker in simulation.Workers.Take(2))
             {
                 _text.Color = simulation.SelectedWorkerId == worker.Id ? Gold : TextColor;
                 var citizen = simulation.CitizenForWorker(worker.Id);
@@ -371,6 +375,11 @@ internal sealed class ColonyRenderer : IDisposable
                 _muted.Color = MutedColor;
                 canvas.DrawText($"{legacyJob} / {citizenState}", 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
                 row += 43;
+            }
+            if (simulation.Workers.Count > 2)
+            {
+                _muted.Color = MutedColor;
+                canvas.DrawText($"+ {simulation.Workers.Count - 2} more residents", 790, 466, SKTextAlign.Left, _smallFont, _muted);
             }
         }
 
@@ -425,6 +434,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"{mode}{(paused ? "  [PAUSED]" : "")}", 18, 675, SKTextAlign.Left, _normalFont, _text);
         _text.Color = TextColor;
         canvas.DrawText(simulation.Message, 18, 700, SKTextAlign.Left, _smallFont, _text);
+        if (!worldView) DrawButton(canvas, "RECRUIT +10", 920, 660, 165, 27);
     }
 
     private void DrawButton(SKCanvas canvas, string label, float x, float y, float width, float height, bool active = false)
