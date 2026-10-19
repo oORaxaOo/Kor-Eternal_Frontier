@@ -214,6 +214,21 @@ internal static class ColonyChecks
         Check(colony.Objects.Single(item => item.Id == catalogWorkshopId).IsBuilt &&
               colony.MaterialCount("material.masonry.stage0") == 4,
             "catalogue building construction must consume its real stable-ID costs and complete worker labor");
+        Check(colony.ResearchProject("research.energy.grid_stability.era0", researchCampaign),
+            "the foundational energy technology should unlock power infrastructure");
+        int powerBuildingId = colony.PlaceCatalogBuildingBlueprint("building.power.tier0", 10, 4);
+        Check(powerBuildingId > 0, "a researched power building should be placeable from the catalogue");
+        for (int i = 0; i < 1000; i++) colony.Step(0.1f);
+        Check(colony.Objects.Single(item => item.Id == powerBuildingId).IsBuilt && colony.PowerCapacity >= 10,
+            "completed catalogue power buildings must add real local production capacity");
+        Check(colony.CanQueueRecipe("recipe.sawmill.stage1", out string poweredRecipeReason),
+            $"an advanced recipe with available inputs and local power should be queueable ({poweredRecipeReason})");
+        Check(colony.QueueRecipeProduction(workbenchId, "recipe.sawmill.stage1") && colony.PendingPowerDemand == 1,
+            "advanced production must reserve power capacity while its order is pending");
+        for (int i = 0; i < 1000; i++) colony.Step(0.1f);
+        Check(colony.ProductionOrders.Any(order => order.RecipeId == "recipe.sawmill.stage1" && order.Complete) &&
+              colony.PendingPowerDemand == 0,
+            "powered workstation production must complete and release its reserved power capacity");
 
         string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "colony.json");
