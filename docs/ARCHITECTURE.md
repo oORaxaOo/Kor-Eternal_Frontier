@@ -15,17 +15,12 @@ One canonical application exists at the repository root, targeting .NET 8. Gondw
     ColonySimulation (local settlement state and rules)
 
     WorldSimulation
-       |               \
-       v                v
-    ContinuousWorldState   CampaignSimulation (save migration only)
        |
-       +-- continuous X/Y entities and spatial queries
-       +-- continuous food production
-       +-- settlement inventories and conserved cargo shipments
-
+       v
+    ContinuousWorldState
     GameSessionService
              |
-             +-- schema-v2 session envelope: colony state, legacy compatibility snapshot, canonical continuous world ledger
+             +-- schema-v1 session envelope: colony state and canonical continuous world ledger
 
 The projection layer owns screen/world mapping. Gameplay APIs receive logical world coordinates. Rendering reads state but does not decide simulation rules.
 
@@ -44,21 +39,19 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Continuous-time settlement food production constrained by shared settlement storage capacity; per-settlement inventories are the only resource authority for colony and strategic actions.
 - Caravan shipments reserve cargo at dispatch and deliver only after travel time and destination storage capacity are available.
 - One active real-time clock; the legacy campaign turn/interval model is not advanced during active play.
-- Schema-v2 session saves include continuous-world state; schema-v1 saves migrate by generating a fresh continuous world from the stored seed.
+- Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
 - Minimal symbol-based top-down rendering.
 
 ## Legacy debt and retirement order
 
-The old campaign model remains only as a compatibility snapshot for now. Its linked-hex geometry, turn counter, region production and separate resource balances are not the target world simulation.
+The old linked-hex campaign model, its turn counter, region production, separate resource balances and save-migration payload have been removed. Existing campaign saves are intentionally unsupported; new sessions start from the canonical continuous world.
 
 The obsolete instant Campaign-to-Colony transfer bridge has been removed. Transfers between strategic settlements must use canonical inventories and travel-time shipments; instant imports/exports are not a supported gameplay path.
 
-Remaining migration work, in order:
+Remaining work, in order:
 
-1. Remove the legacy campaign save payload and obsolete compatibility APIs now that the canonical world ledger owns inventory.
-2. Remove the linked-hex campaign model and its dead rules/tests; existing saves do not need migration support.
-4. Add population-linked consumption/production, settlement development, diplomacy/conflict and dynamic Blight behavior.
-5. Improve the continuous camera transition and perform a graphical human playtest.
+1. Add population-linked consumption/production, settlement development, diplomacy/conflict and dynamic Blight behavior.
+2. Improve the continuous camera transition and perform a graphical human playtest.
 
 ## Design constraints
 
