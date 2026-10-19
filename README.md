@@ -68,9 +68,9 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 
 Keep simulation logic independent of rendering and input. Extend the game through tested slices: canonical inventory and shipments, material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
 
-## Unified real-time world migration
+## Unified real-time world
 
-The WorldSimulation advances the colony and continuous world under one clock; the legacy campaign turn counter no longer advances during active play. Strategic settlement food production integrates continuously from elapsed time. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera. The old campaign map remains legacy scaffolding and is not the target world representation.
+The WorldSimulation advances the colony and continuous world under one clock. Strategic settlement food production integrates continuously from elapsed time and respects shared storage capacity. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera.
 
 The obsolete instant campaign transfer bridge and linked-hex campaign model have been removed. Colony construction, production, worker hauling and strategic shipments read or mutate the same settlement-owned resource ledger; a session snapshot does not duplicate the colony inventory. Settlement storage capacity is shared across local and strategic views, and deliveries wait at their destination if storage is full. The session format now represents the active unified world directly; old saves are intentionally not migrated. A dynamic Blight ecosystem and population-level strategic simulation remain unfinished.
 
