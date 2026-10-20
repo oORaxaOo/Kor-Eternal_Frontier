@@ -18,7 +18,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 - A minimal symbolic renderer: square tiles and buildings, colonists as dots, resource markers as squares.
 - A bounded 8,192-entry successful-route cache for repeated local path requests, with defensive route copies and cache invalidation when construction changes walkability. Internal counters track breadth-first searches and cache hits.
 - Versioned colony save/load for terrain, architecture orders, objects, colonists, cargo, tasks/routes, deposits, inventory, production orders, IDs, selection, and simulation time.
-- Deterministic resident social relationships: nearby encounters are discovered through tile buckets, resident pairs are canonicalized, affinity/tension and bounded encounter history persist, and need/stress/mental-break state influences outcomes.
+- Deterministic resident social relationships: nearby encounters are discovered through tile buckets, resident pairs are canonicalized, affinity/trust/tension and bounded encounter history persist, and need/stress/mental-break state influences outcomes.
 - An event-driven incident manager converts relationship milestones into bounded, auditable incidents with per-pair cooldowns. Relationship and incident state are included in colony save schema v4; legacy schema v2/v3 saves initialize empty social state.
 - A unified real-time coordinator (Simulation/WorldSimulation.cs) advances the colony and continuous world under one clock. The colony and strategic layer read and mutate the same settlement inventory; session saves store that inventory only in the world ledger.
 

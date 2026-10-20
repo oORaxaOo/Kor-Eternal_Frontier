@@ -44,11 +44,14 @@ internal sealed class SocialRelationshipNetwork
 
         int previousAffinity = relation!.Affinity;
         int previousTension = relation.Tension;
+        int previousTrust = relation.Trust;
         int pressureA = (int)MathF.Round((stressA + hungerA * 0.5f + fatigueA * 0.25f) / 35f);
         int pressureB = (int)MathF.Round((stressB + hungerB * 0.5f + fatigueB * 0.25f) / 35f);
         int delta = (mentalBreakA || mentalBreakB) ? -5 : pressureA + pressureB >= 5 ? -3 : pressureA + pressureB <= 1 ? 2 : 0;
         relation.Affinity = Math.Clamp(relation.Affinity + delta, MinimumScore, MaximumScore);
         relation.Tension = Math.Clamp(relation.Tension + (delta < 0 ? -delta : delta == 0 ? 0 : -1), 0, MaximumScore);
+        int trustDelta = mentalBreakA || mentalBreakB ? -5 : delta < 0 ? -3 : delta > 0 ? 2 : 0;
+        relation.Trust = Math.Clamp(relation.Trust + trustDelta, MinimumScore, MaximumScore);
         relation.EncounterCount = checked(relation.EncounterCount + 1);
         relation.LastEncounterTick = tick;
         relation.AddHistory(new SocialEncounterHistory(tick, delta, relation.Affinity, relation.Tension));
@@ -59,6 +62,8 @@ internal sealed class SocialRelationshipNetwork
             Enqueue(SocialEventKind.ConflictMilestone, pair, tick, previousAffinity, relation.Affinity, "Affinity crossed the conflict threshold.");
         if (previousTension < 60 && relation.Tension >= 60)
             Enqueue(SocialEventKind.TensionMilestone, pair, tick, previousTension, relation.Tension, "Interpersonal tension crossed its threshold.");
+        if (previousTrust > -50 && relation.Trust <= -50)
+            Enqueue(SocialEventKind.TrustMilestone, pair, tick, previousTrust, relation.Trust, "Trust crossed the breakdown threshold.");
         Enqueue(SocialEventKind.EncounterResolved, pair, tick, previousAffinity, relation.Affinity,
             delta < 0 ? "A strained encounter reinforced negative feelings." : delta > 0 ? "A calm encounter improved familiarity." : "The encounter left the relationship unchanged.");
     }
@@ -91,7 +96,7 @@ internal sealed class SocialRelationshipNetwork
         {
             if (state.ResidentA <= 0 || state.ResidentB <= 0 || state.ResidentA == state.ResidentB ||
                 !residentIds.Contains(state.ResidentA) || !residentIds.Contains(state.ResidentB) ||
-                state.Affinity is < MinimumScore or > MaximumScore || state.Tension is < 0 or > MaximumScore ||
+                state.Affinity is < MinimumScore or > MaximumScore || state.Trust is < MinimumScore or > MaximumScore || state.Tension is < 0 or > MaximumScore ||
                 state.EncounterCount < 1 || state.LastEncounterTick < 0 || state.History is null ||
                 state.History.Count > MaximumHistoryPerPair ||
                 state.History.Any(h => h.Tick < 0 || h.Affinity is < MinimumScore or > MaximumScore || h.Tension is < 0 or > MaximumScore))
@@ -139,6 +144,7 @@ internal sealed class SocialRelationship(int residentA, int residentB)
     public int ResidentB { get; } = Math.Max(residentA, residentB);
     public int Affinity { get; internal set; }
     public int Tension { get; internal set; }
+    public int Trust { get; internal set; }
     public int EncounterCount { get; internal set; }
     public long LastEncounterTick { get; internal set; }
     public IReadOnlyCollection<SocialEncounterHistory> History => _history.ToArray();
@@ -149,14 +155,14 @@ internal sealed class SocialRelationship(int residentA, int residentB)
     }
     internal SocialRelationshipSnapshot ToSnapshot() => new()
     {
-        ResidentA = ResidentA, ResidentB = ResidentB, Affinity = Affinity, Tension = Tension,
+        ResidentA = ResidentA, ResidentB = ResidentB, Affinity = Affinity, Tension = Tension, Trust = Trust,
         EncounterCount = EncounterCount, LastEncounterTick = LastEncounterTick, History = _history.ToList()
     };
     internal static SocialRelationship FromSnapshot(SocialRelationshipSnapshot state)
     {
         var result = new SocialRelationship(state.ResidentA, state.ResidentB)
         {
-            Affinity = state.Affinity, Tension = state.Tension, EncounterCount = state.EncounterCount,
+            Affinity = state.Affinity, Tension = state.Tension, Trust = state.Trust, EncounterCount = state.EncounterCount,
             LastEncounterTick = state.LastEncounterTick
         };
         foreach (var history in state.History) result._history.Enqueue(history);
@@ -164,7 +170,7 @@ internal sealed class SocialRelationship(int residentA, int residentB)
     }
 }
 
-internal enum SocialEventKind { FirstMeeting, EncounterResolved, FriendshipMilestone, ConflictMilestone, TensionMilestone }
+internal enum SocialEventKind { FirstMeeting, EncounterResolved, FriendshipMilestone, ConflictMilestone, TensionMilestone, TrustMilestone }
 internal sealed record SocialEncounterHistory(long Tick, int AffinityDelta, int Affinity, int Tension);
 internal sealed record SocialSimulationEvent(long Id, long Tick, SocialEventKind Kind, int ResidentA, int ResidentB, int PreviousScore, int CurrentScore, string Message);
 internal sealed class SocialNetworkSnapshot
@@ -179,6 +185,7 @@ internal sealed class SocialRelationshipSnapshot
     public int ResidentB { get; set; }
     public int Affinity { get; set; }
     public int Tension { get; set; }
+    public int Trust { get; set; }
     public int EncounterCount { get; set; }
     public long LastEncounterTick { get; set; }
     public List<SocialEncounterHistory> History { get; set; } = [];
