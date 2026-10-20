@@ -38,7 +38,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Independent per-tile architecture orders with material costs and work progress.
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
-- A deterministic workplace broker selecting the nearest available job with stable-ID tie-breaking. The high-throughput citizen grid reuses bounded target-oriented flow fields when multiple residents navigate toward the same destination; walkability changes invalidate the fields.
+- A deterministic workplace broker using a tile-indexed job registry and Manhattan rings to select the nearest available job with stable-ID tie-breaking; it tracks free capacity to skip searches when every job is full. The high-throughput citizen grid reuses bounded target-oriented flow fields when multiple residents navigate toward the same destination; walkability changes invalidate the fields.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
 - Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement and a uniform spatial-bucket index for radius queries.
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.

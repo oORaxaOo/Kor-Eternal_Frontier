@@ -68,6 +68,21 @@ internal static class ColonyEcosystemChecks
               logisticsEvents.DrainEvents().Count == 0,
             "removing a workplace must release its worker without publishing a stale availability event");
 
+
+        var spatialJobs = new ColonyEcosystem(40, 26);
+        int firstTieJob = spatialJobs.JobBroker.RegisterWorkplace("Stable first", new CellPosition(2, 1),
+            workerCapacity: 1, outputResource: ResourceKind.Wood);
+        spatialJobs.JobBroker.RegisterWorkplace("Stable second", new CellPosition(0, 1),
+            workerCapacity: 1, outputResource: ResourceKind.Wood);
+        for (int i = 0; i < 100; i++)
+            spatialJobs.JobBroker.RegisterWorkplace($"Remote-{i}", new CellPosition(10 + i % 30, 10 + i / 30),
+                workerCapacity: 1, outputResource: ResourceKind.Stone);
+        var spatialResident = spatialJobs.AddCitizen("Spatial assignment probe", new CellPosition(1, 1));
+        Check(spatialJobs.JobBroker.AssignNext(spatialResident)?.Id == firstTieJob,
+            "nearest job assignment must preserve stable ID tie-breaking across different tiles");
+        Check(spatialJobs.JobBroker.AssignmentTileChecks == 5 &&
+              spatialJobs.JobBroker.JobCandidatesInspected == 2,
+            "a nearby assignment should inspect only its Manhattan ring, not all registered workplaces");
         var grid = new GridManager(5, 5, maxStackSize: 10);
         int foodZone = grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
