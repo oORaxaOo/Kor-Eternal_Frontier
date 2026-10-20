@@ -27,10 +27,11 @@ internal static class Program
         ColonyRenderer? painter = null;
         MainMenuRenderer? menuPainter = null;
         Engine? engine = null;
-        bool engineStarted = false;
+        bool engineStarted = false, sdlInitialized = false;
         try
         {
             if (Sdl.SDL_Init(Sdl.InitVideo) < 0) throw new InvalidOperationException(Sdl.Error());
+            sdlInitialized = true;
             window = Sdl.SDL_CreateWindow("KOR-ETERNAL FRONTIER", 1100, 720, Sdl.WindowResizable);
             if (window == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
@@ -312,7 +313,7 @@ internal static class Program
             menuPainter?.Dispose(); painter?.Dispose(); adapter?.Dispose();
             if (rendererHandle != IntPtr.Zero) Sdl.SDL_DestroyRenderer(rendererHandle);
             if (window != IntPtr.Zero) Sdl.SDL_DestroyWindow(window);
-            Sdl.SDL_Quit();
+            if (sdlInitialized) Sdl.SDL_Quit();
         }
     }
 
