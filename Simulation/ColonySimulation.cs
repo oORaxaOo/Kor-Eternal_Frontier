@@ -67,6 +67,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float Y { get; internal set; } = y;
     public float Hunger { get; internal set; } = hunger;
     public float ThermalExposure { get; internal set; }
+    public float Stress { get; internal set; }
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -244,6 +245,7 @@ internal sealed class ColonySimulation
         {
             Id = worker.Id, Name = worker.Name, X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
             ThermalExposure = worker.ThermalExposure,
+            Stress = worker.Stress,
             CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
@@ -307,6 +309,7 @@ internal sealed class ColonySimulation
             var restored = new ColonyWorker(worker.Id, worker.Name, worker.X, worker.Y, worker.Hunger)
             {
                 ThermalExposure = worker.ThermalExposure,
+                Stress = worker.Stress,
                 CarriedResource = worker.CarriedResource,
                 CarriedAmount = worker.CarriedAmount,
                 Task = worker.Task == null ? null : new WorkerTask(worker.Task.Kind,
@@ -698,6 +701,7 @@ internal sealed class ColonySimulation
                 citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
             citizen.CanReceiveJob = worker.Task == null;
             citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
+            citizen.Stress = worker.Stress;
         }
 
         // Completed gardens become real food-producing workplaces. Their output is reserved
@@ -739,6 +743,7 @@ internal sealed class ColonySimulation
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
             worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
+            worker.Stress = citizen.Stress;
             if (worker.Task == null)
             {
                 worker.X = citizen.Position.X + 0.5f;
@@ -947,6 +952,8 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (worker.Task == null) continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
+                continue;
             AdvanceWorker(worker, deltaSeconds);
         }
     }
@@ -1007,7 +1014,7 @@ internal sealed class ColonySimulation
             if (worker.Task != null) continue;
             if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
             {
-                if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working)
+                if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working or CitizenState.MentalBreak)
                     continue;
                 if (citizen.Hunger < 30f || citizen.Fatigue < 60f)
                     continue;
