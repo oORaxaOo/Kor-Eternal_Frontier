@@ -26,7 +26,7 @@ internal static class SocialRelationshipChecks
         Require(ReferenceEquals(forward, reverse), "Resident pair identity must be symmetric.");
         Require(first.RelationshipCount == 1, "A resident pair must be stored exactly once.");
         var other = second.Get(7, 3) ?? throw new InvalidOperationException("Deterministic pair missing.");
-        Require(forward.Affinity == other.Affinity && forward.Tension == other.Tension &&
+        Require(forward.Affinity == other.Affinity && forward.Tension == other.Tension && forward.Trust == other.Trust &&
                 forward.EncounterCount == other.EncounterCount, "Identical encounter sequences must produce identical outcomes.");
         var firstEvents = first.DrainEvents();
         var secondEvents = second.DrainEvents();
@@ -64,7 +64,7 @@ internal static class SocialRelationshipChecks
             "Relationship history must remain bounded.");
         var restored = SocialRelationshipNetwork.Restore(network.CaptureSnapshot(), new HashSet<int> { 1, 2 });
         var copy = restored.Get(2, 1)!;
-        Require(copy.EncounterCount == relation.EncounterCount && copy.Affinity == relation.Affinity &&
+        Require(copy.EncounterCount == relation.EncounterCount && copy.Affinity == relation.Affinity && copy.Trust == relation.Trust &&
                 copy.History.SequenceEqual(relation.History), "Relationship state must round-trip through snapshots.");
     }
 
