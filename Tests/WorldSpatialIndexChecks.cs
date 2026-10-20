@@ -25,6 +25,11 @@ internal static class WorldSpatialIndexChecks
         Check(indexed.Select(entity => entity.Id).SequenceEqual(expected),
             "spatial buckets must match a full scan and preserve distance/ID ordering");
 
+        int initialRebuildCount = world.SpatialIndexRebuildCount;
+        world.Step(1);
+        Check(world.SpatialIndexRebuildCount == initialRebuildCount,
+            "stationary world ticks must not rebuild the spatial index");
+
         var moving = world.Entities.Single(entity => entity.Kind == WorldEntityKind.ResourceSite);
         double oldX = moving.X, oldY = moving.Y;
         Check(world.QueryRadius(oldX, oldY, 1).Any(entity => entity.Id == moving.Id),
@@ -56,6 +61,16 @@ internal static class WorldSpatialIndexChecks
         index.Rebuild(world.Entities);
         Check(index.BucketCount > 0 && index.QueryCandidates(12_345, 23_456, 0).Any(entity => entity.Id == added.Id),
             "spatial buckets must include entities on their exact bucket coordinate");
+
+        var boundaryWorld = ContinuousWorldState.Generate(seed: 81358);
+        var boundaryEntity = boundaryWorld.AddEntity(WorldEntityKind.Army, "Bucket boundary probe", "Kor", 1_000.0000001, 2_000);
+        Check(boundaryWorld.QueryRadius(boundaryEntity.X, boundaryEntity.Y, 0).Any(entity => entity.Id == boundaryEntity.Id),
+            "the boundary probe must enter the initial spatial index");
+        Check(boundaryWorld.OrderMove(boundaryEntity.Id, 999.9999999, 2_000, 1),
+            "near-zero movement orders must be accepted");
+        Check(boundaryWorld.QueryRadius(999.9999999, 2_000, 0).Any(entity => entity.Id == boundaryEntity.Id) &&
+              !boundaryWorld.QueryRadius(1_000.0000001, 2_000, 0).Any(entity => entity.Id == boundaryEntity.Id),
+            "an immediate snap across a bucket boundary must update spatial membership");
     }
 
     private static void Check(bool condition, string reason)
