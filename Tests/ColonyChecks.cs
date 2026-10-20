@@ -7,6 +7,29 @@ internal static class ColonyChecks
 {
     public static void Run()
     {
+        var environment = new ColonySimulation();
+        Check(environment.AddFluid(10, 10, FluidKind.Water, 7) == 7,
+            "open tiles must accept fluid up to the seven-unit level cap");
+        Check(environment.AddFluid(22, 6, FluidKind.Water, 1) == 0,
+            "rock tiles must block fluid placement");
+        Check(environment.AddFluid(10, 10, FluidKind.Magma, 1) == 0,
+            "water and magma must not coexist in one tile in this first simulation slice");
+        environment.Step(1f);
+        Check(environment.TotalFluid(FluidKind.Water) == 7 &&
+              environment.FluidLevelAt(10, 10, FluidKind.Water) < 7,
+            "the deterministic fluid tick must redistribute water without creating or losing units");
+        Check(environment.AddFluid(25, 7, FluidKind.Magma, 7) == 7,
+            "magma must be placeable on open terrain with bounded levels");
+        environment.Step(1f);
+        Check(environment.TemperatureAt(25, 7) > 20f,
+            "magma must heat its tile through the thermal simulation");
+        string environmentSave = ColonySaveService.Serialize(environment);
+        var restoredEnvironment = ColonySaveService.Deserialize(environmentSave);
+        Check(restoredEnvironment.TotalFluid(FluidKind.Water) == environment.TotalFluid(FluidKind.Water) &&
+              restoredEnvironment.TotalFluid(FluidKind.Magma) == environment.TotalFluid(FluidKind.Magma) &&
+              Math.Abs(restoredEnvironment.TemperatureAt(25, 7) - environment.TemperatureAt(25, 7)) < 0.001f,
+            "fluid levels and tile temperatures must survive save/load");
+
         var center = OrthogonalGridProjection.TileCenter(5, 3);
         var world = OrthogonalGridProjection.ScreenToWorld(center.X, center.Y);
         Check(MathF.Abs(world.X - 5.5f) < 0.001f && MathF.Abs(world.Y - 3.5f) < 0.001f,
