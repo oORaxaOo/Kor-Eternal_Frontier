@@ -403,53 +403,102 @@ internal sealed class WorkplaceJob(int id, string name, CellPosition position, i
 internal sealed class JobBroker
 {
     private readonly List<WorkplaceJob> _jobs = [];
+    private readonly Dictionary<int, WorkplaceJob> _jobsById = [];
+    private readonly Dictionary<int, List<WorkplaceJob>> _jobsByTile = [];
+    private readonly int _width;
+    private readonly int _height;
     private int _nextJobId = 1;
-    internal event Action<int, int>? AvailabilityChanged;
+    private int _availableCapacity;
+
     public IReadOnlyList<WorkplaceJob> Jobs => _jobs.AsReadOnly();
+    internal event Action<int, int>? AvailabilityChanged;
+    internal int AssignmentTileChecks { get; private set; }
+    internal int JobCandidatesInspected { get; private set; }
+
+    public JobBroker(int width, int height)
+    {
+        if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+        _width = width;
+        _height = height;
+    }
 
     public int RegisterWorkplace(string name, CellPosition position, int workerCapacity,
         ResourceKind outputResource, int outputAmount = 1, float workSeconds = 5f)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A workplace needs a name.", nameof(name));
+        if (position.X < 0 || position.X >= _width || position.Y < 0 || position.Y >= _height)
+            throw new ArgumentOutOfRangeException(nameof(position), "Workplace must be inside the colony grid.");
         if (workerCapacity <= 0 || outputAmount <= 0 || workSeconds <= 0 ||
             float.IsNaN(workSeconds) || float.IsInfinity(workSeconds))
             throw new ArgumentOutOfRangeException(nameof(workerCapacity), "Capacity, output and work duration must be positive.");
+
         int id = _nextJobId++;
         var job = new WorkplaceJob(id, name, position, workerCapacity, outputResource, outputAmount, workSeconds);
         _jobs.Add(job);
+        _jobsById.Add(id, job);
+        int tileIndex = Index(position);
+        if (!_jobsByTile.TryGetValue(tileIndex, out var atTile))
+            _jobsByTile[tileIndex] = atTile = [];
+        atTile.Add(job);
+        _availableCapacity = checked(_availableCapacity + workerCapacity);
         AvailabilityChanged?.Invoke(job.Id, job.FreeWorkers);
         return id;
     }
 
-    public WorkplaceJob? FindJob(int jobId) => _jobs.FirstOrDefault(job => job.Id == jobId);
+    public WorkplaceJob? FindJob(int jobId) =>
+        _jobsById.TryGetValue(jobId, out var job) ? job : null;
 
     public bool RemoveWorkplace(int jobId)
     {
         var job = FindJob(jobId);
-        return job != null && _jobs.Remove(job);
+        if (job == null) return false;
+
+        _availableCapacity -= job.FreeWorkers;
+        _jobs.Remove(job);
+        _jobsById.Remove(jobId);
+        int tileIndex = Index(job.Position);
+        if (_jobsByTile.TryGetValue(tileIndex, out var atTile))
+        {
+            atTile.RemoveAll(candidate => candidate.Id == jobId);
+            if (atTile.Count == 0) _jobsByTile.Remove(tileIndex);
+        }
+        return true;
     }
 
     public WorkplaceJob? AssignNext(CitizenAgent citizen)
     {
         ArgumentNullException.ThrowIfNull(citizen);
         if (citizen.JobId.HasValue) return FindJob(citizen.JobId.Value);
-        // Avoid a LINQ pipeline and sorting allocation for every idle citizen. A single
-        // deterministic pass selects the nearest available workplace, breaking ties by stable ID.
-        WorkplaceJob? job = null;
-        int bestDistance = int.MaxValue;
-        foreach (var candidate in _jobs)
+        if (_availableCapacity <= 0) return null;
+
+        CellPosition origin = citizen.Position;
+        int maxDistance = _width + _height - 2;
+        for (int distance = 0; distance <= maxDistance; distance++)
         {
-            if (candidate.FreeWorkers <= 0) continue;
-            int distance = Distance(citizen.Position, candidate.Position);
-            if (distance > bestDistance ||
-                (distance == bestDistance && job != null && candidate.Id >= job.Id))
-                continue;
-            job = candidate;
-            bestDistance = distance;
+            WorkplaceJob? bestInRing = null;
+            int minX = Math.Max(0, origin.X - distance);
+            int maxX = Math.Min(_width - 1, origin.X + distance);
+            for (int x = minX; x <= maxX; x++)
+            {
+                int remainingY = distance - Math.Abs(x - origin.X);
+                if (remainingY < 0) continue;
+
+                int upperY = origin.Y - remainingY;
+                if (upperY >= 0)
+                    bestInRing = ConsiderTile(new CellPosition(x, upperY), bestInRing);
+
+                int lowerY = origin.Y + remainingY;
+                if (lowerY < _height && lowerY != upperY)
+                    bestInRing = ConsiderTile(new CellPosition(x, lowerY), bestInRing);
+            }
+
+            // Search the entire ring before returning so stable job ID wins every equal-distance tie.
+            if (bestInRing == null || !bestInRing.AddWorker(citizen.Id)) continue;
+            _availableCapacity--;
+            citizen.JobId = bestInRing.Id;
+            return bestInRing;
         }
-        if (job == null || !job.AddWorker(citizen.Id)) return null;
-        citizen.JobId = job.Id;
-        return job;
+        return null;
     }
 
     public void Release(CitizenAgent citizen)
@@ -458,19 +507,35 @@ internal sealed class JobBroker
         var job = FindJob(jobId);
         if (job != null)
         {
-            int before = job.FreeWorkers;
+            int assignedBefore = job.AssignedWorkers;
+            int freeBefore = job.FreeWorkers;
             job.RemoveWorker(citizen.Id);
-            if (before == 0 && job.FreeWorkers > 0)
-                AvailabilityChanged?.Invoke(job.Id, job.FreeWorkers);
+            if (job.AssignedWorkers < assignedBefore)
+            {
+                _availableCapacity++;
+                if (freeBefore == 0)
+                    AvailabilityChanged?.Invoke(job.Id, job.FreeWorkers);
+            }
         }
         citizen.JobId = null;
         citizen.WorkProgress = 0;
     }
 
-    private static int Distance(CellPosition a, CellPosition b) =>
-        Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y);
-}
+    private WorkplaceJob? ConsiderTile(CellPosition position, WorkplaceJob? best)
+    {
+        AssignmentTileChecks++;
+        if (!_jobsByTile.TryGetValue(Index(position), out var atTile)) return best;
+        foreach (var candidate in atTile)
+        {
+            JobCandidatesInspected++;
+            if (candidate.FreeWorkers > 0 && (best == null || candidate.Id < best.Id))
+                best = candidate;
+        }
+        return best;
+    }
 
+    private int Index(CellPosition position) => position.Y * _width + position.X;
+}
 /// <summary>
 /// Runs needs, movement, work, and storage as one deterministic simulation slice.
 /// Production reserves storage before work begins, so finished output can never exceed capacity.
@@ -482,7 +547,7 @@ internal sealed class ColonyEcosystem
     private int _nextCitizenId = 1;
     private readonly SimulationEventQueue _events = new();
     public GridManager Grid { get; }
-    public JobBroker JobBroker { get; } = new();
+    public JobBroker JobBroker { get; }
     // Cache the read-only wrapper: UI, save and simulation code may query this every frame.
     public IReadOnlyList<CitizenAgent> Citizens => _citizenView;
     public float ElapsedSeconds { get; private set; }
@@ -493,6 +558,7 @@ internal sealed class ColonyEcosystem
     public ColonyEcosystem(int width, int height)
     {
         Grid = new GridManager(width, height);
+        JobBroker = new JobBroker(width, height);
         _citizenView = _citizens.AsReadOnly();
         Grid.StockChanged += (resource, delta, total) =>
             _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
