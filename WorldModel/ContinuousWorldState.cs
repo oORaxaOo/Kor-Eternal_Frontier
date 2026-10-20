@@ -50,6 +50,7 @@ internal sealed class WorldEntityState
 internal sealed class ContinuousWorldState
 {
     public const double WorldExtent = 100_000d;
+    internal int SpatialIndexRebuildCount => _spatialIndex?.RebuildCount ?? 0;
 
     public int SchemaVersion { get; set; } = 1;
     public int Seed { get; set; }
@@ -116,7 +117,6 @@ internal sealed class ContinuousWorldState
         entity.DestinationX = destinationX;
         entity.DestinationY = destinationY;
         entity.MovementSpeed = speed;
-        _spatialIndexDirty = true;
         if (Distance(entity.X, entity.Y, destinationX, destinationY) <= 0.000001)
         {
             entity.X = destinationX;
@@ -124,6 +124,7 @@ internal sealed class ContinuousWorldState
             entity.DestinationX = null;
             entity.DestinationY = null;
             entity.MovementSpeed = 0;
+            UpdateSpatialIndex(entity);
         }
         return true;
     }
@@ -167,11 +168,13 @@ internal sealed class ContinuousWorldState
                 entity.DestinationX = null;
                 entity.DestinationY = null;
                 entity.MovementSpeed = 0;
+                UpdateSpatialIndex(entity);
                 continue;
             }
 
             entity.X += dx / distance * travel;
             entity.Y += dy / distance * travel;
+            UpdateSpatialIndex(entity);
         }
 
         foreach (var shipment in Shipments.Where(candidate => candidate.Status == WorldShipmentStatus.InTransit))
@@ -185,6 +188,7 @@ internal sealed class ContinuousWorldState
                 shipment.X = shipment.DestinationX; shipment.Y = shipment.DestinationY;
                 carrier.X = shipment.X; carrier.Y = shipment.Y;
                 carrier.DestinationX = null; carrier.DestinationY = null; carrier.MovementSpeed = 0;
+                UpdateSpatialIndex(carrier);
                 if (!TryAddInventory(shipment.DestinationEntityId, shipment.Resource, shipment.Amount))
                 {
                     // Keep the shipment and carrier at the destination until storage has room.
@@ -199,9 +203,15 @@ internal sealed class ContinuousWorldState
                 shipment.X += dx / distance * travel;
                 shipment.Y += dy / distance * travel;
                 carrier.X = shipment.X; carrier.Y = shipment.Y;
+                UpdateSpatialIndex(carrier);
             }
         }
-        _spatialIndexDirty = true;
+    }
+
+    private void UpdateSpatialIndex(WorldEntityState entity)
+    {
+        if (_spatialIndex is null || _spatialIndexDirty) return;
+        _spatialIndex.UpdateEntity(entity);
     }
 
     public double InventoryAt(long entityId, WorldResourceKind resource)
