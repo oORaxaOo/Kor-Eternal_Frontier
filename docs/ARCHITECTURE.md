@@ -13,6 +13,10 @@ One canonical application exists at the repository root, targeting .NET 8. Gondw
              |                        ^
              v                        |
     ColonySimulation (local settlement state and rules)
+             |
+             +-- ColonyEcosystem (individual citizens, needs, workplaces)
+             +-- GridManager (compact tile data, storage zones, reservations)
+             +-- SimulationEventQueue (tick-indexed deterministic notifications)
 
     WorldSimulation
        |
@@ -27,43 +31,61 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 ## Implemented mechanics
 
 - 40 by 26 orthogonal square-tile colony grid.
-- Three colonists with movement, task state, carrying, and hunger.
+- Individually identified colonists with movement, task state, carrying, hunger and fatigue.
 - Finite deposits and resource-conserving gather/carry/deliver transfers.
-- Aggregate inventory capacity supplied by completed stockpiles (120 units each) and storage racks (80 units each).
+- Compact tile-array storage grid with bounded resource stacks, connected stockpile zones and storage reservations.
 - Capacity-aware gathering, partial delivery, retained cargo while storage is full, and production output that waits for room.
 - Independent per-tile architecture orders with material costs and work progress.
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
+- A deterministic workplace broker selecting the nearest available job with stable-ID tie-breaking.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
-- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with Euclidean spatial queries and coordinate-based travel-time movement.
-- Continuous-time settlement food production constrained by shared settlement storage capacity; per-settlement inventories are the only resource authority for colony and strategic actions.
-- Caravan shipments reserve cargo at dispatch and deliver only after travel time and destination storage capacity are available.
+- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement.
+- Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
-- Minimal symbol-based top-down rendering.
+- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining; event handlers and broad system integration remain future work.
+- A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 
-## Remaining development
+## Combined design target: DF depth + Songs of Syx scale + RimWorld storytelling
 
-The old linked-hex campaign model, its turn counter, region production, separate resource balances and save-migration payload have been removed. Existing campaign saves are intentionally unsupported; new sessions start from the canonical continuous world.
+These games are design references, not evidence that their proprietary internal implementations match every mechanism in a reverse-engineering description. Kor will combine their useful *design outcomes* while using an architecture suited to this codebase:
 
-Transfers between strategic settlements use canonical inventories and travel-time shipments; instant imports/exports are not a supported gameplay path.
+1. **World and materials (DF-inspired):** retain the compact local tile grid and make terrain/material, fluid, temperature and occupancy explicit simulation data. Start with 2D tile layers and a stable Z-level contract only when vertical construction is implemented. Fluids and heat must use bounded deterministic updates and material properties; do not introduce a full 3D voxel allocation before gameplay requires it.
+2. **Mass simulation (Songs of Syx-inspired):** retain individual resident IDs and consequential state, but simulate distant/off-screen residents in deterministic cohorts and less frequent time slices. Add spatial buckets and target-oriented flow fields only after benchmarks establish where individual pathfinding is expensive. A flow field is an optimization for many agents sharing a destination, not a replacement for obstacle-aware routes in every task.
+3. **Personal stories (RimWorld-inspired):** model needs, traits, memories, relationships and health effects as data; process threshold crossings and world incidents through the deterministic event queue. Update expensive systems on staggered tick intervals. Avoid copying RimWorld-specific class names or assuming its exact tick rates are universal.
+4. **Jobs and logistics:** use explicit job states and reservations, verify reachability before assigning a job, and reserve both source quantity and destination capacity. Resource movement must conserve stock. Need/stock/job events should eventually wake only relevant planners instead of polling all agents.
+5. **Incidents and ecology:** a director may schedule seeded incidents using colony state, security, shortages and environmental pressure. Keep event intensity bounded and testable; avoid an opaque random difficulty jump.
+6. **Presentation:** symbolic tile rendering, zoom-dependent detail and inspectable individual records. Camera zoom must never change authoritative simulation outcomes.
 
-Remaining work, in order:
+## Current implementation gaps — do not mistake these for completed systems
 
-1. Add population-linked consumption/production, settlement development, diplomacy/conflict and dynamic Blight behavior.
-2. Improve the continuous camera transition and perform a graphical human playtest.
+- The local settlement is 2D, not a full 3D voxel world. There is no pressure-driven fluid simulation, heat transfer, ignition/melting system or organ/tissue damage model yet.
+- The current route search is grid-based breadth-first search with caching, not A* or a shared flow-field system.
+- Individual citizen needs and workplace jobs exist, but full personality-driven mental breaks, long-lived memories, social graphs, body-part health and schedules are not integrated.
+- Population cohorts are a separate aggregate model; transitions between cohorts and individually simulated residents still need explicit conservation rules and persistence.
+- The new event queue is currently infrastructure with regression tests, not yet wired to every need, job, stock or hazard subsystem.
+- Spatial indexing, route/target invalidation metrics and reproducible 1k/5k/10k end-to-end benchmarks remain planned.
+- The world map is continuous 2D space; tactical formations and per-soldier combat are not implemented.
 
-## Design constraints
+## Persistence and deterministic behavior
 
 - Logical state belongs to simulation; screen transforms and drawing belong to presentation.
 - Tile coordinates and object footprints use consistent zero-based grid positions.
-- Resources must be conserved across transfer, construction, production, consumption, and persistence.
+- Resources must be conserved across transfer, construction, production, consumption and persistence.
 - Saved data must have explicit schema version and validated references.
+- Event ordering must be deterministic; do not use wall-clock timestamps as simulation order.
 - Deterministic tests must cover actual mechanics, not only application startup.
 - Graphics remain minimal until integrated mechanics are legible.
 
-## Target architecture: continuous real-time world
+## Implementation sequence
 
-The nine-region linked-hex campaign model has been retired. The target world uses continuous world-space coordinates and spatial queries. Local settlement construction may remain square-tile based, but the wider world is not a graph of linked tiles. All scales share one simulation clock and canonical world state; camera zoom changes the level of detail only. Population, resources, trade, caravans, armies and hazards move through space over elapsed time. Resource transfers are shipments with travel progress, not instant imports/exports. Save/load must converge on one validated world snapshot.
+1. Add and test deterministic event scheduling. **Foundation added in this branch.**
+2. Connect events to stock changes, job availability and need thresholds; preserve existing direct-call behavior during migration.
+3. Add a spatial bucket index for continuous-world queries and local agent lookups, with mutation/invalidation tests.
+4. Add multi-source flow fields for shared destinations and retain exact path checks for work reservations.
+5. Expand individual needs, traits, memories, relationships and body-part health in small save-compatible slices.
+6. Add tile material definitions, temperature exchange and fluid movement with strict per-tick work budgets.
+7. Add seeded incident scheduling and bounded population/industry benchmarks.
 
 Mouse-first is a product requirement. Visible menus must expose pause/resume, speed, save/load, zoom, build/object selection and cancellation. Mouse interaction is primary; keyboard shortcuts are optional only.
