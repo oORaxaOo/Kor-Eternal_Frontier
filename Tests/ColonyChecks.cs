@@ -23,6 +23,22 @@ internal static class ColonyChecks
         environment.Step(1f);
         Check(environment.TemperatureAt(25, 7) > 20f,
             "magma must heat its tile through the thermal simulation");
+
+        static float NeighbourHeating(ArchitectureKind barrier)
+        {
+            var world = new ColonySimulation();
+            world.TileAt(5, 5)!.TemperatureCelsius = 200f;
+            world.TileAt(5, 5)!.Architecture = barrier;
+            world.TileAt(6, 5)!.TemperatureCelsius = 20f;
+            world.Step(1f);
+            return world.TemperatureAt(6, 5);
+        }
+
+        float openHeating = NeighbourHeating(ArchitectureKind.None);
+        float doorHeating = NeighbourHeating(ArchitectureKind.Door);
+        float wallHeating = NeighbourHeating(ArchitectureKind.Wall);
+        Check(openHeating > doorHeating && doorHeating > wallHeating && wallHeating > 20f,
+            "open tiles must exchange heat fastest, doors partially insulate, and walls strongly reduce but do not eliminate heat transfer");
         string environmentSave = ColonySaveService.Serialize(environment);
         var restoredEnvironment = ColonySaveService.Deserialize(environmentSave);
         Check(restoredEnvironment.TotalFluid(FluidKind.Water) == environment.TotalFluid(FluidKind.Water) &&
