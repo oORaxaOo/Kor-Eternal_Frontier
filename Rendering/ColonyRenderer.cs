@@ -175,11 +175,27 @@ internal sealed class ColonyRenderer : IDisposable
             var order = simulation.TileOrderAt(x, y);
             if (order != null)
             {
-                _line.Color = order.Status == ConstructionStatus.UnderConstruction ? Gold : new SKColor(177, 174, 148);
+                _line.Color = order.Status switch
+                {
+                    ConstructionStatus.UnderConstruction => Gold,
+                    ConstructionStatus.WaitingForMaterials => Crimson,
+                    ConstructionStatus.Blocked => new SKColor(110, 73, 76),
+                    _ => new SKColor(177, 174, 148)
+                };
                 _line.StrokeWidth = Math.Max(1f, zoom * 1.4f);
                 canvas.DrawRect(Inset(rect, size * 0.12f), _line);
-                _fill.Color = new SKColor(201, 179, 105, 40);
+                _fill.Color = order.Status switch
+                {
+                    ConstructionStatus.WaitingForMaterials => new SKColor(192, 42, 54, 65),
+                    ConstructionStatus.UnderConstruction => new SKColor(216, 177, 89, 50),
+                    _ => new SKColor(201, 179, 105, 25)
+                };
                 canvas.DrawRect(rect, _fill);
+                if (zoom >= 0.82f && order.Status == ConstructionStatus.WaitingForMaterials)
+                {
+                    _text.Color = Crimson;
+                    canvas.DrawText("!", point.X, point.Y + 4f * zoom, SKTextAlign.Center, _glyphFont, _text);
+                }
             }
 
             _line.Color = new SKColor(66, 79, 72, 170);
