@@ -10,6 +10,7 @@ internal sealed class IncidentManager
     {
         [SocialEventKind.ConflictMilestone] = new("resident_conflict", 2, 300, "Residents have developed a persistent conflict."),
         [SocialEventKind.TensionMilestone] = new("social_tension", 1, 180, "Interpersonal tension is becoming a concern."),
+        [SocialEventKind.TrustMilestone] = new("trust_breakdown", 2, 300, "Trust between residents has seriously deteriorated."),
         [SocialEventKind.FriendshipMilestone] = new("resident_bond", 1, 300, "A meaningful bond has formed between residents.")
     };
     private long _nextIncidentId = 1;
