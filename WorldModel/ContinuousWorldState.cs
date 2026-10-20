@@ -67,6 +67,9 @@ internal sealed class ContinuousWorldState
     [System.Text.Json.Serialization.JsonIgnore]
     private bool _spatialIndexDirty = true;
 
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal int SpatialIndexRebuildCount => _spatialIndex?.RebuildCount ?? 0;
+
     public static ContinuousWorldState Generate(int seed)
     {
         var state = new ContinuousWorldState { Seed = seed };
@@ -138,6 +141,7 @@ internal sealed class ContinuousWorldState
         Ecology ??= new WorldEcologyState();
         if (Ecology.Herds.Count == 0 && Ecology.Hotspots.Count == 0) Ecology.Initialize(Seed);
         Ecology.Step(deltaSeconds, ClockSeconds, Seed);
+        bool entityPositionsChanged = false;
         // Continuous settlement food production is integrated directly against elapsed world time.
         foreach (var settlement in Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement))
         {
@@ -164,6 +168,7 @@ internal sealed class ContinuousWorldState
             {
                 entity.X = targetX;
                 entity.Y = targetY;
+                entityPositionsChanged |= distance > 0.000001;
                 entity.DestinationX = null;
                 entity.DestinationY = null;
                 entity.MovementSpeed = 0;
@@ -172,6 +177,7 @@ internal sealed class ContinuousWorldState
 
             entity.X += dx / distance * travel;
             entity.Y += dy / distance * travel;
+            entityPositionsChanged = travel > 0;
         }
 
         foreach (var shipment in Shipments.Where(candidate => candidate.Status == WorldShipmentStatus.InTransit))
@@ -183,6 +189,7 @@ internal sealed class ContinuousWorldState
             if (distance <= travel || distance <= 0.000001)
             {
                 shipment.X = shipment.DestinationX; shipment.Y = shipment.DestinationY;
+                entityPositionsChanged |= distance > 0.000001;
                 carrier.X = shipment.X; carrier.Y = shipment.Y;
                 carrier.DestinationX = null; carrier.DestinationY = null; carrier.MovementSpeed = 0;
                 if (!TryAddInventory(shipment.DestinationEntityId, shipment.Resource, shipment.Amount))
@@ -198,10 +205,11 @@ internal sealed class ContinuousWorldState
             {
                 shipment.X += dx / distance * travel;
                 shipment.Y += dy / distance * travel;
+                entityPositionsChanged |= travel > 0;
                 carrier.X = shipment.X; carrier.Y = shipment.Y;
             }
         }
-        _spatialIndexDirty = true;
+        if (entityPositionsChanged) _spatialIndexDirty = true;
     }
 
     public double InventoryAt(long entityId, WorldResourceKind resource)
