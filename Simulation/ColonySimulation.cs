@@ -10,6 +10,7 @@ internal enum ConstructionStatus { Planned, WaitingForMaterials, UnderConstructi
 internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce }
 
 internal readonly record struct CellPosition(int X, int Y);
+internal readonly record struct PathCacheKey(CellPosition Start, CellPosition Target);
 
 internal sealed class TileCell
 {
@@ -100,6 +101,12 @@ internal sealed class ColonySimulation
     public const int BaseStockpileCapacity = 120;
     public const int StorageRackCapacity = 80;
     private const int CarryCapacity = 5;
+    private const int MaxCachedPaths = 8_192;
+    private readonly Dictionary<PathCacheKey, List<CellPosition>> _pathCache = [];
+    private readonly Queue<PathCacheKey> _pathCacheOrder = new();
+    internal int PathfindingSearches { get; private set; }
+    internal int PathCacheHits { get; private set; }
+    internal int CachedPathCount => _pathCache.Count;
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
     private readonly List<PlaceableObjectState> _objects = [];
@@ -623,6 +630,7 @@ internal sealed class ColonySimulation
 
         var item = new PlaceableObjectState(_nextObjectId++, kind, origin, width, height, work, ConstructionStatus.Planned);
         _objects.Add(item);
+        InvalidatePathCache();
         Message = $"{kind} blueprint placed at ({x}, {y}); materials and worker time are still required.";
         return item.Id;
     }
@@ -1009,6 +1017,7 @@ internal sealed class ColonySimulation
         var tile = _tiles[order.Cell.X, order.Cell.Y];
         tile.Architecture = order.Target;
         tile.ConstructionOrderId = null;
+        InvalidatePathCache();
         order.Status = ConstructionStatus.Complete;
         worker.Task = null;
         Message = $"{order.Target} completed at ({order.Cell.X}, {order.Cell.Y}).";
@@ -1096,6 +1105,16 @@ internal sealed class ColonySimulation
     {
         path = [];
         if (!InBounds(start.X, start.Y) || !IsWalkable(target)) return false;
+
+        var key = new PathCacheKey(start, target);
+        if (_pathCache.TryGetValue(key, out var cachedPath))
+        {
+            PathCacheHits++;
+            path = [.. cachedPath];
+            return true;
+        }
+
+        PathfindingSearches++;
         var previous = new CellPosition?[Width, Height];
         var visited = new bool[Width, Height];
         var queue = new Queue<CellPosition>();
@@ -1126,7 +1145,33 @@ internal sealed class ColonySimulation
             cursor = prior.Value;
         }
         path.Reverse();
+        StoreCachedPath(key, path);
         return true;
+    }
+
+    /// <summary>Diagnostic route query used by deterministic scalability regression checks.</summary>
+    internal bool TryFindPathForDiagnostics(CellPosition start, CellPosition target, out List<CellPosition> path)
+        => TryFindPath(start, target, out path);
+
+    private void StoreCachedPath(PathCacheKey key, List<CellPosition> path)
+    {
+        if (_pathCache.Count >= MaxCachedPaths)
+        {
+            while (_pathCacheOrder.Count > 0)
+            {
+                var oldest = _pathCacheOrder.Dequeue();
+                if (_pathCache.Remove(oldest)) break;
+            }
+        }
+
+        _pathCache[key] = [.. path];
+        _pathCacheOrder.Enqueue(key);
+    }
+
+    private void InvalidatePathCache()
+    {
+        _pathCache.Clear();
+        _pathCacheOrder.Clear();
     }
 
     private bool IsWalkable(CellPosition cell)
