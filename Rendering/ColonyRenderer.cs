@@ -436,6 +436,8 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawText($"Current priority: {simulation.SelectedWorkOrderPriority}/5", 790, 416, SKTextAlign.Left, _smallFont, _text);
             DrawButton(canvas, "P -", 784, 425, 54, 22, simulation.SelectedWorkOrderPriority <= 1);
             DrawButton(canvas, "P +", 842, 425, 54, 22, simulation.SelectedWorkOrderPriority >= 5);
+            _muted.Color = MutedColor;
+            canvas.DrawText(simulation.SelectedWorkOrderDiagnostic, 790, 462, SKTextAlign.Left, _smallFont, _muted);
         }
         else
         {
