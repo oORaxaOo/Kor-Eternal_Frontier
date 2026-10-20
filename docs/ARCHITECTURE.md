@@ -44,7 +44,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
-- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining; event handlers and broad system integration remain future work.
+- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger and fatigue now emit one event when crossing their critical thresholds; the simulation tick and drain API are exposed for downstream planners. Stockpile, job availability, hazards and incidents are not yet fully event-wired.
 - A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 
 ## Combined design target: DF depth + Songs of Syx scale + RimWorld storytelling
@@ -80,8 +80,9 @@ These games are design references, not evidence that their proprietary internal 
 
 ## Implementation sequence
 
-1. Add and test deterministic event scheduling. **Foundation added in this branch.**
-2. Connect events to stock changes, job availability and need thresholds; preserve existing direct-call behavior during migration.
+1. Add and test deterministic event scheduling. **Foundation added.**
+2. Emit need-threshold events from citizen simulation. **Hunger and fatigue crossings are now integrated.**
+3. Connect events to stock changes, job availability, hazards and incidents while preserving existing direct-call behavior during migration.
 3. Add a spatial bucket index for continuous-world queries and local agent lookups, with mutation/invalidation tests.
 4. Extend shared-destination flow fields to the main colony task planner and retain exact path checks for work reservations. **First implementation exists in the high-throughput citizen grid.**
 5. Expand individual needs, traits, memories, relationships and body-part health in small save-compatible slices.
