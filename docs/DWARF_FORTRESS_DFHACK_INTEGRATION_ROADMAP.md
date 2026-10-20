@@ -123,9 +123,9 @@ This is a multi-release program. “Complete” means the systems are integrated
 ### Stage C — Deep local colony simulation
 1. **First terrain slice implemented in this branch:** designate solid rock for excavation, assign a miner through the prioritized scheduler, convert completed rock to walkable ground, and spawn a finite physical stone deposit that must be hauled. Mining orders and terrain/deposit outcomes are covered by schema-v6 save/load.
 2. Extend citizens' needs, rest, housing, skills, and morale.
-2. Add general work orders and data-driven production chains.
-3. Add room/zone semantics, farming seasons, food processing, spoilage, and maintenance.
-4. Add terrain excavation and underground/resource discovery.
+3. Add general work orders and data-driven production chains.
+4. Add room/zone semantics, farming seasons, food processing, spoilage, and maintenance.
+5. Expand beyond this first excavation slice into layered geology, underground resource discovery, and terrain-dependent yields.
 
 ### Stage D — Ecosystem and emergent events
 1. Extend The Blight into an environmental/ecological simulation.
