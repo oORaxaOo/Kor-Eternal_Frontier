@@ -29,6 +29,7 @@ internal static class WorldSpatialIndexChecks
         double oldX = moving.X, oldY = moving.Y;
         Check(world.QueryRadius(oldX, oldY, 1).Any(entity => entity.Id == moving.Id),
             "a freshly built spatial index must include the resource site");
+        int rebuildsAfterInitialQuery = world.SpatialIndexRebuildCount;
         Check(world.OrderMove(moving.Id, oldX + 1_500, oldY + 1_500, 2_000),
             "world entities should accept a move order");
         world.Step(2);
@@ -36,6 +37,16 @@ internal static class WorldSpatialIndexChecks
             "movement must invalidate the old spatial buckets");
         Check(world.QueryRadius(oldX + 1_500, oldY + 1_500, 1).Any(entity => entity.Id == moving.Id),
             "movement must make the entity visible in its new spatial bucket");
+        Check(world.SpatialIndexRebuildCount == rebuildsAfterInitialQuery,
+            "moving entities across buckets must update the index incrementally without a full rebuild");
+
+        Check(world.OrderMove(moving.Id, oldX + 1_550, oldY + 1_550, 100),
+            "entities should accept a short move within their current bucket");
+        world.Step(1);
+        Check(world.QueryRadius(oldX + 1_550, oldY + 1_550, 1).Any(entity => entity.Id == moving.Id),
+            "same-bucket movement must remain visible without changing bucket membership");
+        Check(world.SpatialIndexRebuildCount == rebuildsAfterInitialQuery,
+            "same-bucket movement must not trigger a full spatial-index rebuild");
 
         var added = world.AddEntity(WorldEntityKind.Army, "Index invalidation probe", "Kor", 12_345, 23_456);
         Check(world.QueryRadius(12_345, 23_456, 0).Any(entity => entity.Id == added.Id),
