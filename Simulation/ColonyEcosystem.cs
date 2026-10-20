@@ -622,7 +622,7 @@ internal sealed class ColonyEcosystem
         {
             CitizenState.MentalBreak => "Overwhelmed: recovering from a mental break.",
             CitizenState.MovingToStorage => "Seeking food: travelling to a food stockpile.",
-            CitizenState.MovingToJob => $"Travelling to workplace: {job?.Name ?? "assigned job"} .".Replace(" .", "."),
+            CitizenState.MovingToJob => $"Travelling to workplace: {job?.Name ?? "assigned job"}.",
             CitizenState.Working => $"Working at {job?.Name ?? "assigned job"}.",
             _ when citizen.Hunger < 30f && Grid.ResourceCount(ResourceKind.Food) == 0 =>
                 "Critical hunger: no stored food is available.",
