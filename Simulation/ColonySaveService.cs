@@ -42,7 +42,7 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 4;
+    public int SchemaVersion { get; set; } = 5;
     public long SocialTick { get; set; }
     public SocialNetworkSnapshot? SocialNetwork { get; set; }
     public IncidentManagerSnapshot? IncidentManager { get; set; }
@@ -67,9 +67,9 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4 && SchemaVersion != 5) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (SocialTick < 0) throw new InvalidDataException("Colony save contains an invalid social simulation tick.");
-        if (SchemaVersion == 4 && (SocialNetwork is null || IncidentManager is null))
+        if (SchemaVersion >= 4 && (SocialNetwork is null || IncidentManager is null))
             throw new InvalidDataException("Current colony save is missing social or incident state.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
@@ -107,7 +107,7 @@ internal sealed class ColonySnapshot
             CheckCell(order.X, order.Y, "tile construction order");
             if (!Enum.IsDefined(order.Target) || order.Target == ArchitectureKind.None || !Enum.IsDefined(order.Status))
                 throw new InvalidDataException("Colony save contains an invalid tile construction state.");
-            if (order.WorkRequired <= 0 || !float.IsFinite(order.WorkDone) || order.WorkDone < 0 ||
+            if (order.Priority is < 1 or > 5 || order.WorkRequired <= 0 || !float.IsFinite(order.WorkDone) || order.WorkDone < 0 ||
                 (order.Status == ConstructionStatus.Complete && order.WorkDone < order.WorkRequired) ||
                 (order.Status != ConstructionStatus.Complete && order.WorkDone >= order.WorkRequired))
                 throw new InvalidDataException("Colony save contains invalid tile construction work values or progress.");
@@ -152,7 +152,7 @@ internal sealed class ColonySnapshot
             if (!Enum.IsDefined(item.Kind) || !Enum.IsDefined(item.Status) || item.Width <= 0 || item.Height <= 0 ||
                 item.X < 0 || item.Y < 0 || item.X + item.Width > Width || item.Y + item.Height > Height)
                 throw new InvalidDataException("Colony save contains an invalid placeable object footprint.");
-            if (item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0 ||
+            if (item.Priority is < 1 or > 5 || item.WorkRequired < 0 || !float.IsFinite(item.WorkDone) || item.WorkDone < 0 ||
                 (item.Status != ConstructionStatus.Complete && item.WorkRequired == 0) ||
                 (item.Status == ConstructionStatus.Complete && item.WorkDone < item.WorkRequired) ||
                 (item.Status != ConstructionStatus.Complete && item.WorkDone >= item.WorkRequired))
@@ -230,7 +230,7 @@ internal sealed class ColonySnapshot
         foreach (var order in ProductionOrders)
         {
             CheckId(order.Id, productionIds, "production order");
-            if (!objectIds.Contains(order.WorkstationId) || !float.IsFinite(order.WorkRequired) ||
+            if (order.Priority is < 1 or > 5 || !objectIds.Contains(order.WorkstationId) || !float.IsFinite(order.WorkRequired) ||
                 !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0)
                 throw new InvalidDataException("Colony save contains an invalid production order.");
         }
@@ -238,7 +238,7 @@ internal sealed class ColonySnapshot
             if (worker.Task?.Kind == ColonyTaskKind.Produce && !productionIds.Contains(worker.Task.TargetId))
                 throw new InvalidDataException("Worker task references a missing production order.");
 
-        if (SchemaVersion == 4)
+        if (SchemaVersion >= 4)
         {
             var residents = workerIds.ToHashSet();
             _ = SocialRelationshipNetwork.Restore(SocialNetwork!, residents);
@@ -288,6 +288,7 @@ internal sealed class TileOrderSnapshot
     public ConstructionStatus Status { get; set; }
     public float WorkDone { get; set; }
     public int WorkRequired { get; set; }
+    public int Priority { get; set; } = 3;
 }
 internal sealed class PlaceableObjectSnapshot
 {
@@ -300,6 +301,7 @@ internal sealed class PlaceableObjectSnapshot
     public ConstructionStatus Status { get; set; }
     public float WorkDone { get; set; }
     public int WorkRequired { get; set; }
+    public int Priority { get; set; } = 3;
 }
 internal sealed class ResourceDepositSnapshot
 {
@@ -347,4 +349,5 @@ internal sealed class ProductionOrderSnapshot
     public float WorkDone { get; set; }
     public bool Complete { get; set; }
     public bool Assigned { get; set; }
+    public int Priority { get; set; } = 3;
 }
