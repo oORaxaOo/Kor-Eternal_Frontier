@@ -62,6 +62,11 @@ internal sealed class ContinuousWorldState
     public List<WorldShipmentState> Shipments { get; set; } = [];
     public WorldEcologyState Ecology { get; set; } = new();
 
+    [System.Text.Json.Serialization.JsonIgnore]
+    private WorldSpatialIndex? _spatialIndex;
+    [System.Text.Json.Serialization.JsonIgnore]
+    private bool _spatialIndexDirty = true;
+
     public static ContinuousWorldState Generate(int seed)
     {
         var state = new ContinuousWorldState { Seed = seed };
@@ -97,6 +102,7 @@ internal sealed class ContinuousWorldState
             Id = NextEntityId++, Kind = kind, Name = name, Faction = faction, X = x, Y = y
         };
         Entities.Add(entity);
+        _spatialIndexDirty = true;
         return entity;
     }
 
@@ -110,6 +116,7 @@ internal sealed class ContinuousWorldState
         entity.DestinationX = destinationX;
         entity.DestinationY = destinationY;
         entity.MovementSpeed = speed;
+        _spatialIndexDirty = true;
         if (Distance(entity.X, entity.Y, destinationX, destinationY) <= 0.000001)
         {
             entity.X = destinationX;
@@ -194,6 +201,7 @@ internal sealed class ContinuousWorldState
                 carrier.X = shipment.X; carrier.Y = shipment.Y;
             }
         }
+        _spatialIndexDirty = true;
     }
 
     public double InventoryAt(long entityId, WorldResourceKind resource)
@@ -256,6 +264,7 @@ internal sealed class ContinuousWorldState
         if (!TryTakeInventory(originEntityId, resource, amount)) return false;
         carrier.X = origin.X; carrier.Y = origin.Y;
         carrier.DestinationX = destination.X; carrier.DestinationY = destination.Y; carrier.MovementSpeed = speed;
+        _spatialIndexDirty = true;
         Shipments.Add(new WorldShipmentState
         {
             Id = NextShipmentId++, CarrierEntityId = carrierEntityId, OriginEntityId = originEntityId,
@@ -279,7 +288,14 @@ internal sealed class ContinuousWorldState
         if (!double.IsFinite(radius) || radius < 0)
             throw new ArgumentOutOfRangeException(nameof(radius), "Search radius must be finite and non-negative.");
         double squaredRadius = radius * radius;
-        return Entities
+        if (_spatialIndex is null)
+            _spatialIndex = new WorldSpatialIndex(WorldExtent);
+        if (_spatialIndexDirty)
+        {
+            _spatialIndex.Rebuild(Entities);
+            _spatialIndexDirty = false;
+        }
+        return _spatialIndex.QueryCandidates(x, y, radius)
             .Where(entity => SquaredDistance(entity.X, entity.Y, x, y) <= squaredRadius)
             .OrderBy(entity => SquaredDistance(entity.X, entity.Y, x, y))
             .ThenBy(entity => entity.Id)
