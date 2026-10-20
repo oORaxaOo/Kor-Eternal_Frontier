@@ -44,6 +44,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
+- Bounded, deterministic tile fluid redistribution and thermal exchange with temperature persistence; walls and doors now attenuate heat transfer according to material/edge conductance, so rooms can insulate without perfect heat isolation.
 - A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger/fatigue threshold crossings, stock additions/withdrawals and workplace availability changes emit data-only notifications; stockpile planning, hazard propagation and incidents are not yet event-wired.
 - A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 

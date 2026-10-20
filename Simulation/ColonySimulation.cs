@@ -520,15 +520,25 @@ internal sealed class ColonySimulation
         {
             var tile = _tiles[x, y];
             float current = tile.TemperatureCelsius;
-            float total = 0;
+            float weightedDelta = 0;
             int neighbours = 0;
-            AccumulateTemperature(x, y - 1, ref total, ref neighbours);
-            AccumulateTemperature(x - 1, y, ref total, ref neighbours);
-            AccumulateTemperature(x + 1, y, ref total, ref neighbours);
-            AccumulateTemperature(x, y + 1, ref total, ref neighbours);
-            float conductivity = tile.Architecture == ArchitectureKind.Wall ? 0.025f
-                : tile.Terrain == TerrainKind.Rock ? 0.045f : 0.10f;
-            float next = neighbours == 0 ? current : current + (total / neighbours - current) * conductivity;
+            AccumulateTemperatureExchange(x, y, x, y - 1, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x - 1, y, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x + 1, y, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x, y + 1, current, ref weightedDelta, ref neighbours);
+
+            float materialConductivity = tile.Architecture switch
+            {
+                ArchitectureKind.Wall => 0.025f,
+                ArchitectureKind.Door => 0.07f,
+                _ when tile.Terrain == TerrainKind.Rock => 0.045f,
+                _ => 0.10f
+            };
+            // Edge conductance weights each neighbour's temperature delta. Dividing by neighbour
+            // count keeps the update bounded and lets walls insulate without perfect heat isolation.
+            float exchange = neighbours == 0 ? 0 : weightedDelta / neighbours;
+            float next = current + exchange * materialConductivity;
+
             if (tile.MagmaLevel > 0)
             {
                 float magmaTemperature = Math.Min(2_000f, 600f + tile.MagmaLevel * 100f);
@@ -546,11 +556,26 @@ internal sealed class ColonySimulation
             _tiles[x, y].TemperatureCelsius = _temperatureBuffer[x, y];
     }
 
-    private void AccumulateTemperature(int x, int y, ref float total, ref int count)
+    private void AccumulateTemperatureExchange(int sourceX, int sourceY, int neighbourX, int neighbourY,
+        float sourceTemperature, ref float weightedDelta, ref int neighbours)
     {
-        if (x < 0 || x >= Width || y < 0 || y >= Height) return;
-        total += _tiles[x, y].TemperatureCelsius;
-        count++;
+        if (neighbourX < 0 || neighbourX >= Width || neighbourY < 0 || neighbourY >= Height) return;
+        var source = _tiles[sourceX, sourceY];
+        var neighbour = _tiles[neighbourX, neighbourY];
+        float edgeConductance = source.Architecture switch
+        {
+            ArchitectureKind.Wall => 0.08f,
+            ArchitectureKind.Door => 0.45f,
+            _ => 1f
+        };
+        edgeConductance = Math.Min(edgeConductance, neighbour.Architecture switch
+        {
+            ArchitectureKind.Wall => 0.08f,
+            ArchitectureKind.Door => 0.45f,
+            _ => 1f
+        });
+        weightedDelta += (neighbour.TemperatureCelsius - sourceTemperature) * edgeConductance;
+        neighbours++;
     }
 
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
