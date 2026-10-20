@@ -138,6 +138,43 @@ internal static class ColonyChecks
               restoredPriorityColony.TileOrders.Single(order => order.Id == lowPriorityOrderId).Priority == 1,
             "work order priorities must survive versioned save/load");
 
+        // Missing materials inherit the urgency of the most important order that needs them.
+        var gatheringPriorityColony = new ColonySimulation();
+        int firstGeneratorId = gatheringPriorityColony.PlaceObjectBlueprint(PlaceableKind.Generator, 3, 3);
+        int criticalGeneratorId = gatheringPriorityColony.PlaceObjectBlueprint(PlaceableKind.Generator, 6, 3);
+        Check(firstGeneratorId > 0 && criticalGeneratorId > 0,
+            "material-priority test should queue two valid generator blueprints");
+        foreach (int generatorId in new[] { firstGeneratorId, criticalGeneratorId })
+        {
+            var generator = gatheringPriorityColony.Objects.Single(item => item.Id == generatorId);
+            Check(gatheringPriorityColony.SelectWorkOrderAt(generator.Origin.X + 0.5f, generator.Origin.Y + 0.5f) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(1) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(1),
+                "both generators should be designated critical work orders");
+        }
+        for (int x = 2; x < 9; x++)
+        {
+            Check(gatheringPriorityColony.DesignTileConstruction(x, 12, ArchitectureKind.Door),
+                "material-priority test should queue door construction");
+            Check(gatheringPriorityColony.SelectWorkOrderAt(x + 0.5f, 12.5f) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(-1) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(-1),
+                "door work orders should be marked low priority");
+        }
+
+        bool gatheredCriticalMaterial = false;
+        for (int i = 0; i < 3000 && !gatheredCriticalMaterial; i++)
+        {
+            gatheringPriorityColony.Step(0.1f);
+            gatheredCriticalMaterial = gatheringPriorityColony.Workers.Any(worker =>
+                worker.Task?.Kind == ColonyTaskKind.Gather &&
+                gatheringPriorityColony.Deposits.Any(deposit =>
+                    deposit.Id == worker.Task.DepositId && deposit.Resource == ResourceKind.Alloy));
+        }
+        Check(gatheredCriticalMaterial,
+            "automatic hauling must prioritize alloy for a priority-five generator over wood for priority-one doors, even when the wood deposit is closer");
+
+
         var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
         int depositBefore = woodDeposit.Amount;
