@@ -8,8 +8,8 @@ internal enum ArchitectureKind { None, Floor, Wall, Door, Path, Conduit }
 internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden }
 internal enum ResourceKind { Wood, Stone, Food, Alloy, Components }
 internal enum ConstructionStatus { Planned, WaitingForMaterials, UnderConstruction, Complete, Blocked }
-internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce }
-internal enum WorkOrderKind { TileConstruction, ObjectConstruction, Production }
+internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce, Mine }
+internal enum WorkOrderKind { TileConstruction, ObjectConstruction, Production, Excavation }
 
 internal readonly record struct CellPosition(int X, int Y);
 internal readonly record struct PathCacheKey(CellPosition Start, CellPosition Target);
@@ -30,6 +30,16 @@ internal sealed class TileConstructionOrder(int id, CellPosition cell, Architect
     public CellPosition Cell { get; } = cell;
     public ArchitectureKind Target { get; } = target;
     /// <summary>Player-defined importance from 1 (low) to 5 (critical).</summary>
+    public int Priority { get; set; } = 3;
+    public ConstructionStatus Status { get; internal set; } = ConstructionStatus.Planned;
+    public float WorkDone { get; internal set; }
+    public int WorkRequired { get; } = workRequired;
+}
+
+internal sealed class ExcavationOrder(int id, CellPosition cell, int workRequired)
+{
+    public int Id { get; } = id;
+    public CellPosition Cell { get; } = cell;
     public int Priority { get; set; } = 3;
     public ConstructionStatus Status { get; internal set; } = ConstructionStatus.Planned;
     public float WorkDone { get; internal set; }
@@ -120,6 +130,7 @@ internal sealed class ColonySimulation
     internal int CachedPathCount => _pathCache.Count;
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
+    private readonly List<ExcavationOrder> _excavationOrders = [];
     private readonly List<PlaceableObjectState> _objects = [];
     private readonly List<ResourceDeposit> _deposits = [];
     private readonly List<ColonyWorker> _workers = [];
@@ -135,6 +146,7 @@ internal sealed class ColonySimulation
     private long _socialTick;
     private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
+    private int _nextExcavationId = 1;
     private int _nextWorkerId = 4;
     private int _nextSpawnCellIndex = 12 * Width + 14;
     private int _nextObjectId = 1;
@@ -149,6 +161,7 @@ internal sealed class ColonySimulation
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
+    public IReadOnlyList<ExcavationOrder> ExcavationOrders => _excavationOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
     public string Message { get; private set; } = "Colony ready. Design architecture per tile or place an object blueprint.";
@@ -161,7 +174,8 @@ internal sealed class ColonySimulation
     public float ElapsedSeconds { get; private set; }
     public int CompletedTileOrders => _tileOrders.Count(x => x.Status == ConstructionStatus.Complete);
     public int CompletedObjects => _objects.Count(x => x.IsBuilt);
-    public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
+    public int PendingJobs => _excavationOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.UnderConstruction)
+        + _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _objects.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _productionOrders.Count(x => !x.Complete);
     public int InventoryUsed => _sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue
@@ -219,11 +233,13 @@ internal sealed class ColonySimulation
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
             NextOrderId = _nextOrderId,
+            NextExcavationId = _nextExcavationId,
             NextObjectId = _nextObjectId,
             NextDepositId = _nextDepositId,
             NextProductionId = _nextProductionId,
             Tiles = [],
             TileOrders = [],
+            ExcavationOrders = [],
             Objects = [],
             Deposits = [],
             Workers = [],
@@ -244,6 +260,11 @@ internal sealed class ColonySimulation
             });
         }
 
+        snapshot.ExcavationOrders.AddRange(_excavationOrders.Select(order => new ExcavationOrderSnapshot
+        {
+            Id = order.Id, X = order.Cell.X, Y = order.Cell.Y, Status = order.Status,
+            WorkDone = order.WorkDone, WorkRequired = order.WorkRequired, Priority = order.Priority
+        }));
         snapshot.TileOrders.AddRange(_tileOrders.Select(order => new TileOrderSnapshot
         {
             Id = order.Id, X = order.Cell.X, Y = order.Cell.Y, Target = order.Target,
@@ -305,6 +326,11 @@ internal sealed class ColonySimulation
             tile.TemperatureCelsius = tileState.TemperatureCelsius;
         }
 
+        simulation._excavationOrders.Clear();
+        simulation._excavationOrders.AddRange(snapshot.ExcavationOrders.Select(order => new ExcavationOrder(
+            order.Id, new CellPosition(order.X, order.Y), order.WorkRequired)
+        { Status = order.Status, WorkDone = order.WorkDone, Priority = order.Priority }));
+
         simulation._tileOrders.Clear();
         simulation._tileOrders.AddRange(snapshot.TileOrders.Select(order =>
         {
@@ -358,6 +384,7 @@ internal sealed class ColonySimulation
         }));
 
         simulation._nextOrderId = snapshot.NextOrderId;
+        simulation._nextExcavationId = snapshot.NextExcavationId;
         simulation._nextObjectId = snapshot.NextObjectId;
         simulation._nextDepositId = snapshot.NextDepositId;
         simulation._nextProductionId = snapshot.NextProductionId;
@@ -814,6 +841,9 @@ internal sealed class ColonySimulation
         _tileOrders.FirstOrDefault(o => o.Cell.X == x && o.Cell.Y == y &&
             o.Status is not (ConstructionStatus.Complete or ConstructionStatus.Blocked));
 
+    public ExcavationOrder? ExcavationOrderAt(int x, int y) =>
+        _excavationOrders.FirstOrDefault(o => o.Cell.X == x && o.Cell.Y == y && o.Status != ConstructionStatus.Complete);
+
     /// <summary>Selects an unfinished blueprint or queued production order by clicking its world tile.</summary>
     public bool SelectWorkOrderAt(float worldX, float worldY)
     {
@@ -831,6 +861,17 @@ internal sealed class ColonySimulation
         {
             SelectWorkOrder(WorkOrderKind.ObjectConstruction, objectOrder.Id);
             Message = $"Selected {objectOrder.Kind} blueprint. Priority {objectOrder.Priority}/5.";
+            return true;
+        }
+
+        var excavationOrder = _excavationOrders
+            .Where(order => order.Cell == cell && order.Status != ConstructionStatus.Complete)
+            .OrderBy(order => order.Id)
+            .FirstOrDefault();
+        if (excavationOrder != null)
+        {
+            SelectWorkOrder(WorkOrderKind.Excavation, excavationOrder.Id);
+            Message = $"Selected excavation at ({x}, {y}). Priority {excavationOrder.Priority}/5.";
             return true;
         }
 
@@ -875,6 +916,11 @@ internal sealed class ColonySimulation
         int priority = Math.Clamp(current.Value + Math.Sign(delta), 1, 5);
         switch (_selectedWorkOrderKind.Value)
         {
+            case WorkOrderKind.Excavation:
+                var excavation = _excavationOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId.Value);
+                if (excavation == null || excavation.Status is ConstructionStatus.Complete or ConstructionStatus.Blocked) return false;
+                excavation.Priority = priority;
+                break;
             case WorkOrderKind.TileConstruction:
                 var tile = _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId.Value);
                 if (tile == null || tile.Status == ConstructionStatus.Complete) return false;
@@ -906,6 +952,7 @@ internal sealed class ColonySimulation
 
     private int? GetSelectedWorkOrderPriority() => _selectedWorkOrderKind switch
     {
+        WorkOrderKind.Excavation => _excavationOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
         WorkOrderKind.TileConstruction => _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
         WorkOrderKind.ObjectConstruction => _objects.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
         WorkOrderKind.Production => _productionOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
@@ -914,6 +961,9 @@ internal sealed class ColonySimulation
 
     private string GetSelectedWorkOrderSummary() => _selectedWorkOrderKind switch
     {
+        WorkOrderKind.Excavation => _excavationOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } excavationOrder
+            ? $"Excavate ({excavationOrder.Cell.X},{excavationOrder.Cell.Y}) / {excavationOrder.Status}"
+            : "Order no longer exists",
         WorkOrderKind.TileConstruction => _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } tileOrder
             ? $"{tileOrder.Target} ({tileOrder.Cell.X},{tileOrder.Cell.Y}) / {tileOrder.Status}"
             : "No work order selected",
@@ -928,6 +978,9 @@ internal sealed class ColonySimulation
 
     private string GetSelectedWorkOrderDiagnostic() => _selectedWorkOrderKind switch
     {
+        WorkOrderKind.Excavation => _excavationOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } excavationOrder
+            ? GetExcavationDiagnostic(excavationOrder)
+            : "Order no longer exists",
         WorkOrderKind.TileConstruction => _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } tileOrder
             ? GetConstructionDiagnostic(tileOrder.Status, tileOrder.WorkDone, tileOrder.WorkRequired, TileCost(tileOrder.Target))
             : "Order no longer exists",
@@ -940,6 +993,14 @@ internal sealed class ColonySimulation
                 : $"Inputs committed; work {Math.Min(100, (int)(productionOrder.WorkDone / Math.Max(1f, productionOrder.WorkRequired) * 100))}%"
             : "Order no longer exists",
         _ => "Select a blueprint or workbench on the map"
+    };
+
+    private static string GetExcavationDiagnostic(ExcavationOrder order) => order.Status switch
+    {
+        ConstructionStatus.Blocked => "BLOCKED: no accessible work tile found",
+        ConstructionStatus.UnderConstruction => $"MINING IN PROGRESS: {Math.Min(100, (int)(order.WorkDone / Math.Max(1, order.WorkRequired) * 100))}%",
+        ConstructionStatus.Complete => "Excavation complete; stone deposit created",
+        _ => "Rock is accessible; awaiting miner assignment"
     };
 
     private string GetConstructionDiagnostic(ConstructionStatus status, float workDone, float workRequired,
@@ -960,6 +1021,34 @@ internal sealed class ColonySimulation
         return "Materials ready; awaiting worker assignment";
     }
 
+    public bool DesignExcavation(int x, int y)
+    {
+        if (!InBounds(x, y))
+        {
+            Message = "That tile is outside the map.";
+            return false;
+        }
+
+        var cell = new CellPosition(x, y);
+        var tile = _tiles[x, y];
+        if (tile.Terrain != TerrainKind.Rock || tile.Architecture != ArchitectureKind.None ||
+            tile.ConstructionOrderId.HasValue || ObjectAt(x, y) != null || DepositAt(x, y) != null)
+        {
+            Message = "Excavation requires solid, unoccupied rock with no existing deposit.";
+            return false;
+        }
+        if (_excavationOrders.Any(order => order.Cell == cell && order.Status != ConstructionStatus.Complete))
+        {
+            Message = "That rock tile already has an excavation order.";
+            return false;
+        }
+
+        var order = new ExcavationOrder(_nextExcavationId++, cell, workRequired: 3);
+        _excavationOrders.Add(order);
+        Message = $"Excavation marked at ({x}, {y}); a worker must reach the rock and mine it before stone can be hauled.";
+        return true;
+    }
+
     public bool DesignTileConstruction(int x, int y, ArchitectureKind target)
     {
         if (target is ArchitectureKind.None)
@@ -976,9 +1065,9 @@ internal sealed class ColonySimulation
         var cell = new CellPosition(x, y);
         var tile = _tiles[x, y];
         if (tile.Terrain != TerrainKind.Ground || tile.Architecture != ArchitectureKind.None ||
-            tile.ConstructionOrderId.HasValue || ObjectAt(x, y) != null)
+            tile.ConstructionOrderId.HasValue || ObjectAt(x, y) != null || DepositAt(x, y) != null)
         {
-            Message = "Architecture cannot be designated on an occupied or unsuitable tile.";
+            Message = "Architecture cannot be designated on an occupied tile, an active deposit, or unsuitable ground.";
             return false;
         }
 
@@ -1017,9 +1106,9 @@ internal sealed class ColonySimulation
         {
             if (!InBounds(tx, ty) || _tiles[tx, ty].Terrain != TerrainKind.Ground ||
                 _tiles[tx, ty].Architecture is ArchitectureKind.Wall ||
-                _tiles[tx, ty].ConstructionOrderId.HasValue || ObjectAt(tx, ty) != null)
+                _tiles[tx, ty].ConstructionOrderId.HasValue || ObjectAt(tx, ty) != null || DepositAt(tx, ty) != null)
             {
-                Message = "The full object footprint must be clear ground.";
+                Message = "The full object footprint must be clear ground without active resource deposits.";
                 return 0;
             }
         }
@@ -1281,12 +1370,39 @@ internal sealed class ColonySimulation
             // Priority is evaluated across tile builds, object blueprints and production orders.
             // Within one priority level, task-type order remains stable and existing behavior is preserved.
             for (int priority = 5; priority >= 1 && !assigned; priority--)
-                assigned = TryAssignTileBuild(worker, priority) ||
+                assigned = TryAssignExcavation(worker, priority) ||
+                           TryAssignTileBuild(worker, priority) ||
                            TryAssignObjectBuild(worker, priority) ||
                            TryAssignProduction(worker, priority);
             if (assigned) continue;
             TryAssignGatherForShortage(worker);
         }
+    }
+
+    private bool TryAssignExcavation(ColonyWorker worker, int priority)
+    {
+        foreach (var order in _excavationOrders
+                     .Where(order => order.Status == ConstructionStatus.Planned && order.Priority == priority)
+                     .OrderBy(order => order.Id))
+        {
+            var workCell = FindWorkCell(worker, order.Cell, 1, 1);
+            if (!workCell.HasValue)
+            {
+                order.Status = ConstructionStatus.Blocked;
+                continue;
+            }
+            if (!TryFindPath(worker, workCell.Value, out var route))
+            {
+                order.Status = ConstructionStatus.Blocked;
+                continue;
+            }
+
+            order.Status = ConstructionStatus.UnderConstruction;
+            worker.Task = new WorkerTask(ColonyTaskKind.Mine, workCell.Value, route) { TargetId = order.Id };
+            Message = $"{worker.Name} assigned to excavate rock at ({order.Cell.X}, {order.Cell.Y}).";
+            return true;
+        }
+        return false;
     }
 
     private bool TryAssignTileBuild(ColonyWorker worker, int priority)
@@ -1463,6 +1579,9 @@ internal sealed class ColonySimulation
             case ColonyTaskKind.Produce:
                 WorkOnProduction(worker, task, deltaSeconds);
                 break;
+            case ColonyTaskKind.Mine:
+                WorkOnExcavation(worker, task, deltaSeconds);
+                break;
         }
     }
 
@@ -1513,6 +1632,36 @@ internal sealed class ColonySimulation
                 : $"{worker.Name} delivered {delivered}; {worker.CarriedAmount} remain carried until storage space is available.";
         }
         worker.Task = null;
+    }
+
+    private void WorkOnExcavation(ColonyWorker worker, WorkerTask task, float deltaSeconds)
+    {
+        var order = _excavationOrders.FirstOrDefault(candidate => candidate.Id == task.TargetId);
+        if (order == null || order.Status != ConstructionStatus.UnderConstruction)
+        {
+            worker.Task = null;
+            return;
+        }
+
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        if (order.WorkDone < order.WorkRequired) return;
+
+        var tile = _tiles[order.Cell.X, order.Cell.Y];
+        if (tile.Terrain != TerrainKind.Rock || tile.Architecture != ArchitectureKind.None)
+        {
+            order.Status = ConstructionStatus.Blocked;
+            worker.Task = null;
+            Message = $"Excavation at ({order.Cell.X}, {order.Cell.Y}) is blocked because the tile is no longer solid rock.";
+            return;
+        }
+
+        // Mining consumes a finite rock tile and creates a physical stone deposit, not inventory.
+        tile.Terrain = TerrainKind.Ground;
+        InvalidatePathCache();
+        AddDeposit(order.Cell, ResourceKind.Stone, amount: 3);
+        order.Status = ConstructionStatus.Complete;
+        worker.Task = null;
+        Message = $"Excavation complete at ({order.Cell.X}, {order.Cell.Y}); 3 stone are ready to be hauled.";
     }
 
     private void WorkOnTile(ColonyWorker worker, WorkerTask task, float deltaSeconds)
