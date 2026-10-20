@@ -224,7 +224,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 5,
+            SchemaVersion = 6,
             SocialTick = _socialTick,
             SocialNetwork = _socialRelationships.CaptureSnapshot(),
             IncidentManager = _incidentManager.CaptureSnapshot(),
@@ -1382,9 +1382,17 @@ internal sealed class ColonySimulation
     private bool TryAssignExcavation(ColonyWorker worker, int priority)
     {
         foreach (var order in _excavationOrders
-                     .Where(order => order.Status == ConstructionStatus.Planned && order.Priority == priority)
+                     .Where(order => (order.Status is ConstructionStatus.Planned or ConstructionStatus.UnderConstruction) &&
+                                     order.Priority == priority)
                      .OrderBy(order => order.Id))
         {
+            // A manually redirected miner may leave a valid excavation unfinished. Reassign it,
+            // but never let two workers own the same mining order concurrently.
+            if (_workers.Any(candidate => candidate.Id != worker.Id &&
+                    candidate.Task?.Kind == ColonyTaskKind.Mine &&
+                    candidate.Task.TargetId == order.Id))
+                continue;
+
             var workCell = FindWorkCell(worker, order.Cell, 1, 1);
             if (!workCell.HasValue)
             {
