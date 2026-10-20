@@ -472,7 +472,16 @@ internal sealed class ColonyRenderer : IDisposable
                 canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)} | M {(citizen?.Mood ?? 100f):0} | S {worker.Stress:0}", 790, row, SKTextAlign.Left, _smallFont, _text);
                 _muted.Color = MutedColor;
                 canvas.DrawText($"{legacyJob} / {citizenState}", 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
-                row += 43;
+                var diagnostic = simulation.InspectWorker(worker.Id);
+                if (diagnostic != null)
+                {
+                    string reason = diagnostic.PrimaryReason.Length > 43
+                        ? diagnostic.PrimaryReason[..40] + "..."
+                        : diagnostic.PrimaryReason;
+                    _text.Color = diagnostic.Hunger < 30f || diagnostic.Stress >= 80f ? Crimson : Gold;
+                    canvas.DrawText(reason, 790, row + 29, SKTextAlign.Left, _smallFont, _text);
+                }
+                row += 55;
             }
             if (simulation.Workers.Count > 2)
             {
