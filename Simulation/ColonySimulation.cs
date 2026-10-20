@@ -1367,7 +1367,7 @@ internal sealed class ColonySimulation
             }
 
             bool assigned = false;
-            // Priority is evaluated across tile builds, object blueprints and production orders.
+            // Priority is evaluated across excavation, tile builds, object blueprints and production orders.
             // Within one priority level, task-type order remains stable and existing behavior is preserved.
             for (int priority = 5; priority >= 1 && !assigned; priority--)
                 assigned = TryAssignExcavation(worker, priority) ||
