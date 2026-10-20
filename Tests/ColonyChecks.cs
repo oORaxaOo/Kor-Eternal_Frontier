@@ -103,6 +103,39 @@ internal static class ColonyChecks
         Check(colony.ConstructionCostStatus(ArchitectureKind.None, PlaceableKind.Workbench, isObject: false)
                   .Contains("Select a tile type", StringComparison.Ordinal),
             "the build HUD must explain when no construction type is selected");
+
+        // A higher-priority work order must be selected before an older low-priority order.
+        var priorityColony = new ColonySimulation();
+        Check(priorityColony.DesignTileConstruction(16, 10, ArchitectureKind.Wall),
+            "priority test should queue a low-priority wall order");
+        int lowPriorityOrderId = priorityColony.TileOrders.Single().Id;
+        Check(priorityColony.DesignTileConstruction(17, 10, ArchitectureKind.Floor),
+            "priority test should queue a second construction order");
+        int highPriorityOrderId = priorityColony.TileOrders.Single(order => order.Cell == new CellPosition(17, 10)).Id;
+        Check(priorityColony.SelectWorkOrderAt(17.5f, 10.5f) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              priorityColony.SelectedWorkOrderPriority == 5,
+            "the player should select a blueprint and raise its priority to the critical cap");
+        Check(priorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              priorityColony.SelectedWorkOrderPriority == 5,
+            "work order priority must clamp at the critical maximum");
+        Check(priorityColony.SelectWorkOrderAt(16.5f, 10.5f) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(-1) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(-1) &&
+              priorityColony.SelectedWorkOrderPriority == 1,
+            "the player should lower another order to the minimum priority");
+        Check(priorityColony.SelectWorkOrderAt(17.5f, 10.5f),
+            "the critical construction order should remain inspectable after changing another order");
+        priorityColony.Step(0.1f);
+        Check(priorityColony.Workers[0].Task?.Kind == ColonyTaskKind.BuildTile &&
+              priorityColony.Workers[0].Task?.TargetId == highPriorityOrderId,
+            "automatic scheduling must prefer a critical tile order over an earlier low-priority order");
+        var restoredPriorityColony = ColonySaveService.Deserialize(ColonySaveService.Serialize(priorityColony));
+        Check(restoredPriorityColony.TileOrders.Single(order => order.Id == highPriorityOrderId).Priority == 5 &&
+              restoredPriorityColony.TileOrders.Single(order => order.Id == lowPriorityOrderId).Priority == 1,
+            "work order priorities must survive versioned save/load");
+
         var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
         int depositBefore = woodDeposit.Amount;
