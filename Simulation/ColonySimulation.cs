@@ -521,12 +521,11 @@ internal sealed class ColonySimulation
             var tile = _tiles[x, y];
             float current = tile.TemperatureCelsius;
             float weightedDelta = 0;
-            float totalConductance = 0;
             int neighbours = 0;
-            AccumulateTemperatureExchange(x, y, x, y - 1, current, ref weightedDelta, ref totalConductance, ref neighbours);
-            AccumulateTemperatureExchange(x, y, x - 1, y, current, ref weightedDelta, ref totalConductance, ref neighbours);
-            AccumulateTemperatureExchange(x, y, x + 1, y, current, ref weightedDelta, ref totalConductance, ref neighbours);
-            AccumulateTemperatureExchange(x, y, x, y + 1, current, ref weightedDelta, ref totalConductance, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x, y - 1, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x - 1, y, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x + 1, y, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x, y + 1, current, ref weightedDelta, ref neighbours);
 
             float materialConductivity = tile.Architecture switch
             {
@@ -535,12 +534,9 @@ internal sealed class ColonySimulation
                 _ when tile.Terrain == TerrainKind.Rock => 0.045f,
                 _ => 0.10f
             };
-            // Edge conductance controls how much of the neighbour exchange reaches this tile.
-            // Dividing by neighbour count keeps the update bounded and lets solid walls insulate
-            // rooms without making them perfectly adiabatic.
-            float exchange = neighbours == 0 || totalConductance <= 0
-                ? 0
-                : weightedDelta / totalConductance * (totalConductance / neighbours);
+            // Edge conductance weights each neighbour's temperature delta. Dividing by neighbour
+            // count keeps the update bounded and lets walls insulate without perfect heat isolation.
+            float exchange = neighbours == 0 ? 0 : weightedDelta / neighbours;
             float next = current + exchange * materialConductivity;
 
             if (tile.MagmaLevel > 0)
@@ -561,7 +557,7 @@ internal sealed class ColonySimulation
     }
 
     private void AccumulateTemperatureExchange(int sourceX, int sourceY, int neighbourX, int neighbourY,
-        float sourceTemperature, ref float weightedDelta, ref float totalConductance, ref int neighbours)
+        float sourceTemperature, ref float weightedDelta, ref int neighbours)
     {
         if (neighbourX < 0 || neighbourX >= Width || neighbourY < 0 || neighbourY >= Height) return;
         var source = _tiles[sourceX, sourceY];
@@ -579,7 +575,6 @@ internal sealed class ColonySimulation
             _ => 1f
         });
         weightedDelta += (neighbour.TemperatureCelsius - sourceTemperature) * edgeConductance;
-        totalConductance += edgeConductance;
         neighbours++;
     }
 
