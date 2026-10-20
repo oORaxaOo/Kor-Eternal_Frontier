@@ -26,6 +26,16 @@ internal static class ColonyEcosystemChecks
         needs.Step(1);
         Check(needs.DrainEvents().Count == 0,
             "a citizen remaining below a threshold must not emit duplicate crossing events every tick");
+        var hungryDiagnostic = needs.InspectCitizen(thresholdCitizen.Id);
+        Check(hungryDiagnostic is not null &&
+              hungryDiagnostic.CitizenId == thresholdCitizen.Id &&
+              hungryDiagnostic.Name == "Threshold probe" &&
+              hungryDiagnostic.Hunger < 30f &&
+              hungryDiagnostic.AvailableFood == 0 &&
+              hungryDiagnostic.PrimaryReason.Contains("no stored food", StringComparison.OrdinalIgnoreCase),
+            "citizen inspection must explain critical hunger and missing food using live simulation state");
+        Check(needs.InspectCitizen(9999) is null,
+            "citizen inspection must return no result for an unknown citizen ID");
         var logisticsEvents = new ColonyEcosystem(4, 4);
         logisticsEvents.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);

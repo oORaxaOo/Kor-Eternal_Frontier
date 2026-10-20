@@ -669,6 +669,13 @@ internal sealed class ColonySimulation
     public CitizenAgent? CitizenForWorker(int workerId) =>
         _citizensByWorker.TryGetValue(workerId, out var citizen) ? citizen : null;
 
+    /// <summary>Actionable DF-style inspection data for a colony resident.</summary>
+    public CitizenDiagnostic? InspectWorker(int workerId)
+    {
+        var citizen = CitizenForWorker(workerId);
+        return citizen is null ? null : _ecosystem.InspectCitizen(citizen.Id);
+    }
+
     internal IReadOnlyList<SimulationEvent> DrainSimulationEvents(int maxCount = 4096) =>
         _ecosystem.DrainEvents(maxCount);
 
