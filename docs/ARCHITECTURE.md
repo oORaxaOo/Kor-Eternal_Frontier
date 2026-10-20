@@ -38,7 +38,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Independent per-tile architecture orders with material costs and work progress.
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
-- A deterministic workplace broker selecting the nearest available job with stable-ID tie-breaking.
+- A deterministic workplace broker selecting the nearest available job with stable-ID tie-breaking. The high-throughput citizen grid reuses bounded target-oriented flow fields when multiple residents navigate toward the same destination; walkability changes invalidate the fields.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
 - Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement and a uniform spatial-bucket index for radius queries.
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
@@ -61,7 +61,7 @@ These games are design references, not evidence that their proprietary internal 
 ## Current implementation gaps — do not mistake these for completed systems
 
 - The local settlement is 2D, not a full 3D voxel world. There is no pressure-driven fluid simulation, heat transfer, ignition/melting system or organ/tissue damage model yet.
-- The current route search is grid-based breadth-first search with caching, not A* or a shared flow-field system.
+- The strategic/local-worker route cache remains grid-based breadth-first search keyed by start and target, not A*. The high-throughput citizen grid now uses shared target-oriented flow fields for repeated destinations; this is not yet a global flow-field solution for every colony job or world route.
 - Individual citizen needs and workplace jobs exist, but full personality-driven mental breaks, long-lived memories, social graphs, body-part health and schedules are not integrated.
 - Population cohorts are a separate aggregate model; transitions between cohorts and individually simulated residents still need explicit conservation rules and persistence.
 - The new event queue is currently infrastructure with regression tests, not yet wired to every need, job, stock or hazard subsystem.
@@ -83,7 +83,7 @@ These games are design references, not evidence that their proprietary internal 
 1. Add and test deterministic event scheduling. **Foundation added in this branch.**
 2. Connect events to stock changes, job availability and need thresholds; preserve existing direct-call behavior during migration.
 3. Add a spatial bucket index for continuous-world queries and local agent lookups, with mutation/invalidation tests.
-4. Add multi-source flow fields for shared destinations and retain exact path checks for work reservations.
+4. Extend shared-destination flow fields to the main colony task planner and retain exact path checks for work reservations. **First implementation exists in the high-throughput citizen grid.**
 5. Expand individual needs, traits, memories, relationships and body-part health in small save-compatible slices.
 6. Add tile material definitions, temperature exchange and fluid movement with strict per-tick work budgets.
 7. Add seeded incident scheduling and bounded population/industry benchmarks.

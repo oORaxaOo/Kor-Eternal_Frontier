@@ -43,7 +43,14 @@ internal sealed class GridManager
     private readonly List<StockpileZone> _zones = [];
     private readonly Dictionary<int, StorageReservation> _reservations = [];
     private readonly Dictionary<ResourceKind, int> _reservedByResource = [];
+    private const int MaxCachedFlowFields = 128;
+    private readonly Dictionary<int, int[]> _flowFieldsByTarget = [];
+    private readonly Queue<int> _flowFieldOrder = new();
     private int _nextZoneId = 1;
+
+    internal int FlowFieldBuilds { get; private set; }
+    internal int FlowFieldCacheHits { get; private set; }
+    internal int CachedFlowFieldCount => _flowFieldsByTarget.Count;
     private int _nextReservationId = 1;
 
     public int Width => _width;
@@ -72,7 +79,10 @@ internal sealed class GridManager
         int index = Index(cell);
         ref var tile = ref _tiles[index];
         if (tile.Kind == GridTileKind.Stockpile || tile.Amount > 0 || tile.ZoneId != 0) return false;
-        tile.Kind = blocked ? GridTileKind.Wall : GridTileKind.Ground;
+        GridTileKind nextKind = blocked ? GridTileKind.Wall : GridTileKind.Ground;
+        if (tile.Kind == nextKind) return true;
+        tile.Kind = nextKind;
+        InvalidateFlowFields();
         return true;
     }
 
@@ -226,40 +236,81 @@ internal sealed class GridManager
         return best;
     }
 
-    /// <summary>Returns a deterministic four-neighbour path that excludes the starting tile.</summary>
+    /// <summary>
+    /// Returns a deterministic four-neighbour path that excludes the starting tile.
+    /// The first request for a destination builds a reverse distance/next-step field; subsequent
+    /// residents sharing that destination reuse the field rather than running separate searches.
+    /// </summary>
     public List<CellPosition>? FindPath(CellPosition start, CellPosition target)
     {
         if (!InBounds(start) || !InBounds(target) || IsBlocked(target)) return null;
         if (start == target) return [];
+
         int startIndex = Index(start), targetIndex = Index(target);
-        var previous = new int[_tiles.Length];
-        Array.Fill(previous, -1);
+        if (!_flowFieldsByTarget.TryGetValue(targetIndex, out var nextStep))
+        {
+            nextStep = BuildFlowField(targetIndex);
+            StoreFlowField(targetIndex, nextStep);
+            FlowFieldBuilds++;
+        }
+        else
+        {
+            FlowFieldCacheHits++;
+        }
+
+        if (nextStep[startIndex] < 0) return null;
+        var path = new List<CellPosition>();
+        int cursor = startIndex;
+        // A shortest-path field must monotonically approach the target. The guard makes corrupted
+        // cache data fail closed instead of looping indefinitely.
+        for (int steps = 0; cursor != targetIndex && steps < _tiles.Length; steps++)
+        {
+            cursor = nextStep[cursor];
+            if (cursor < 0 || cursor >= _tiles.Length) return null;
+            path.Add(Position(cursor));
+        }
+        return cursor == targetIndex ? path : null;
+    }
+
+    private int[] BuildFlowField(int targetIndex)
+    {
+        var nextStep = new int[_tiles.Length];
+        Array.Fill(nextStep, -1);
         var queue = new Queue<int>();
-        queue.Enqueue(startIndex);
-        previous[startIndex] = startIndex;
+        nextStep[targetIndex] = targetIndex;
+        queue.Enqueue(targetIndex);
+
         while (queue.Count > 0)
         {
             int current = queue.Dequeue();
-            foreach (int next in Neighbours(current))
+            foreach (int neighbour in Neighbours(current))
             {
-                if (previous[next] != -1 || IsBlocked(Position(next))) continue;
-                previous[next] = current;
-                if (next == targetIndex)
-                {
-                    var path = new List<CellPosition>();
-                    int cursor = targetIndex;
-                    while (cursor != startIndex)
-                    {
-                        path.Add(Position(cursor));
-                        cursor = previous[cursor];
-                    }
-                    path.Reverse();
-                    return path;
-                }
-                queue.Enqueue(next);
+                if (nextStep[neighbour] != -1 || IsBlocked(Position(neighbour))) continue;
+                nextStep[neighbour] = current;
+                queue.Enqueue(neighbour);
             }
         }
-        return null;
+        return nextStep;
+    }
+
+    private void StoreFlowField(int targetIndex, int[] nextStep)
+    {
+        if (_flowFieldsByTarget.Count >= MaxCachedFlowFields)
+        {
+            while (_flowFieldOrder.Count > 0)
+            {
+                int oldest = _flowFieldOrder.Dequeue();
+                if (_flowFieldsByTarget.Remove(oldest)) break;
+            }
+        }
+        _flowFieldsByTarget[targetIndex] = nextStep;
+        _flowFieldOrder.Enqueue(targetIndex);
+    }
+
+    private void InvalidateFlowFields()
+    {
+        _flowFieldsByTarget.Clear();
+        _flowFieldOrder.Clear();
     }
 
     private bool TryAddCore(ResourceKind resource, int amount)

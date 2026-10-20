@@ -159,6 +159,19 @@ internal static class ColonyEcosystemChecks
               pathCacheColony.CachedPathCount == 1,
             "repeating a route query should reuse the bounded path cache rather than rerun breadth-first search");
 
+        var flowGrid = new GridManager(6, 4);
+        var flowTarget = new CellPosition(5, 0);
+        Check(flowGrid.FindPath(new CellPosition(0, 0), flowTarget)?.Count == 5,
+            "the first path to a shared destination should produce a shortest route");
+        Check(flowGrid.FindPath(new CellPosition(0, 1), flowTarget)?.Count == 6 &&
+              flowGrid.FlowFieldBuilds == 1 && flowGrid.FlowFieldCacheHits == 1 &&
+              flowGrid.CachedFlowFieldCount == 1,
+            "different residents sharing a destination should reuse one target-oriented flow field");
+        flowGrid.SetWall(new CellPosition(3, 0));
+        Check(flowGrid.FindPath(new CellPosition(0, 0), flowTarget)?.Count > 5 &&
+              flowGrid.FlowFieldBuilds == 2 && flowGrid.CachedFlowFieldCount == 1,
+            "changing walkability must invalidate stale flow fields and rebuild a valid detour");
+
         var wallGrid = new GridManager(3, 3);
         wallGrid.SetWall(new CellPosition(1, 0));
         wallGrid.SetWall(new CellPosition(0, 1));
