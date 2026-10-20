@@ -4,7 +4,7 @@ namespace KorTheBlight.Simulation;
 internal enum GridTileKind { Ground, Wall, Stockpile }
 
 /// <summary>The four states are intentionally presentation-independent.</summary>
-internal enum CitizenState { Idle, Working, MovingToStorage, MovingToJob }
+internal enum CitizenState { Idle, Working, MovingToStorage, MovingToJob, MentalBreak }
 internal enum SimulationNeedKind { Hunger = 1, Fatigue = 2 }
 internal enum SimulationHazardKind { ThermalExposure = 1 }
 
@@ -372,7 +372,9 @@ internal sealed class CitizenAgent(int id, string name, CellPosition position)
     public CellPosition Position { get; internal set; } = position;
     public float Hunger { get; internal set; } = 100f;
     public float Fatigue { get; internal set; } = 100f;
-    public float Happiness => (Hunger + Fatigue) * 0.5f;
+    public float Stress { get; internal set; }
+    public float Mood => Math.Clamp((Hunger + Fatigue) * 0.5f - Stress * 0.5f, 0f, 100f);
+    public float Happiness => Mood;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
     public bool CanReceiveJob { get; internal set; } = true;
     public int? JobId { get; internal set; }
@@ -629,6 +631,22 @@ internal sealed class ColonyEcosystem
                 _events.Enqueue(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
                     (long)SimulationNeedKind.Fatigue, citizen.Fatigue);
 
+            UpdateStress(citizen, deltaSeconds);
+            if (citizen.State == CitizenState.MentalBreak)
+            {
+                citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 2f);
+                if (citizen.Stress <= 45f)
+                {
+                    citizen.State = CitizenState.Idle;
+                    _events.Enqueue(SimulationTick, SimulationEventKind.MentalBreakEnded, citizen.Id, value: citizen.Stress);
+                    LastEvent = $"{citizen.Name} has recovered from a mental break.";
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
             if (citizen.Hunger < 30f && citizen.CanReceiveJob && citizen.State != CitizenState.MovingToStorage)
@@ -653,6 +671,15 @@ internal sealed class ColonyEcosystem
                     }
                     citizen.State = CitizenState.Idle;
                 }
+                continue;
+            }
+
+            if (citizen.Stress >= 80f)
+            {
+                ReleaseAssignment(citizen);
+                citizen.State = CitizenState.MentalBreak;
+                _events.Enqueue(SimulationTick, SimulationEventKind.MentalBreakStarted, citizen.Id, value: citizen.Stress);
+                LastEvent = $"{citizen.Name} is overwhelmed and has stopped working.";
                 continue;
             }
 
@@ -702,6 +729,20 @@ internal sealed class ColonyEcosystem
                 LastEvent = $"No route to workplace {job.Name}.";
             }
         }
+    }
+
+    private static void UpdateStress(CitizenAgent citizen, float deltaSeconds)
+    {
+        float stressRate = 0f;
+        if (citizen.Hunger < 30f) stressRate += (30f - citizen.Hunger) * 0.025f;
+        if (citizen.Fatigue < 20f) stressRate += (20f - citizen.Fatigue) * 0.04f;
+
+        if (stressRate > 0f)
+            citizen.Stress = Math.Min(100f, citizen.Stress + stressRate * deltaSeconds);
+        else if (citizen.Hunger > 70f && citizen.Fatigue > 70f)
+            citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.5f);
+        else
+            citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.1f);
     }
 
     private void Work(CitizenAgent citizen, float deltaSeconds)
