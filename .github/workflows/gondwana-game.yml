@@ -65,7 +65,7 @@ jobs:
             -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
             -DSDL_WAYLAND=OFF -DSDL_ALSA=OFF -DSDL_PULSEAUDIO=OFF \
             -DSDL_PIPEWIRE=OFF -DSDL_JACK=OFF -DSDL_SNDIO=OFF \
-            -DSDL_KMSDRM=OFF -DSDL_VIVANTE=OFF
+            -DSDL_KMSDRM=OFF -DSDL_VIVANTE=OFF -DSDL_X11_XTEST=OFF
           cmake --build /tmp/SDL/build --parallel 2
           cmake --install /tmp/SDL/build
           test -e /tmp/sdl3-install/lib/libSDL3.so
