@@ -876,7 +876,7 @@ internal sealed class ColonySimulation
         {
             case WorkOrderKind.TileConstruction:
                 var tile = _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId.Value);
-                if (tile == null) return false;
+                if (tile == null || tile.Status == ConstructionStatus.Complete) return false;
                 tile.Priority = priority;
                 break;
             case WorkOrderKind.ObjectConstruction:
