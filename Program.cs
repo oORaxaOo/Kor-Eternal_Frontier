@@ -126,7 +126,10 @@ internal static class Program
                     }
                     else if (inWorldView && worldView)
                     {
-                        var hit = world.SpatialWorld.Entities
+                        // Convert the 20-pixel hit radius to world units and ask the spatial index
+                        // for local candidates instead of projecting every world entity on each click.
+                        double worldHitRadius = 20d / ContinuousWorldProjection.Scale(zoom);
+                        var hit = world.SpatialWorld.QueryRadius(continuousMouse.X, continuousMouse.Y, worldHitRadius)
                             .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))
                             .Select(item => (item.Entity, Distance: MathF.Sqrt(MathF.Pow(item.Screen.X - logicalMouse.X, 2) + MathF.Pow(item.Screen.Y - logicalMouse.Y, 2))))
                             .Where(item => item.Distance <= 20f).OrderBy(item => item.Distance).FirstOrDefault();
