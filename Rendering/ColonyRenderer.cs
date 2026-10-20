@@ -29,7 +29,7 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier,
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         canvas.Clear(Background);
@@ -42,7 +42,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
         }
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -198,6 +198,23 @@ internal sealed class ColonyRenderer : IDisposable
                 }
             }
 
+            var excavationOrder = simulation.ExcavationOrderAt(x, y);
+            if (excavationOrder != null)
+            {
+                _line.Color = excavationOrder.Status switch
+                {
+                    ConstructionStatus.UnderConstruction => Gold,
+                    ConstructionStatus.Blocked => new SKColor(110, 73, 76),
+                    _ => Crimson
+                };
+                _line.StrokeWidth = Math.Max(1f, zoom * 1.5f);
+                canvas.DrawRect(Inset(rect, size * 0.16f), _line);
+                _fill.Color = excavationOrder.Status == ConstructionStatus.UnderConstruction
+                    ? new SKColor(216, 177, 89, 55)
+                    : new SKColor(192, 42, 54, 55);
+                canvas.DrawRect(rect, _fill);
+            }
+
             _line.Color = new SKColor(66, 79, 72, 170);
             _line.StrokeWidth = Math.Max(0.5f, zoom * 0.6f);
             canvas.DrawRect(rect, _line);
@@ -206,7 +223,9 @@ internal sealed class ColonyRenderer : IDisposable
             // Dwarf-Fortress-inspired symbolic style while retaining colour for quick scanning.
             if (zoom >= 0.82f)
             {
-                string glyph = tile.Architecture switch
+                string glyph = excavationOrder != null
+                    ? excavationOrder.Status == ConstructionStatus.UnderConstruction ? "M" : "D"
+                    : tile.Architecture switch
                 {
                     ArchitectureKind.Floor => ".",
                     ArchitectureKind.Wall => "#",
@@ -356,7 +375,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool paused, float speedMultiplier, bool worldView,
+        PlaceableKind objectType, bool placingObject, bool excavationMode, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         _fill.Color = Background;
@@ -490,11 +509,12 @@ internal sealed class ColonyRenderer : IDisposable
         }
         else
         {
-            DrawButton(canvas, "WALL", 784, 566, 54, 22, architectureMode == ArchitectureKind.Wall);
-            DrawButton(canvas, "FLOOR", 842, 566, 54, 22, architectureMode == ArchitectureKind.Floor);
-            DrawButton(canvas, "PATH", 900, 566, 54, 22, architectureMode == ArchitectureKind.Path);
-            DrawButton(canvas, "DOOR", 958, 566, 54, 22, architectureMode == ArchitectureKind.Door);
-            DrawButton(canvas, "CONDUIT", 1016, 566, 54, 22, architectureMode == ArchitectureKind.Conduit);
+            DrawButton(canvas, "WALL", 784, 566, 45, 22, architectureMode == ArchitectureKind.Wall);
+            DrawButton(canvas, "FLOOR", 834, 566, 45, 22, architectureMode == ArchitectureKind.Floor);
+            DrawButton(canvas, "PATH", 884, 566, 45, 22, architectureMode == ArchitectureKind.Path);
+            DrawButton(canvas, "DOOR", 934, 566, 45, 22, architectureMode == ArchitectureKind.Door);
+            DrawButton(canvas, "COND", 984, 566, 45, 22, architectureMode == ArchitectureKind.Conduit);
+            DrawButton(canvas, "DIG", 1034, 566, 45, 22, excavationMode);
             DrawButton(canvas, "BENCH", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Workbench);
             DrawButton(canvas, "POD", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.SleepingPod);
             DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
@@ -506,7 +526,9 @@ internal sealed class ColonyRenderer : IDisposable
         _muted.Color = MutedColor;
         string actionHint = worldView
             ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination")
-            : simulation.ConstructionCostStatus(architectureMode, objectType, placingObject);
+            : excavationMode
+                ? "DIG: click solid rock; mined stone appears on the ground and must be hauled"
+                : simulation.ConstructionCostStatus(architectureMode, objectType, placingObject);
         _muted.Color = !worldView && (placingObject || architectureMode != ArchitectureKind.None) &&
                        actionHint.Contains("WAITING:", StringComparison.Ordinal)
             ? Crimson : MutedColor;
@@ -514,6 +536,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
+            excavationMode ? "EXCAVATION DESIGNATION" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
         _text.Color = paused ? Gold : MutedColor;
         canvas.DrawText($"{mode}{(paused ? "  [PAUSED]" : "")}", 18, 675, SKTextAlign.Left, _normalFont, _text);
