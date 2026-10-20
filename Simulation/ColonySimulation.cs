@@ -125,6 +125,9 @@ internal sealed class ColonySimulation
     private ColonyEcosystem _ecosystem = null!;
     private readonly Dictionary<int, CitizenAgent> _citizensByWorker = [];
     private readonly Dictionary<int, int> _gardenJobsByObject = [];
+    private SocialRelationshipNetwork _socialRelationships = new();
+    private IncidentManager _incidentManager = new();
+    private long _socialTick;
     private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
     private int _nextWorkerId = 4;
@@ -136,6 +139,8 @@ internal sealed class ColonySimulation
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
+    public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
+    public IncidentManager IncidentManager => _incidentManager;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
@@ -194,7 +199,10 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 3,
+            SchemaVersion = 4,
+            SocialTick = _socialTick,
+            SocialNetwork = _socialRelationships.CaptureSnapshot(),
+            IncidentManager = _incidentManager.CaptureSnapshot(),
             ElapsedSeconds = ElapsedSeconds,
             EnvironmentAccumulatorSeconds = _environmentAccumulatorSeconds,
             Message = Message,
@@ -352,6 +360,12 @@ internal sealed class ColonySimulation
             var citizen = simulation.CitizenForWorker(workerState.Id);
             if (citizen != null) citizen.Fatigue = workerState.CitizenFatigue;
         }
+        simulation._socialTick = snapshot.SocialTick;
+        var residentIds = simulation._workers.Select(worker => worker.Id).ToHashSet();
+        if (snapshot.SocialNetwork != null)
+            simulation._socialRelationships = SocialRelationshipNetwork.Restore(snapshot.SocialNetwork, residentIds);
+        if (snapshot.IncidentManager != null)
+            simulation._incidentManager = IncidentManager.Restore(snapshot.IncidentManager, residentIds);
         return simulation;
     }
 
@@ -956,6 +970,57 @@ internal sealed class ColonySimulation
                 continue;
             AdvanceWorker(worker, deltaSeconds);
         }
+        StepSocialRelationships(deltaSeconds);
+    }
+
+
+    private void StepSocialRelationships(float deltaSeconds)
+    {
+        _socialTick += Math.Max(1, (long)Math.Round(deltaSeconds * 10f, MidpointRounding.AwayFromZero));
+        // Bucket residents by occupied tile; only neighboring buckets are compared.
+        var buckets = new SortedDictionary<(int X, int Y), List<ColonyWorker>>();
+        foreach (var worker in _workers.OrderBy(w => w.Id))
+        {
+            var key = (Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
+            list.Add(worker);
+        }
+
+        var pairs = new SortedSet<(int A, int B)>();
+        foreach (var bucket in buckets)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int nx = bucket.Key.X + dx, ny = bucket.Key.Y + dy;
+                if (!buckets.TryGetValue((nx, ny), out var neighbors)) continue;
+                foreach (var a in bucket.Value)
+                foreach (var b in neighbors)
+                {
+                    if (a.Id >= b.Id) continue;
+                    float ddx = a.X - b.X, ddy = a.Y - b.Y;
+                    if (ddx * ddx + ddy * ddy > 2.25f) continue;
+                    pairs.Add((a.Id, b.Id));
+                }
+            }
+        }
+
+        var workersById = _workers.ToDictionary(w => w.Id);
+        foreach (var pair in pairs)
+        {
+            var a = workersById[pair.A];
+            var b = workersById[pair.B];
+            var existing = _socialRelationships.Get(a.Id, b.Id);
+            if (existing != null && _socialTick - existing.LastEncounterTick < 30) continue;
+            var citizenA = _citizensByWorker.GetValueOrDefault(a.Id);
+            var citizenB = _citizensByWorker.GetValueOrDefault(b.Id);
+            _socialRelationships.RecordEncounter(a.Id, b.Id, _socialTick,
+                a.Stress, a.Hunger, citizenA == null ? 100f : 100f - citizenA.Fatigue,
+                citizenA?.State == CitizenState.MentalBreak,
+                b.Stress, b.Hunger, citizenB == null ? 100f : 100f - citizenB.Fatigue,
+                citizenB?.State == CitizenState.MentalBreak);
+        }
+        _incidentManager.Consume(_socialRelationships.DrainEvents());
     }
 
     private void StepEnvironmentalExposure(float deltaSeconds)
