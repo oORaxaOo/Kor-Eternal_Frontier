@@ -1386,7 +1386,7 @@ internal sealed class ColonySimulation
                                      order.Priority == priority)
                      .OrderBy(order => order.Id))
         {
-            // A manually redirected miner may leave a valid excavation unfinished. Reassign it,
+            // Recover a valid in-progress order if a restored/reconciled worker no longer owns its task,
             // but never let two workers own the same mining order concurrently.
             if (_workers.Any(candidate => candidate.Id != worker.Id &&
                     candidate.Task?.Kind == ColonyTaskKind.Mine &&
