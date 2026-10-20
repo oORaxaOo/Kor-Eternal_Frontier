@@ -121,7 +121,8 @@ This is a multi-release program. “Complete” means the systems are integrated
 5. Ensure every order displays its exact blocked/waiting reason.
 
 ### Stage C — Deep local colony simulation
-1. Extend citizens' needs, rest, housing, skills, and morale.
+1. **First terrain slice implemented in this branch:** designate solid rock for excavation, assign a miner through the prioritized scheduler, convert completed rock to walkable ground, and spawn a finite physical stone deposit that must be hauled. Mining orders and terrain/deposit outcomes are covered by schema-v6 save/load.
+2. Extend citizens' needs, rest, housing, skills, and morale.
 2. Add general work orders and data-driven production chains.
 3. Add room/zone semantics, farming seasons, food processing, spoilage, and maintenance.
 4. Add terrain excavation and underground/resource discovery.
