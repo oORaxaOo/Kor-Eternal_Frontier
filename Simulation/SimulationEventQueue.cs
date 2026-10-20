@@ -12,7 +12,9 @@ internal enum SimulationEventKind
     RouteInvalidated,
     HazardChanged,
     SocialInteractionRequested,
-    IncidentRequested
+    IncidentRequested,
+    MentalBreakStarted,
+    MentalBreakEnded
 }
 
 /// <summary>A deterministic, data-only notification emitted by a simulation subsystem.</summary>
