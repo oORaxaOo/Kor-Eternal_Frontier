@@ -140,7 +140,7 @@ internal sealed class ColonySimulation
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
-    public IncidentManager IncidentManager => _incidentManager;
+    public IncidentManager Incidents => _incidentManager;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
