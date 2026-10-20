@@ -42,7 +42,7 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 5;
+    public int SchemaVersion { get; set; } = 6;
     public long SocialTick { get; set; }
     public SocialNetworkSnapshot? SocialNetwork { get; set; }
     public IncidentManagerSnapshot? IncidentManager { get; set; }
@@ -54,11 +54,13 @@ internal sealed class ColonySnapshot
     public string Message { get; set; } = string.Empty;
     public int? SelectedWorkerId { get; set; }
     public int NextOrderId { get; set; }
+    public int NextExcavationId { get; set; } = 1;
     public int NextObjectId { get; set; }
     public int NextDepositId { get; set; }
     public int NextProductionId { get; set; }
     public List<TileSnapshot> Tiles { get; set; } = [];
     public List<TileOrderSnapshot> TileOrders { get; set; } = [];
+    public List<ExcavationOrderSnapshot> ExcavationOrders { get; set; } = [];
     public List<PlaceableObjectSnapshot> Objects { get; set; } = [];
     public List<ResourceDepositSnapshot> Deposits { get; set; } = [];
     public List<ColonyWorkerSnapshot> Workers { get; set; } = [];
@@ -67,7 +69,7 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4 && SchemaVersion != 5) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4 && SchemaVersion != 5 && SchemaVersion != 6) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (SocialTick < 0) throw new InvalidDataException("Colony save contains an invalid social simulation tick.");
         if (SchemaVersion >= 4 && (SocialNetwork is null || IncidentManager is null))
             throw new InvalidDataException("Current colony save is missing social or incident state.");
@@ -77,7 +79,7 @@ internal sealed class ColonySnapshot
             throw new InvalidDataException("Colony save contains an invalid simulation clock.");
         if (!float.IsFinite(EnvironmentAccumulatorSeconds) || EnvironmentAccumulatorSeconds < 0 || EnvironmentAccumulatorSeconds > 1_000_000f)
             throw new InvalidDataException("Colony save contains an invalid environment simulation accumulator.");
-        if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
+        if (Tiles is null || TileOrders is null || ExcavationOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
             throw new InvalidDataException("Colony save is missing a required collection.");
         if (Tiles.Count != Width * Height)
@@ -169,6 +171,33 @@ internal sealed class ColonySnapshot
             }
         }
 
+        var excavationIds = new HashSet<int>();
+        var excavationCells = new HashSet<(int X, int Y)>();
+        foreach (var order in ExcavationOrders)
+        {
+            CheckId(order.Id, excavationIds, "excavation order");
+            CheckCell(order.X, order.Y, "excavation order");
+            if (!Enum.IsDefined(order.Status) || order.Priority is < 1 or > 5 ||
+                order.WorkRequired <= 0 || !float.IsFinite(order.WorkDone) || order.WorkDone < 0 ||
+                (order.Status == ConstructionStatus.Complete && order.WorkDone < order.WorkRequired) ||
+                (order.Status != ConstructionStatus.Complete && order.WorkDone >= order.WorkRequired))
+                throw new InvalidDataException("Colony save contains invalid excavation order state or progress.");
+            if (!excavationCells.Add((order.X, order.Y)))
+                throw new InvalidDataException("More than one excavation order targets the same tile.");
+
+            var tile = tilesByCell[(order.X, order.Y)];
+            if (order.Status == ConstructionStatus.Complete)
+            {
+                if (tile.Terrain == TerrainKind.Rock)
+                    throw new InvalidDataException("Completed excavation still contains solid rock.");
+            }
+            else if (tile.Terrain != TerrainKind.Rock || tile.Architecture != ArchitectureKind.None ||
+                     tile.ConstructionOrderId.HasValue || occupied.Contains((order.X, order.Y)))
+            {
+                throw new InvalidDataException("Unfinished excavation is not on clear solid rock.");
+            }
+        }
+
         var depositIds = new HashSet<int>();
         foreach (var deposit in Deposits)
         {
@@ -204,6 +233,8 @@ internal sealed class ColonySnapshot
                 throw new InvalidDataException("Worker task references a missing tile construction order.");
             if (worker.Task.Kind == ColonyTaskKind.BuildObject && !objectIds.Contains(worker.Task.TargetId))
                 throw new InvalidDataException("Worker task references a missing placeable object.");
+            if (worker.Task.Kind == ColonyTaskKind.Mine && !excavationIds.Contains(worker.Task.TargetId))
+                throw new InvalidDataException("Worker task references a missing excavation order.");
             if (worker.Task.Kind == ColonyTaskKind.Gather && !depositIds.Contains(worker.Task.DepositId))
                 throw new InvalidDataException("Worker task references a missing resource deposit.");
         }
@@ -248,6 +279,7 @@ internal sealed class ColonySnapshot
         if (SelectedWorkerId.HasValue && !workerIds.Contains(SelectedWorkerId.Value))
             throw new InvalidDataException("Selected colonist is missing from the colony save.");
         if (NextOrderId <= tileOrderIds.DefaultIfEmpty(0).Max() ||
+            NextExcavationId <= excavationIds.DefaultIfEmpty(0).Max() ||
             NextObjectId <= objectIds.DefaultIfEmpty(0).Max() ||
             NextDepositId <= depositIds.DefaultIfEmpty(0).Max() ||
             NextProductionId <= productionIds.DefaultIfEmpty(0).Max())
@@ -278,6 +310,16 @@ internal sealed class TileSnapshot
     public int WaterLevel { get; set; }
     public int MagmaLevel { get; set; }
     public float TemperatureCelsius { get; set; } = 20f;
+}
+internal sealed class ExcavationOrderSnapshot
+{
+    public int Id { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public ConstructionStatus Status { get; set; }
+    public float WorkDone { get; set; }
+    public int WorkRequired { get; set; }
+    public int Priority { get; set; } = 3;
 }
 internal sealed class TileOrderSnapshot
 {
