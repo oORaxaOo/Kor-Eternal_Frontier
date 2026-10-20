@@ -6,6 +6,7 @@ internal enum GridTileKind { Ground, Wall, Stockpile }
 /// <summary>The four states are intentionally presentation-independent.</summary>
 internal enum CitizenState { Idle, Working, MovingToStorage, MovingToJob }
 internal enum SimulationNeedKind { Hunger = 1, Fatigue = 2 }
+internal enum SimulationHazardKind { ThermalExposure = 1 }
 
 /// <summary>
 /// Compact tile data. Coordinates are encoded by the array index rather than repeated per tile.
@@ -564,6 +565,16 @@ internal sealed class ColonyEcosystem
             _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
         JobBroker.AvailabilityChanged += (jobId, freeWorkers) =>
             _events.Enqueue(SimulationTick, SimulationEventKind.JobBecameAvailable, jobId, freeWorkers);
+    }
+
+    public void ReportHazard(int citizenId, SimulationHazardKind kind, float severity)
+    {
+        if (citizenId <= 0 || !_citizens.Any(citizen => citizen.Id == citizenId))
+            throw new ArgumentOutOfRangeException(nameof(citizenId), "Hazard events must reference an existing citizen.");
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (!float.IsFinite(severity) || severity is < 0 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(severity));
+        _events.Enqueue(SimulationTick, SimulationEventKind.HazardChanged, citizenId, (long)kind, severity);
     }
 
     public CitizenAgent AddCitizen(string name, CellPosition position)
