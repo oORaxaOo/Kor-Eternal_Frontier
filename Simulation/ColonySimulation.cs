@@ -3,6 +3,7 @@ using KorTheBlight.WorldModel;
 namespace KorTheBlight.Simulation;
 
 internal enum TerrainKind { Ground, Rock, Water }
+internal enum FluidKind { Water, Magma }
 internal enum ArchitectureKind { None, Floor, Wall, Door, Path, Conduit }
 internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden }
 internal enum ResourceKind { Wood, Stone, Food, Alloy, Components }
@@ -17,6 +18,9 @@ internal sealed class TileCell
     public TerrainKind Terrain { get; internal set; } = TerrainKind.Ground;
     public ArchitectureKind Architecture { get; internal set; }
     public int? ConstructionOrderId { get; internal set; }
+    public int WaterLevel { get; internal set; }
+    public int MagmaLevel { get; internal set; }
+    public float TemperatureCelsius { get; internal set; } = 20f;
 }
 
 internal sealed class TileConstructionOrder(int id, CellPosition cell, ArchitectureKind target, int workRequired)
@@ -126,6 +130,8 @@ internal sealed class ColonySimulation
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
     private int _nextProductionId = 1;
+    private float _environmentAccumulatorSeconds;
+    private readonly float[,] _temperatureBuffer = new float[Width, Height];
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
@@ -186,8 +192,9 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 2,
+            SchemaVersion = 3,
             ElapsedSeconds = ElapsedSeconds,
+            EnvironmentAccumulatorSeconds = _environmentAccumulatorSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
             NextOrderId = _nextOrderId,
@@ -210,7 +217,9 @@ internal sealed class ColonySimulation
             snapshot.Tiles.Add(new TileSnapshot
             {
                 X = x, Y = y, Terrain = tile.Terrain, Architecture = tile.Architecture,
-                ConstructionOrderId = tile.ConstructionOrderId
+                ConstructionOrderId = tile.ConstructionOrderId,
+                WaterLevel = tile.WaterLevel, MagmaLevel = tile.MagmaLevel,
+                TemperatureCelsius = tile.TemperatureCelsius
             });
         }
 
@@ -268,6 +277,9 @@ internal sealed class ColonySimulation
             tile.Terrain = tileState.Terrain;
             tile.Architecture = tileState.Architecture;
             tile.ConstructionOrderId = tileState.ConstructionOrderId;
+            tile.WaterLevel = tileState.WaterLevel;
+            tile.MagmaLevel = tileState.MagmaLevel;
+            tile.TemperatureCelsius = tileState.TemperatureCelsius;
         }
 
         simulation._tileOrders.Clear();
@@ -325,6 +337,7 @@ internal sealed class ColonySimulation
         simulation._nextDepositId = snapshot.NextDepositId;
         simulation._nextProductionId = snapshot.NextProductionId;
         simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
+        simulation._environmentAccumulatorSeconds = snapshot.EnvironmentAccumulatorSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
         simulation.InitializeEcosystem();
@@ -389,6 +402,155 @@ internal sealed class ColonySimulation
             : _sharedInventoryWorld.TryTakeInventory(_sharedInventoryOwnerId.Value, worldResource, -delta);
         if (!changed)
             throw new InvalidOperationException("The canonical resource ledger rejected an invalid or over-capacity adjustment.");
+    }
+
+    public int AddFluid(int x, int y, FluidKind kind, int amount)
+    {
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x), "Fluid coordinates must be inside the colony grid.");
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), "Fluid amount must be positive.");
+
+        var tile = _tiles[x, y];
+        if (tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall)
+            return 0;
+        if (kind == FluidKind.Water)
+        {
+            if (tile.MagmaLevel > 0) return 0;
+            int accepted = Math.Min(amount, 7 - tile.WaterLevel);
+            tile.WaterLevel += accepted;
+            return accepted;
+        }
+
+        if (tile.WaterLevel > 0) return 0;
+        int acceptedMagma = Math.Min(amount, 7 - tile.MagmaLevel);
+        tile.MagmaLevel += acceptedMagma;
+        return acceptedMagma;
+    }
+
+    public int FluidLevelAt(int x, int y, FluidKind kind)
+    {
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        return kind == FluidKind.Water ? _tiles[x, y].WaterLevel : _tiles[x, y].MagmaLevel;
+    }
+
+    public float TemperatureAt(int x, int y)
+    {
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
+        return _tiles[x, y].TemperatureCelsius;
+    }
+
+    public int TotalFluid(FluidKind kind)
+    {
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        int total = 0;
+        foreach (var tile in _tiles)
+            total += kind == FluidKind.Water ? tile.WaterLevel : tile.MagmaLevel;
+        return total;
+    }
+
+    private void StepEnvironment(float deltaSeconds)
+    {
+        // Cap the backlog and the work performed by a single frame. Large elapsed times are
+        // processed over subsequent steps rather than triggering an unbounded catch-up loop.
+        _environmentAccumulatorSeconds = Math.Min(_environmentAccumulatorSeconds + deltaSeconds, 1_000_000f);
+        int steps = 0;
+        while (_environmentAccumulatorSeconds >= 1f && steps < 8)
+        {
+            StepFluidLevels(FluidKind.Water);
+            StepFluidLevels(FluidKind.Magma);
+            StepTemperature();
+            _environmentAccumulatorSeconds -= 1f;
+            steps++;
+        }
+    }
+
+    private void StepFluidLevels(FluidKind kind)
+    {
+        int count = Width * Height;
+        var current = new int[count];
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            current[y * Width + x] = kind == FluidKind.Water ? _tiles[x, y].WaterLevel : _tiles[x, y].MagmaLevel;
+        var next = (int[])current.Clone();
+
+        for (int index = 0; index < count; index++)
+        {
+            int sourceLevel = current[index];
+            if (sourceLevel <= 0) continue;
+            int x = index % Width, y = index / Width;
+            int bestLevel = sourceLevel - 1;
+            int bestTarget = -1;
+            ConsiderFluidNeighbour(x, y - 1, current, next, kind, ref bestLevel, ref bestTarget);
+            ConsiderFluidNeighbour(x - 1, y, current, next, kind, ref bestLevel, ref bestTarget);
+            ConsiderFluidNeighbour(x + 1, y, current, next, kind, ref bestLevel, ref bestTarget);
+            ConsiderFluidNeighbour(x, y + 1, current, next, kind, ref bestLevel, ref bestTarget);
+            if (bestTarget < 0 || next[bestTarget] >= 7) continue;
+            next[index]--;
+            next[bestTarget]++;
+        }
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            int level = next[y * Width + x];
+            if (kind == FluidKind.Water) _tiles[x, y].WaterLevel = level;
+            else _tiles[x, y].MagmaLevel = level;
+        }
+    }
+
+    private void ConsiderFluidNeighbour(int x, int y, int[] current, int[] next, FluidKind kind,
+        ref int bestLevel, ref int bestTarget)
+    {
+        if (x < 0 || x >= Width || y < 0 || y >= Height) return;
+        var tile = _tiles[x, y];
+        if (tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall) return;
+        if (kind == FluidKind.Water ? tile.MagmaLevel > 0 : tile.WaterLevel > 0) return;
+        int index = y * Width + x;
+        int level = current[index];
+        if (level >= bestLevel || next[index] >= 7) return;
+        bestLevel = level;
+        bestTarget = index;
+    }
+
+    private void StepTemperature()
+    {
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            var tile = _tiles[x, y];
+            float current = tile.TemperatureCelsius;
+            float total = 0;
+            int neighbours = 0;
+            AccumulateTemperature(x, y - 1, ref total, ref neighbours);
+            AccumulateTemperature(x - 1, y, ref total, ref neighbours);
+            AccumulateTemperature(x + 1, y, ref total, ref neighbours);
+            AccumulateTemperature(x, y + 1, ref total, ref neighbours);
+            float conductivity = tile.Architecture == ArchitectureKind.Wall ? 0.025f
+                : tile.Terrain == TerrainKind.Rock ? 0.045f : 0.10f;
+            float next = neighbours == 0 ? current : current + (total / neighbours - current) * conductivity;
+            if (tile.MagmaLevel > 0)
+            {
+                float magmaTemperature = Math.Min(2_000f, 600f + tile.MagmaLevel * 100f);
+                next += (magmaTemperature - next) * 0.25f;
+            }
+            else if (tile.WaterLevel > 0)
+            {
+                next += (20f - next) * 0.10f;
+            }
+            _temperatureBuffer[x, y] = Math.Clamp(next, -273.15f, 5_000f);
+        }
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            _tiles[x, y].TemperatureCelsius = _temperatureBuffer[x, y];
+    }
+
+    private void AccumulateTemperature(int x, int y, ref float total, ref int count)
+    {
+        if (x < 0 || x >= Width || y < 0 || y >= Height) return;
+        total += _tiles[x, y].TemperatureCelsius;
+        count++;
     }
 
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
@@ -746,6 +908,7 @@ internal sealed class ColonySimulation
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
+        StepEnvironment(deltaSeconds);
         StepEcosystem(deltaSeconds);
         AssignJobs();
 
