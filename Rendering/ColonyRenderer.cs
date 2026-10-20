@@ -414,7 +414,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText(worldView ? "WORLD ECOLOGY" : "POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText(worldView ? "WORLD ECOLOGY" : simulation.SelectedWorkOrderId.HasValue ? "WORK ORDER INSPECTOR" : "POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
         if (worldView)
         {
             int animalCount = spatialWorld.Ecology.Herds.Sum(herd => herd.Population);
@@ -425,6 +425,17 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawText(latestEvent == null ? "No world events recorded yet" : $"Latest: {latestEvent.Title}", 790, 417, SKTextAlign.Left, _smallFont, _muted);
             if (latestEvent != null)
                 canvas.DrawText($"{latestEvent.Kind} | {latestEvent.OccurredAt / 60:0} min", 790, 435, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else if (simulation.SelectedWorkOrderId.HasValue)
+        {
+            _text.Color = TextColor;
+            canvas.DrawText(simulation.SelectedWorkOrderSummary, 790, 376, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText("Priority 1 = low   /   5 = critical", 790, 397, SKTextAlign.Left, _smallFont, _muted);
+            _text.Color = Gold;
+            canvas.DrawText($"Current priority: {simulation.SelectedWorkOrderPriority}/5", 790, 416, SKTextAlign.Left, _smallFont, _text);
+            DrawButton(canvas, "P -", 784, 425, 54, 22, simulation.SelectedWorkOrderPriority <= 1);
+            DrawButton(canvas, "P +", 842, 425, 54, 22, simulation.SelectedWorkOrderPriority >= 5);
         }
         else
         {
