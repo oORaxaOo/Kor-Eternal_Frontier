@@ -174,6 +174,52 @@ internal static class ColonyChecks
         Check(gatheredCriticalMaterial,
             "automatic hauling must prioritize alloy for a priority-five generator over wood for priority-one doors, even when the wood deposit is closer");
 
+        var miningColony = new ColonySimulation();
+        int stoneBeforeMining = miningColony.ResourceCount(ResourceKind.Stone);
+        Check(miningColony.DesignExcavation(22, 6),
+            "the player should be able to designate an unoccupied rock tile for excavation");
+        Check(!miningColony.DesignExcavation(22, 6),
+            "a rock tile must not accept duplicate unfinished excavation orders");
+        Check(!miningColony.DesignExcavation(16, 10),
+            "excavation designation must reject ordinary ground");
+        var miningOrder = miningColony.ExcavationOrders.Single();
+        Check(miningColony.SelectWorkOrderAt(22.5f, 6.5f) &&
+              miningColony.ChangeSelectedWorkOrderPriority(1) &&
+              miningColony.ChangeSelectedWorkOrderPriority(1) &&
+              miningColony.SelectedWorkOrderPriority == 5,
+            "excavation should use the same selectable work-order priority system");
+        var plannedMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
+        Check(plannedMiningSave.ExcavationOrders.Single().Priority == 5 &&
+              plannedMiningSave.TileAt(22, 6)?.Terrain == TerrainKind.Rock,
+            "unstarted mining orders and the untouched rock tile should survive save/load");
+
+        miningColony.Step(0.1f);
+        Check(miningOrder.Status == ConstructionStatus.UnderConstruction &&
+              miningColony.Workers.Any(worker => worker.Task?.Kind == ColonyTaskKind.Mine &&
+                                                    worker.Task.TargetId == miningOrder.Id),
+            "a worker should autonomously travel to and begin a designated excavation");
+        var activeMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
+        Check(activeMiningSave.ExcavationOrders.Single().Status == ConstructionStatus.UnderConstruction &&
+              activeMiningSave.Workers.Any(worker => worker.Task?.Kind == ColonyTaskKind.Mine),
+            "the active mining task and excavation progress state should survive save/load");
+
+        for (int i = 0; i < 400 && miningOrder.Status != ConstructionStatus.Complete; i++)
+            miningColony.Step(0.1f);
+        var minedStone = miningColony.Deposits.SingleOrDefault(deposit =>
+            deposit.Cell == new CellPosition(22, 6) && deposit.Resource == ResourceKind.Stone && deposit.Amount == 3);
+        Check(miningOrder.Status == ConstructionStatus.Complete &&
+              miningColony.TileAt(22, 6)?.Terrain == TerrainKind.Ground &&
+              minedStone != null,
+            "completed mining should remove the rock and create a finite, physical stone deposit");
+        Check(miningColony.ResourceCount(ResourceKind.Stone) == stoneBeforeMining,
+            "mining must not silently add extracted stone directly to colony inventory");
+        var completedMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
+        Check(completedMiningSave.ExcavationOrders.Single().Status == ConstructionStatus.Complete &&
+              completedMiningSave.Deposits.Any(deposit => deposit.Cell == new CellPosition(22, 6) &&
+                                                          deposit.Resource == ResourceKind.Stone && deposit.Amount == 3),
+            "the mined terrain and uncollected stone deposit should persist through save/load");
+
+
 
         var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
