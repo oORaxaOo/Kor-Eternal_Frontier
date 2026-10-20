@@ -1,5 +1,6 @@
 using KorTheBlight.WorldModel;
 using KorTheBlight.Rendering;
+using KorTheBlight.Simulation;
 
 namespace KorTheBlight.Tests;
 
