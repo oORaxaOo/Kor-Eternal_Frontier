@@ -385,6 +385,24 @@ internal sealed class CitizenAgent(int id, string name, CellPosition position)
     public int RouteIndex { get; internal set; }
 }
 
+/// <summary>
+/// Immutable inspection result for player-facing diagnostics and debugging tools.
+/// It explains current needs and work state without exposing mutable simulation objects.
+/// </summary>
+internal sealed record CitizenDiagnostic(
+    int CitizenId,
+    string Name,
+    CellPosition Position,
+    CitizenState State,
+    float Hunger,
+    float Fatigue,
+    float Stress,
+    float Mood,
+    int? JobId,
+    string? JobName,
+    int AvailableFood,
+    string PrimaryReason);
+
 internal sealed class WorkplaceJob(int id, string name, CellPosition position, int workerCapacity,
     ResourceKind outputResource, int outputAmount, float workSeconds)
 {
@@ -588,6 +606,37 @@ internal sealed class ColonyEcosystem
         var citizen = new CitizenAgent(_nextCitizenId++, name, position);
         _citizens.Add(citizen);
         return citizen;
+    }
+
+    /// <summary>
+    /// Returns a read-only, actionable snapshot for the selected citizen.
+    /// The reason is derived from the same live state that drives autonomous behavior.
+    /// </summary>
+    public CitizenDiagnostic? InspectCitizen(int citizenId)
+    {
+        var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
+        if (citizen is null) return null;
+
+        var job = citizen.JobId is int jobId ? JobBroker.FindJob(jobId) : null;
+        string reason = citizen.State switch
+        {
+            CitizenState.MentalBreak => "Overwhelmed: recovering from a mental break.",
+            CitizenState.MovingToStorage => "Seeking food: travelling to a food stockpile.",
+            CitizenState.MovingToJob => $"Travelling to workplace: {job?.Name ?? "assigned job"} .".Replace(" .", "."),
+            CitizenState.Working => $"Working at {job?.Name ?? "assigned job"}.",
+            _ when citizen.Hunger < 30f && Grid.ResourceCount(ResourceKind.Food) == 0 =>
+                "Critical hunger: no stored food is available.",
+            _ when citizen.Hunger < 30f => "Hungry: food is the highest-priority need.",
+            _ when citizen.Fatigue < 20f => "Exhausted: resting before returning to work.",
+            _ when citizen.Stress >= 80f => "Overwhelmed: stress prevents work.",
+            _ when job is not null => $"Assigned to {job.Name}; waiting for the next work step.",
+            _ => "Idle: no eligible workplace assignment is currently available."
+        };
+
+        return new CitizenDiagnostic(
+            citizen.Id, citizen.Name, citizen.Position, citizen.State,
+            citizen.Hunger, citizen.Fatigue, citizen.Stress, citizen.Mood,
+            citizen.JobId, job?.Name, Grid.ResourceCount(ResourceKind.Food), reason);
     }
 
     /// <summary>Removing a workplace immediately releases every assigned citizen and storage reservation.</summary>
