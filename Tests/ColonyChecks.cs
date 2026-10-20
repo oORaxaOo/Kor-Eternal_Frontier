@@ -117,6 +117,8 @@ internal static class ColonyChecks
               priorityColony.ChangeSelectedWorkOrderPriority(1) &&
               priorityColony.SelectedWorkOrderPriority == 5,
             "the player should select a blueprint and raise its priority to the critical cap");
+        Check(priorityColony.SelectedWorkOrderDiagnostic.Contains("Materials ready", StringComparison.Ordinal),
+            "the work order inspector should explain that a funded blueprint is ready and waiting for a worker");
         Check(priorityColony.ChangeSelectedWorkOrderPriority(1) &&
               priorityColony.SelectedWorkOrderPriority == 5,
             "work order priority must clamp at the critical maximum");
