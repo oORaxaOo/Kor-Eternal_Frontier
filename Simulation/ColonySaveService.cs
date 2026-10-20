@@ -181,6 +181,7 @@ internal sealed class ColonySnapshot
                 worker.X < 0 || worker.Y < 0 || worker.X >= Width || worker.Y >= Height ||
                 !float.IsFinite(worker.Hunger) || worker.Hunger is < 0 or > 100 ||
                 !float.IsFinite(worker.CitizenFatigue) || worker.CitizenFatigue is < 0 or > 100 ||
+                !float.IsFinite(worker.ThermalExposure) || worker.ThermalExposure is < 0 or > 100 ||
                 worker.CarriedAmount < 0)
                 throw new InvalidDataException("Colony save contains an invalid colonist state.");
             if (worker.CarriedResource.HasValue != (worker.CarriedAmount > 0) ||
@@ -302,6 +303,7 @@ internal sealed class ColonyWorkerSnapshot
     public float Y { get; set; }
     public float Hunger { get; set; }
     public float CitizenFatigue { get; set; } = 100f;
+    public float ThermalExposure { get; set; }
     public ResourceKind? CarriedResource { get; set; }
     public int CarriedAmount { get; set; }
     public WorkerTaskSnapshot? Task { get; set; }
