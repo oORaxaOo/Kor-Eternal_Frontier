@@ -412,7 +412,7 @@ internal sealed class ColonyRenderer : IDisposable
                 var citizen = simulation.CitizenForWorker(worker.Id);
                 string legacyJob = worker.Task?.Kind.ToString() ?? "Idle";
                 string citizenState = citizen?.State.ToString() ?? "Idle";
-                canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)} | Mood {(citizen?.Happiness ?? 100f):0}", 790, row, SKTextAlign.Left, _smallFont, _text);
+                canvas.DrawText($"{worker.Name}: H {Math.Min(100, (int)worker.Hunger)} | M {(citizen?.Mood ?? 100f):0} | S {worker.Stress:0}", 790, row, SKTextAlign.Left, _smallFont, _text);
                 _muted.Color = MutedColor;
                 canvas.DrawText($"{legacyJob} / {citizenState}", 790, row + 15, SKTextAlign.Left, _smallFont, _muted);
                 row += 43;
