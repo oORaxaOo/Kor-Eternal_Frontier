@@ -188,6 +188,20 @@ internal static class ColonyChecks
               miningColony.ChangeSelectedWorkOrderPriority(1) &&
               miningColony.SelectedWorkOrderPriority == 5,
             "excavation should use the same selectable work-order priority system");
+
+        var crossFamilyPriorityColony = new ColonySimulation();
+        Check(crossFamilyPriorityColony.DesignTileConstruction(16, 10, ArchitectureKind.Wall) &&
+              crossFamilyPriorityColony.DesignExcavation(22, 6),
+            "cross-family priority test should queue both construction and mining");
+        Check(crossFamilyPriorityColony.SelectWorkOrderAt(22.5f, 6.5f) &&
+              crossFamilyPriorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              crossFamilyPriorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              crossFamilyPriorityColony.SelectedWorkOrderDiagnostic.Contains("Rock is accessible", StringComparison.Ordinal),
+            "the excavation inspector should explain that solid rock is available for mining");
+        crossFamilyPriorityColony.Step(0.1f);
+        Check(crossFamilyPriorityColony.Workers[0].Task?.Kind == ColonyTaskKind.Mine,
+            "a critical excavation must outrank a normal-priority construction order in the shared scheduler");
+
         var plannedMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
         Check(plannedMiningSave.ExcavationOrders.Single().Priority == 5 &&
               plannedMiningSave.TileAt(22, 6)?.Terrain == TerrainKind.Rock,
