@@ -114,16 +114,18 @@ This is a multi-release program. “Complete” means the systems are integrated
 4. Keep current gathering, hauling, construction, and production behavior working through adapters during migration.
 
 ### Stage B — Reliable simulation backbone
-1. Consolidate job scheduling and resource reservations.
-2. Complete storage capacity, item location, partial delivery, and output reservation.
-3. Add job diagnostics, priority controls, and a useful backlog/inspection UI.
-4. Ensure every order displays its exact blocked/waiting reason.
+1. **First slice implemented in this branch:** player-selectable priorities 1–5 for tile construction, object blueprints, and component production; the live scheduler chooses critical/high-priority work before lower-priority eligible orders, automatic material gathering prioritizes resources needed by the most urgent blocked order, and save schema v5 persists order priorities.
+2. Consolidate job scheduling and resource reservations.
+3. Complete storage capacity, item location, partial delivery, and output reservation.
+4. Add shared job diagnostics, priority controls for hauling/gathering/citizen needs, and a useful filterable backlog/inspection UI.
+5. Ensure every order displays its exact blocked/waiting reason.
 
 ### Stage C — Deep local colony simulation
-1. Extend citizens' needs, rest, housing, skills, and morale.
-2. Add general work orders and data-driven production chains.
-3. Add room/zone semantics, farming seasons, food processing, spoilage, and maintenance.
-4. Add terrain excavation and underground/resource discovery.
+1. **First terrain slice implemented in this branch:** designate solid rock for excavation, assign a miner through the prioritized scheduler, convert completed rock to walkable ground, and spawn a finite physical stone deposit that must be hauled. Mining orders and terrain/deposit outcomes are covered by schema-v6 save/load.
+2. Extend citizens' needs, rest, housing, skills, and morale.
+3. Add general work orders and data-driven production chains.
+4. Add room/zone semantics, farming seasons, food processing, spoilage, and maintenance.
+5. Expand beyond this first excavation slice into layered geology, underground resource discovery, and terrain-dependent yields.
 
 ### Stage D — Ecosystem and emergent events
 1. Extend The Blight into an environmental/ecological simulation.

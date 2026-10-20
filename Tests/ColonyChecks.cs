@@ -103,6 +103,138 @@ internal static class ColonyChecks
         Check(colony.ConstructionCostStatus(ArchitectureKind.None, PlaceableKind.Workbench, isObject: false)
                   .Contains("Select a tile type", StringComparison.Ordinal),
             "the build HUD must explain when no construction type is selected");
+
+        // A higher-priority work order must be selected before an older low-priority order.
+        var priorityColony = new ColonySimulation();
+        Check(priorityColony.DesignTileConstruction(16, 10, ArchitectureKind.Wall),
+            "priority test should queue a low-priority wall order");
+        int lowPriorityOrderId = priorityColony.TileOrders.Single().Id;
+        Check(priorityColony.DesignTileConstruction(17, 10, ArchitectureKind.Floor),
+            "priority test should queue a second construction order");
+        int highPriorityOrderId = priorityColony.TileOrders.Single(order => order.Cell == new CellPosition(17, 10)).Id;
+        Check(priorityColony.SelectWorkOrderAt(17.5f, 10.5f) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              priorityColony.SelectedWorkOrderPriority == 5,
+            "the player should select a blueprint and raise its priority to the critical cap");
+        Check(priorityColony.SelectedWorkOrderDiagnostic.Contains("Materials ready", StringComparison.Ordinal),
+            "the work order inspector should explain that a funded blueprint is ready and waiting for a worker");
+        Check(priorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              priorityColony.SelectedWorkOrderPriority == 5,
+            "work order priority must clamp at the critical maximum");
+        Check(priorityColony.SelectWorkOrderAt(16.5f, 10.5f) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(-1) &&
+              priorityColony.ChangeSelectedWorkOrderPriority(-1) &&
+              priorityColony.SelectedWorkOrderPriority == 1,
+            "the player should lower another order to the minimum priority");
+        Check(priorityColony.SelectWorkOrderAt(17.5f, 10.5f),
+            "the critical construction order should remain inspectable after changing another order");
+        priorityColony.Step(0.1f);
+        Check(priorityColony.Workers[0].Task?.Kind == ColonyTaskKind.BuildTile &&
+              priorityColony.Workers[0].Task?.TargetId == highPriorityOrderId,
+            "automatic scheduling must prefer a critical tile order over an earlier low-priority order");
+        var restoredPriorityColony = ColonySaveService.Deserialize(ColonySaveService.Serialize(priorityColony));
+        Check(restoredPriorityColony.TileOrders.Single(order => order.Id == highPriorityOrderId).Priority == 5 &&
+              restoredPriorityColony.TileOrders.Single(order => order.Id == lowPriorityOrderId).Priority == 1,
+            "work order priorities must survive versioned save/load");
+
+        // Missing materials inherit the urgency of the most important order that needs them.
+        var gatheringPriorityColony = new ColonySimulation();
+        int firstGeneratorId = gatheringPriorityColony.PlaceObjectBlueprint(PlaceableKind.Generator, 3, 3);
+        int criticalGeneratorId = gatheringPriorityColony.PlaceObjectBlueprint(PlaceableKind.Generator, 6, 3);
+        Check(firstGeneratorId > 0 && criticalGeneratorId > 0,
+            "material-priority test should queue two valid generator blueprints");
+        foreach (int generatorId in new[] { firstGeneratorId, criticalGeneratorId })
+        {
+            var generator = gatheringPriorityColony.Objects.Single(item => item.Id == generatorId);
+            Check(gatheringPriorityColony.SelectWorkOrderAt(generator.Origin.X + 0.5f, generator.Origin.Y + 0.5f) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(1) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(1),
+                "both generators should be designated critical work orders");
+        }
+        for (int x = 2; x < 9; x++)
+        {
+            Check(gatheringPriorityColony.DesignTileConstruction(x, 12, ArchitectureKind.Door),
+                "material-priority test should queue door construction");
+            Check(gatheringPriorityColony.SelectWorkOrderAt(x + 0.5f, 12.5f) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(-1) &&
+                  gatheringPriorityColony.ChangeSelectedWorkOrderPriority(-1),
+                "door work orders should be marked low priority");
+        }
+
+        bool gatheredCriticalMaterial = false;
+        for (int i = 0; i < 3000 && !gatheredCriticalMaterial; i++)
+        {
+            gatheringPriorityColony.Step(0.1f);
+            gatheredCriticalMaterial = gatheringPriorityColony.Workers.Any(worker =>
+                worker.Task?.Kind == ColonyTaskKind.Gather &&
+                gatheringPriorityColony.Deposits.Any(deposit =>
+                    deposit.Id == worker.Task.DepositId && deposit.Resource == ResourceKind.Alloy));
+        }
+        Check(gatheredCriticalMaterial,
+            "automatic hauling must prioritize alloy for a priority-five generator over wood for priority-one doors, even when the wood deposit is closer");
+
+        var miningColony = new ColonySimulation();
+        int stoneBeforeMining = miningColony.ResourceCount(ResourceKind.Stone);
+        Check(miningColony.DesignExcavation(22, 6),
+            "the player should be able to designate an unoccupied rock tile for excavation");
+        Check(!miningColony.DesignExcavation(22, 6),
+            "a rock tile must not accept duplicate unfinished excavation orders");
+        Check(!miningColony.DesignExcavation(16, 10),
+            "excavation designation must reject ordinary ground");
+        var miningOrder = miningColony.ExcavationOrders.Single();
+        Check(miningColony.SelectWorkOrderAt(22.5f, 6.5f) &&
+              miningColony.ChangeSelectedWorkOrderPriority(1) &&
+              miningColony.ChangeSelectedWorkOrderPriority(1) &&
+              miningColony.SelectedWorkOrderPriority == 5,
+            "excavation should use the same selectable work-order priority system");
+
+        var crossFamilyPriorityColony = new ColonySimulation();
+        Check(crossFamilyPriorityColony.DesignTileConstruction(16, 10, ArchitectureKind.Wall) &&
+              crossFamilyPriorityColony.DesignExcavation(22, 6),
+            "cross-family priority test should queue both construction and mining");
+        Check(crossFamilyPriorityColony.SelectWorkOrderAt(22.5f, 6.5f) &&
+              crossFamilyPriorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              crossFamilyPriorityColony.ChangeSelectedWorkOrderPriority(1) &&
+              crossFamilyPriorityColony.SelectedWorkOrderDiagnostic.Contains("Rock is accessible", StringComparison.Ordinal),
+            "the excavation inspector should explain that solid rock is available for mining");
+        crossFamilyPriorityColony.Step(0.1f);
+        Check(crossFamilyPriorityColony.Workers[0].Task?.Kind == ColonyTaskKind.Mine,
+            "a critical excavation must outrank a normal-priority construction order in the shared scheduler");
+
+        var plannedMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
+        Check(plannedMiningSave.ExcavationOrders.Single().Priority == 5 &&
+              plannedMiningSave.TileAt(22, 6)?.Terrain == TerrainKind.Rock,
+            "unstarted mining orders and the untouched rock tile should survive save/load");
+
+        miningColony.Step(0.1f);
+        Check(miningOrder.Status == ConstructionStatus.UnderConstruction &&
+              miningColony.Workers.Any(worker => worker.Task?.Kind == ColonyTaskKind.Mine &&
+                                                    worker.Task.TargetId == miningOrder.Id),
+            "a worker should autonomously travel to and begin a designated excavation");
+        var activeMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
+        Check(activeMiningSave.ExcavationOrders.Single().Status == ConstructionStatus.UnderConstruction &&
+              activeMiningSave.Workers.Any(worker => worker.Task?.Kind == ColonyTaskKind.Mine),
+            "the active mining task and excavation progress state should survive save/load");
+
+        for (int i = 0; i < 400 && miningOrder.Status != ConstructionStatus.Complete; i++)
+            miningColony.Step(0.1f);
+        var minedStone = miningColony.Deposits.SingleOrDefault(deposit =>
+            deposit.Cell == new CellPosition(22, 6) && deposit.Resource == ResourceKind.Stone && deposit.Amount == 3);
+        Check(miningOrder.Status == ConstructionStatus.Complete &&
+              miningColony.TileAt(22, 6)?.Terrain == TerrainKind.Ground &&
+              minedStone != null,
+            "completed mining should remove the rock and create a finite, physical stone deposit");
+        Check(miningColony.ResourceCount(ResourceKind.Stone) == stoneBeforeMining,
+            "mining must not silently add extracted stone directly to colony inventory");
+        var completedMiningSave = ColonySaveService.Deserialize(ColonySaveService.Serialize(miningColony));
+        Check(completedMiningSave.ExcavationOrders.Single().Status == ConstructionStatus.Complete &&
+              completedMiningSave.Deposits.Any(deposit => deposit.Cell == new CellPosition(22, 6) &&
+                                                          deposit.Resource == ResourceKind.Stone && deposit.Amount == 3),
+            "the mined terrain and uncollected stone deposit should persist through save/load");
+
+
+
         var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
         int depositBefore = woodDeposit.Amount;

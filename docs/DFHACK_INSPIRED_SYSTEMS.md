@@ -17,6 +17,17 @@ DFHack is a Dwarf Fortress extension/modding toolkit, not a drop-in colony simul
 - Tile blueprints waiting for materials are now visibly different on the map: crimson outline and fill, with an exclamation marker at normal settlement zoom. Gold remains reserved for active construction.
 - Planning is still distinct from physical construction. A blueprint can be designated before the stockpile contains its recipe, but no worker may begin the build until the scheduler successfully consumes the complete material cost. This follows the useful separation in DFHack buildingplan between design intent and executable work.
 
+## Newly implemented work-order management slice
+
+- Construction and component-production orders have player-set priorities from 1 (low) to 5 (critical). The live scheduler selects higher-priority eligible work first across these three order families, and automatic hauling prioritizes resources required by the most urgent blocked construction order before considering lower-priority shortages.
+- Clicking an unfinished blueprint, architecture order, or workbench with queued component production opens an inspector with current priority and mouse controls to adjust it.
+- The inspector reports actionable state: missing material quantities, whether materials are ready, whether work is already in progress, or when no accessible work tile was found. Queued production reports its committed inputs and progress.
+- Priorities are stored in colony save schema v6 and validated; legacy supported save versions default missing priorities to 3.
+- Excavation is now a real worker task: the player designates solid rock with DIG, a worker reaches an accessible adjacent tile and spends work time mining, the rock becomes walkable ground, and three stone appear as a finite deposit at that location. Workers must still gather, carry, and deliver the stone; it is not silently added to inventory. Excavation priority, work progress, terrain result, and the uncollected stone deposit persist through save/load.
+- Automated regression checks cover selection, priority bounds, scheduling order, diagnostic availability, and persistence.
+
+This is a coherent first slice, not a claim that all Dwarf Fortress systems are integrated. Gathering, hauling, citizen needs, ecology, and all remaining job types still need a single shared broker and richer queue tooling.
+
 ## Existing mechanics retained
 
 - Each tile/object has an independent construction order and status.
