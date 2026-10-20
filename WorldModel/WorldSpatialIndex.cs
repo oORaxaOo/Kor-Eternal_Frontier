@@ -9,6 +9,7 @@ internal sealed class WorldSpatialIndex
     public const double BucketSize = 1_000d;
 
     private readonly Dictionary<long, List<WorldEntityState>> _buckets = [];
+    private readonly Dictionary<long, long> _entityBuckets = [];
     private readonly int _maxBucket;
 
     public WorldSpatialIndex(double worldExtent)
@@ -19,11 +20,14 @@ internal sealed class WorldSpatialIndex
     }
 
     public int BucketCount => _buckets.Count;
+    public int RebuildCount { get; private set; }
 
     public void Rebuild(IEnumerable<WorldEntityState> entities)
     {
         ArgumentNullException.ThrowIfNull(entities);
         _buckets.Clear();
+        _entityBuckets.Clear();
+        RebuildCount++;
         foreach (var entity in entities)
         {
             int bx = Bucket(entity.X), by = Bucket(entity.Y);
@@ -31,7 +35,28 @@ internal sealed class WorldSpatialIndex
             if (!_buckets.TryGetValue(key, out var bucket))
                 _buckets[key] = bucket = [];
             bucket.Add(entity);
+            _entityBuckets[entity.Id] = key;
         }
+    }
+
+    /// <summary>Updates membership only when an entity crosses a bucket boundary.</summary>
+    public void UpdateEntity(WorldEntityState entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        long newKey = Key(Bucket(entity.X), Bucket(entity.Y));
+        if (_entityBuckets.TryGetValue(entity.Id, out long oldKey))
+        {
+            if (oldKey == newKey) return;
+            if (_buckets.TryGetValue(oldKey, out var oldBucket))
+            {
+                oldBucket.RemoveAll(candidate => candidate.Id == entity.Id);
+                if (oldBucket.Count == 0) _buckets.Remove(oldKey);
+            }
+        }
+        if (!_buckets.TryGetValue(newKey, out var newBucket))
+            _buckets[newKey] = newBucket = [];
+        if (!newBucket.Any(candidate => candidate.Id == entity.Id)) newBucket.Add(entity);
+        _entityBuckets[entity.Id] = newKey;
     }
 
     public List<WorldEntityState> QueryCandidates(double x, double y, double radius)
