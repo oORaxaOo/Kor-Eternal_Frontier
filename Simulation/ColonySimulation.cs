@@ -1365,22 +1365,42 @@ internal sealed class ColonySimulation
     private void TryAssignGatherForShortage(ColonyWorker worker)
     {
         if (InventoryFreeCapacity <= 0) return;
-        var required = new HashSet<ResourceKind>();
-        foreach (var order in _tileOrders.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
-            foreach (var need in TileCost(order.Target))
-                if (ResourceCount(need.Key) < need.Value) required.Add(need.Key);
 
-        foreach (var item in _objects.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
-            foreach (var need in ObjectCost(item.Kind))
-                if (ResourceCount(need.Key) < need.Value) required.Add(need.Key);
+        // A shortage inherits the highest priority of any pending order that needs that resource.
+        // Among resources at the same priority, prefer the nearest available finite deposit.
+        var priorityByResource = new Dictionary<ResourceKind, int>();
 
-        var deposit = _deposits.Where(d => d.Amount > 0 && required.Contains(d.Resource) &&
-                                           !IsDepositReserved(d.Id, worker.Id))
-            .OrderBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f)).FirstOrDefault();
+        void IncludeShortages(int priority, Dictionary<ResourceKind, int> costs)
+        {
+            foreach (var need in costs)
+            {
+                if (ResourceCount(need.Key) >= need.Value) continue;
+                if (!priorityByResource.TryGetValue(need.Key, out int knownPriority) || priority > knownPriority)
+                    priorityByResource[need.Key] = priority;
+            }
+        }
+
+        foreach (var order in _tileOrders
+                     .Where(order => order.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials)
+                     .OrderByDescending(order => order.Priority).ThenBy(order => order.Id))
+            IncludeShortages(order.Priority, TileCost(order.Target));
+
+        foreach (var item in _objects
+                     .Where(item => item.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials)
+                     .OrderByDescending(item => item.Priority).ThenBy(item => item.Id))
+            IncludeShortages(item.Priority, ObjectCost(item.Kind));
+
+        var deposit = _deposits
+            .Where(d => d.Amount > 0 && priorityByResource.ContainsKey(d.Resource) &&
+                        !IsDepositReserved(d.Id, worker.Id))
+            .OrderByDescending(d => priorityByResource[d.Resource])
+            .ThenBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f))
+            .ThenBy(d => d.Id)
+            .FirstOrDefault();
         if (deposit == null) return;
         if (!TryFindPath(worker, deposit.Cell, out var route)) return;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
-        Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} from the nearby deposit.";
+        Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} for a priority {priorityByResource[deposit.Resource]} order.";
     }
 
     private bool IsDepositReserved(int depositId, int exceptWorkerId) =>
