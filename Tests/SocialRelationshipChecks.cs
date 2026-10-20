@@ -1,3 +1,5 @@
+using KorTheBlight.Simulation;
+
 namespace KorTheBlight.Tests;
 
 internal static class SocialRelationshipChecks
