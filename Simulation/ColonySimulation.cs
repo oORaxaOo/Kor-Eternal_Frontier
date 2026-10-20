@@ -157,6 +157,7 @@ internal sealed class ColonySimulation
     public int? SelectedWorkOrderId => _selectedWorkOrderId;
     public int SelectedWorkOrderPriority => GetSelectedWorkOrderPriority() ?? 3;
     public string SelectedWorkOrderSummary => GetSelectedWorkOrderSummary();
+    public string SelectedWorkOrderDiagnostic => GetSelectedWorkOrderDiagnostic();
     public float ElapsedSeconds { get; private set; }
     public int CompletedTileOrders => _tileOrders.Count(x => x.Status == ConstructionStatus.Complete);
     public int CompletedObjects => _objects.Count(x => x.IsBuilt);
@@ -924,6 +925,40 @@ internal sealed class ColonySimulation
             : "No work order selected",
         _ => "Select a blueprint or workbench on the map"
     };
+
+    private string GetSelectedWorkOrderDiagnostic() => _selectedWorkOrderKind switch
+    {
+        WorkOrderKind.TileConstruction => _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } tileOrder
+            ? GetConstructionDiagnostic(tileOrder.Status, tileOrder.WorkDone, tileOrder.WorkRequired, TileCost(tileOrder.Target))
+            : "Order no longer exists",
+        WorkOrderKind.ObjectConstruction => _objects.FirstOrDefault(item => item.Id == _selectedWorkOrderId) is { } objectOrder
+            ? GetConstructionDiagnostic(objectOrder.Status, objectOrder.WorkDone, objectOrder.WorkRequired, ObjectCost(objectOrder.Kind))
+            : "Order no longer exists",
+        WorkOrderKind.Production => _productionOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } productionOrder
+            ? productionOrder.Complete
+                ? "Production complete"
+                : $"Inputs committed; work {Math.Min(100, (int)(productionOrder.WorkDone / Math.Max(1f, productionOrder.WorkRequired) * 100))}%"
+            : "Order no longer exists",
+        _ => "Select a blueprint or workbench on the map"
+    };
+
+    private string GetConstructionDiagnostic(ConstructionStatus status, float workDone, float workRequired,
+        Dictionary<ResourceKind, int> costs)
+    {
+        if (status == ConstructionStatus.Blocked) return "BLOCKED: no accessible work tile found";
+        if (status == ConstructionStatus.UnderConstruction)
+            return $"WORK IN PROGRESS: {Math.Min(100, (int)(workDone / Math.Max(1, workRequired) * 100))}% | materials committed";
+        if (status == ConstructionStatus.Complete) return "Construction complete";
+
+        var missing = costs
+            .OrderBy(pair => pair.Key)
+            .Select(pair => (pair.Key, Required: pair.Value, Available: ResourceCount(pair.Key)))
+            .Where(item => item.Available < item.Required)
+            .Select(item => $"{item.Key} {item.Required - item.Available} short")
+            .ToList();
+        if (missing.Count > 0) return $"WAITING: {string.Join(", ", missing)}";
+        return "Materials ready; awaiting worker assignment";
+    }
 
     public bool DesignTileConstruction(int x, int y, ArchitectureKind target)
     {
