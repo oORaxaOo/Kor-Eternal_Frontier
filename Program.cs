@@ -56,10 +56,10 @@ internal static class Program
             WorldResourceKind? selectedShipmentResource = null;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
-            bool placingObject = false, paused = false;
+            bool placingObject = false, excavationMode = false, paused = false;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -203,6 +203,7 @@ internal static class Program
                     {
                         int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
                         if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
+                        else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
                         else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
                         else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                     }
@@ -237,6 +238,7 @@ internal static class Program
                         {
                             architectureMode = ArchitectureKind.None;
                             placingObject = false;
+                            excavationMode = false;
                             simulation.SetMessage("Current placement mode cancelled.");
                         }
                         else if (Hit(mx, my, 784, 527, 850, 549))
@@ -269,20 +271,22 @@ internal static class Program
                         else if (worldView && Hit(mx, my, 958, 566, 1012, 588)) { selectedShipmentResource = WorldResourceKind.Alloy; simulation.SetMessage("Cargo selected: Alloy. Select a caravan, then click a destination settlement."); }
                         else if (worldView && Hit(mx, my, 1016, 566, 1070, 588)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
                         else if (worldView && Hit(mx, my, 784, 593, 1086, 615)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
-                        else if (!worldView && Hit(mx, my, 784, 566, 838, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
-                        else if (!worldView && Hit(mx, my, 842, 566, 896, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; }
-                        else if (!worldView && Hit(mx, my, 900, 566, 954, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; }
-                        else if (!worldView && Hit(mx, my, 958, 566, 1012, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; }
-                        else if (!worldView && Hit(mx, my, 1016, 566, 1070, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; }
-                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615)) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; }
-                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615)) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 784, 566, 829, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 834, 566, 879, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 884, 566, 929, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
+                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615)) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615)) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
                         else if (!worldView && Hit(mx, my, 1039, 593, 1086, 615))
                         {
                             architectureMode = ArchitectureKind.None;
                             placingObject = false;
+                            excavationMode = false;
                             simulation.SetMessage("Placement cancelled.");
                         }
                     }
