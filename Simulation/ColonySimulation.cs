@@ -376,6 +376,33 @@ internal sealed class ColonySimulation
     }
 
     /// <summary>
+    /// Human-readable construction preflight for the build HUD. Planning remains possible when
+    /// stock is missing, but the job scheduler will not start physical work until every input
+    /// material is available and atomically consumed.
+    /// </summary>
+    public string ConstructionCostStatus(ArchitectureKind architecture, PlaceableKind placeable, bool isObject)
+    {
+        if (!isObject && architecture == ArchitectureKind.None)
+            return "Select a tile type or object to inspect its material cost.";
+
+        var costs = isObject ? ObjectCost(placeable) : TileCost(architecture);
+        if (costs.Count == 0) return "No material recipe is defined for this build item.";
+
+        var parts = new List<string>();
+        var missing = new List<string>();
+        foreach (var (resource, required) in costs.OrderBy(pair => pair.Key))
+        {
+            int available = ResourceCount(resource);
+            parts.Add($"{resource} {required}");
+            if (available < required) missing.Add($"{resource} {required - available} short");
+        }
+
+        return missing.Count == 0
+            ? $"COST: {string.Join(" + ", parts)}  |  MATERIALS READY"
+            : $"COST: {string.Join(" + ", parts)}  |  WAITING: {string.Join(", ", missing)}";
+    }
+
+    /// <summary>
     /// Makes the settlement ledger the sole authority for colony resources. Standalone colony
     /// simulations retain an in-memory inventory for isolated tests and tooling.
     /// </summary>

@@ -175,11 +175,27 @@ internal sealed class ColonyRenderer : IDisposable
             var order = simulation.TileOrderAt(x, y);
             if (order != null)
             {
-                _line.Color = order.Status == ConstructionStatus.UnderConstruction ? Gold : new SKColor(177, 174, 148);
+                _line.Color = order.Status switch
+                {
+                    ConstructionStatus.UnderConstruction => Gold,
+                    ConstructionStatus.WaitingForMaterials => Crimson,
+                    ConstructionStatus.Blocked => new SKColor(110, 73, 76),
+                    _ => new SKColor(177, 174, 148)
+                };
                 _line.StrokeWidth = Math.Max(1f, zoom * 1.4f);
                 canvas.DrawRect(Inset(rect, size * 0.12f), _line);
-                _fill.Color = new SKColor(201, 179, 105, 40);
+                _fill.Color = order.Status switch
+                {
+                    ConstructionStatus.WaitingForMaterials => new SKColor(192, 42, 54, 65),
+                    ConstructionStatus.UnderConstruction => new SKColor(216, 177, 89, 50),
+                    _ => new SKColor(201, 179, 105, 25)
+                };
                 canvas.DrawRect(rect, _fill);
+                if (zoom >= 0.82f && order.Status == ConstructionStatus.WaitingForMaterials)
+                {
+                    _text.Color = Crimson;
+                    canvas.DrawText("!", point.X, point.Y + 4f * zoom, SKTextAlign.Center, _glyphFont, _text);
+                }
             }
 
             _line.Color = new SKColor(66, 79, 72, 170);
@@ -272,7 +288,13 @@ internal sealed class ColonyRenderer : IDisposable
                 _ => new SKColor(48, 50, 50)
             };
             canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
-            _line.Color = item.Status == ConstructionStatus.Complete ? new SKColor(153, 168, 151) : Gold;
+            _line.Color = item.Status switch
+            {
+                ConstructionStatus.Complete => new SKColor(153, 168, 151),
+                ConstructionStatus.WaitingForMaterials => Crimson,
+                ConstructionStatus.Blocked => new SKColor(110, 73, 76),
+                _ => Gold
+            };
             _line.StrokeWidth = Math.Max(1f, zoom * 1.4f);
             canvas.DrawRect(Inset(rect, size * 0.07f), _line);
 
@@ -291,8 +313,11 @@ internal sealed class ColonyRenderer : IDisposable
 
             if (!item.IsBuilt)
             {
-                _text.Color = Gold;
-                canvas.DrawText($"{Math.Min(100, (int)(item.WorkDone / Math.Max(1, item.WorkRequired) * 100))}%", rect.MidX, rect.Bottom - 3f * zoom, SKTextAlign.Center, _smallFont, _text);
+                _text.Color = item.Status == ConstructionStatus.WaitingForMaterials ? Crimson : Gold;
+                string progress = item.Status == ConstructionStatus.WaitingForMaterials
+                    ? "!"
+                    : $"{Math.Min(100, (int)(item.WorkDone / Math.Max(1, item.WorkRequired) * 100))}%";
+                canvas.DrawText(progress, rect.MidX, rect.Bottom - 3f * zoom, SKTextAlign.Center, _smallFont, _text);
                 _text.Color = TextColor;
             }
         }
@@ -466,7 +491,13 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _muted.Color = MutedColor;
-        canvas.DrawText(worldView ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination") : "Left click: select/place", 790, 635, SKTextAlign.Left, _smallFont, _muted);
+        string actionHint = worldView
+            ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination")
+            : simulation.ConstructionCostStatus(architectureMode, objectType, placingObject);
+        _muted.Color = !worldView && (placingObject || architectureMode != ArchitectureKind.None) &&
+                       actionHint.Contains("WAITING:", StringComparison.Ordinal)
+            ? Crimson : MutedColor;
+        canvas.DrawText(actionHint, 790, 635, SKTextAlign.Left, _smallFont, _muted);
         canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :

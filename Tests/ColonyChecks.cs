@@ -89,6 +89,20 @@ internal static class ColonyChecks
             "the starter stockpile should provide the colony's initial storage capacity");
         Check(colony.InventoryUsed == 78 && colony.InventoryFreeCapacity == 42,
             "inventory used and free capacity should reflect the actual starting resource stacks");
+
+        string wallCost = colony.ConstructionCostStatus(ArchitectureKind.Wall, PlaceableKind.Workbench, isObject: false);
+        Check(wallCost.Contains("Wood 2", StringComparison.Ordinal) &&
+              wallCost.Contains("Stone 1", StringComparison.Ordinal) &&
+              wallCost.Contains("MATERIALS READY", StringComparison.Ordinal),
+            "the build HUD must expose the real wall recipe and report when all required materials are available");
+        string generatorCost = colony.ConstructionCostStatus(ArchitectureKind.None, PlaceableKind.Generator, isObject: true);
+        Check(generatorCost.Contains("Alloy 8", StringComparison.Ordinal) &&
+              generatorCost.Contains("Components 3", StringComparison.Ordinal) &&
+              generatorCost.Contains("MATERIALS READY", StringComparison.Ordinal),
+            "the build HUD must expose multi-resource object recipes from the same authoritative cost catalog");
+        Check(colony.ConstructionCostStatus(ArchitectureKind.None, PlaceableKind.Workbench, isObject: false)
+                  .Contains("Select a tile type", StringComparison.Ordinal),
+            "the build HUD must explain when no construction type is selected");
         var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
         int depositBefore = woodDeposit.Amount;
