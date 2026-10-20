@@ -288,7 +288,13 @@ internal sealed class ColonyRenderer : IDisposable
                 _ => new SKColor(48, 50, 50)
             };
             canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
-            _line.Color = item.Status == ConstructionStatus.Complete ? new SKColor(153, 168, 151) : Gold;
+            _line.Color = item.Status switch
+            {
+                ConstructionStatus.Complete => new SKColor(153, 168, 151),
+                ConstructionStatus.WaitingForMaterials => Crimson,
+                ConstructionStatus.Blocked => new SKColor(110, 73, 76),
+                _ => Gold
+            };
             _line.StrokeWidth = Math.Max(1f, zoom * 1.4f);
             canvas.DrawRect(Inset(rect, size * 0.07f), _line);
 
@@ -307,8 +313,11 @@ internal sealed class ColonyRenderer : IDisposable
 
             if (!item.IsBuilt)
             {
-                _text.Color = Gold;
-                canvas.DrawText($"{Math.Min(100, (int)(item.WorkDone / Math.Max(1, item.WorkRequired) * 100))}%", rect.MidX, rect.Bottom - 3f * zoom, SKTextAlign.Center, _smallFont, _text);
+                _text.Color = item.Status == ConstructionStatus.WaitingForMaterials ? Crimson : Gold;
+                string progress = item.Status == ConstructionStatus.WaitingForMaterials
+                    ? "!"
+                    : $"{Math.Min(100, (int)(item.WorkDone / Math.Max(1, item.WorkRequired) * 100))}%";
+                canvas.DrawText(progress, rect.MidX, rect.Bottom - 3f * zoom, SKTextAlign.Center, _smallFont, _text);
                 _text.Color = TextColor;
             }
         }
