@@ -59,10 +59,13 @@ internal static class ColonyChecks
               item.SubjectId == exposedCitizen.Id &&
               item.RelatedId == (long)SimulationHazardKind.ThermalExposure && item.Value > 0),
             "crossing the thermal danger threshold must emit a stable-ID hazard event");
+        exposedWorker.Stress = 37f;
         var restoredHazard = ColonySaveService.Deserialize(ColonySaveService.Serialize(thermalHazard));
         Check(Math.Abs(restoredHazard.Workers.Single(worker => worker.Id == 1).ThermalExposure -
               exposedWorker.ThermalExposure) < 0.001f,
             "thermal exposure must survive a save/load round trip");
+        Check(Math.Abs(restoredHazard.Workers.Single(worker => worker.Id == 1).Stress - 37f) < 0.001f,
+            "resident stress must survive a save/load round trip");
         string environmentSave = ColonySaveService.Serialize(environment);
         var restoredEnvironment = ColonySaveService.Deserialize(environmentSave);
         Check(restoredEnvironment.TotalFluid(FluidKind.Water) == environment.TotalFluid(FluidKind.Water) &&
