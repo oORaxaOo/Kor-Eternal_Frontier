@@ -40,7 +40,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - A workstation recipe that consumes real inventory and yields a component after labor.
 - A deterministic workplace broker selecting the nearest available job with stable-ID tie-breaking.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
-- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement and a uniform spatial-bucket index for radius queries.
+- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement and a uniform spatial-bucket index for radius queries. The index is rebuilt lazily only after entity positions change, not on every stationary world tick.
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
