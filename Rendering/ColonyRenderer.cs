@@ -466,7 +466,13 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _muted.Color = MutedColor;
-        canvas.DrawText(worldView ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination") : "Left click: select/place", 790, 635, SKTextAlign.Left, _smallFont, _muted);
+        string actionHint = worldView
+            ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination")
+            : simulation.ConstructionCostStatus(architectureMode, objectType, placingObject);
+        _muted.Color = !worldView && (placingObject || architectureMode != ArchitectureKind.None) &&
+                       actionHint.Contains("WAITING:", StringComparison.Ordinal)
+            ? Crimson : MutedColor;
+        canvas.DrawText(actionHint, 790, 635, SKTextAlign.Left, _smallFont, _muted);
         canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
