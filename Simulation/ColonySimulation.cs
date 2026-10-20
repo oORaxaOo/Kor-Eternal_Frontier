@@ -1182,7 +1182,7 @@ internal sealed class ColonySimulation
             return;
         }
         if (worker.Task != null && worker.Task.Kind is
-            (ColonyTaskKind.BuildTile or ColonyTaskKind.BuildObject or ColonyTaskKind.Produce or ColonyTaskKind.Deliver))
+            (ColonyTaskKind.BuildTile or ColonyTaskKind.BuildObject or ColonyTaskKind.Produce or ColonyTaskKind.Deliver or ColonyTaskKind.Mine))
         {
             Message = $"{worker.Name} is committed to a construction or production task and cannot abandon its material/work reservation.";
             return;
