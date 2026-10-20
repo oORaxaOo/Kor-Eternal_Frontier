@@ -124,6 +124,7 @@ internal sealed class ContinuousWorldState
             entity.DestinationX = null;
             entity.DestinationY = null;
             entity.MovementSpeed = 0;
+            UpdateSpatialIndex(entity);
         }
         return true;
     }
