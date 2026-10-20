@@ -699,7 +699,9 @@ internal sealed class ColonyEcosystem
 
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
-            if (citizen.Hunger < 30f && ShouldPrioritizeNeed(citizen, PawnNeedKind.Hunger) &&
+            if (citizen.Hunger < 30f &&
+                (Grid.FindNearestResource(ResourceKind.Food, citizen.Position) is null ||
+                 ShouldPrioritizeNeed(citizen, PawnNeedKind.Hunger)) &&
                 citizen.CanReceiveJob && citizen.State != CitizenState.MovingToStorage)
             {
                 ReleaseAssignment(citizen);
