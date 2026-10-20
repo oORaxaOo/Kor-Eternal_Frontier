@@ -114,7 +114,7 @@ This is a multi-release program. “Complete” means the systems are integrated
 4. Keep current gathering, hauling, construction, and production behavior working through adapters during migration.
 
 ### Stage B — Reliable simulation backbone
-1. **First slice implemented in this branch:** player-selectable priorities 1–5 for tile construction, object blueprints, and component production; the live scheduler chooses critical/high-priority work before lower-priority eligible orders, and save schema v5 persists those priorities.
+1. **First slice implemented in this branch:** player-selectable priorities 1–5 for tile construction, object blueprints, and component production; the live scheduler chooses critical/high-priority work before lower-priority eligible orders, automatic material gathering prioritizes resources needed by the most urgent blocked order, and save schema v5 persists order priorities.
 2. Consolidate job scheduling and resource reservations.
 3. Complete storage capacity, item location, partial delivery, and output reservation.
 4. Add shared job diagnostics, priority controls for hauling/gathering/citizen needs, and a useful filterable backlog/inspection UI.
