@@ -40,7 +40,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - A workstation recipe that consumes real inventory and yields a component after labor.
 - A deterministic workplace broker selecting the nearest available job with stable-ID tie-breaking.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
-- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement.
+- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement and a uniform spatial-bucket index for radius queries.
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
@@ -65,7 +65,7 @@ These games are design references, not evidence that their proprietary internal 
 - Individual citizen needs and workplace jobs exist, but full personality-driven mental breaks, long-lived memories, social graphs, body-part health and schedules are not integrated.
 - Population cohorts are a separate aggregate model; transitions between cohorts and individually simulated residents still need explicit conservation rules and persistence.
 - The new event queue is currently infrastructure with regression tests, not yet wired to every need, job, stock or hazard subsystem.
-- Spatial indexing, route/target invalidation metrics and reproducible 1k/5k/10k end-to-end benchmarks remain planned.
+- The continuous-world radius-query spatial index is implemented and tested against a full-scan oracle; local-agent spatial indexing, route/target invalidation metrics and reproducible 1k/5k/10k end-to-end benchmarks remain planned.
 - The world map is continuous 2D space; tactical formations and per-soldier combat are not implemented.
 
 ## Persistence and deterministic behavior

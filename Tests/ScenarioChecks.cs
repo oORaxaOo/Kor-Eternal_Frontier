@@ -12,7 +12,8 @@ internal static class ScenarioChecks
             WorldSimulationChecks.Run();
             ContinuousWorldChecks.Run();
             SimulationEventQueueChecks.Run();
-            Console.WriteLine("Kor checks passed: colony construction and logistics, bounded stockpile reservations, citizen needs and movement, job-broker capacity, continuous world movement and queries, shared settlement ledger, unified clock, session persistence, and deterministic bounded simulation events.");
+            WorldSpatialIndexChecks.Run();
+            Console.WriteLine("Kor checks passed: colony construction and logistics, bounded stockpile reservations, citizen needs and movement, job-broker capacity, continuous world movement and queries, shared settlement ledger, unified clock, session persistence, deterministic bounded simulation events, and indexed world-space radius queries.");
             return 0;
         }
         catch (Exception ex)
