@@ -57,6 +57,7 @@ internal sealed class GridManager
     public int Width => _width;
     public int Height => _height;
     public IReadOnlyList<StockpileZone> Zones => _zones.AsReadOnly();
+    internal event Action<ResourceKind, int>? StockChanged;
 
     public GridManager(int width, int height, int maxStackSize = DefaultMaxStackSize)
     {
@@ -212,9 +213,15 @@ internal sealed class GridManager
             tile.Amount -= taken;
             remaining -= taken;
             if (tile.Amount == 0) tile.Resource = null;
-            if (remaining == 0) return requested;
+            if (remaining == 0)
+            {
+                StockChanged?.Invoke(resource, -requested);
+                return requested;
+            }
         }
-        return requested - remaining;
+        int takenTotal = requested - remaining;
+        if (takenTotal > 0) StockChanged?.Invoke(resource, -takenTotal);
+        return takenTotal;
     }
 
     public CellPosition? FindNearestResource(ResourceKind resource, CellPosition origin)
@@ -327,7 +334,11 @@ internal sealed class GridManager
             int accepted = Math.Min(remaining, tile.MaxStackSize - tile.Amount);
             tile.Amount += accepted;
             remaining -= accepted;
-            if (remaining == 0) return true;
+            if (remaining == 0)
+            {
+                StockChanged?.Invoke(resource, amount);
+                return true;
+            }
         }
         return false;
     }
@@ -392,6 +403,7 @@ internal sealed class JobBroker
     private readonly List<WorkplaceJob> _jobs = [];
     private int _nextJobId = 1;
     public IReadOnlyList<WorkplaceJob> Jobs => _jobs.AsReadOnly();
+    internal event Action<int>? JobBecameAvailable;
 
     public int RegisterWorkplace(string name, CellPosition position, int workerCapacity,
         ResourceKind outputResource, int outputAmount = 1, float workSeconds = 5f)
@@ -402,6 +414,7 @@ internal sealed class JobBroker
             throw new ArgumentOutOfRangeException(nameof(workerCapacity), "Capacity, output and work duration must be positive.");
         int id = _nextJobId++;
         _jobs.Add(new WorkplaceJob(id, name, position, workerCapacity, outputResource, outputAmount, workSeconds));
+        JobBecameAvailable?.Invoke(id);
         return id;
     }
 
@@ -439,7 +452,11 @@ internal sealed class JobBroker
     public void Release(CitizenAgent citizen)
     {
         if (citizen.JobId is not int jobId) return;
-        FindJob(jobId)?.RemoveWorker(citizen.Id);
+        var job = FindJob(jobId);
+        int freeBefore = job?.FreeWorkers ?? 0;
+        job?.RemoveWorker(citizen.Id);
+        if (job != null && job.FreeWorkers > freeBefore)
+            JobBecameAvailable?.Invoke(jobId);
         citizen.JobId = null;
         citizen.WorkProgress = 0;
     }
@@ -470,6 +487,10 @@ internal sealed class ColonyEcosystem
     public ColonyEcosystem(int width, int height)
     {
         Grid = new GridManager(width, height);
+        Grid.StockChanged += (resource, delta) =>
+            _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, value: delta);
+        JobBroker.JobBecameAvailable += jobId =>
+            _events.Enqueue(SimulationTick, SimulationEventKind.JobBecameAvailable, jobId);
         _citizenView = _citizens.AsReadOnly();
     }
 
@@ -489,14 +510,15 @@ internal sealed class ColonyEcosystem
     {
         var job = JobBroker.FindJob(jobId);
         if (job == null) return false;
+        bool removed = JobBroker.RemoveWorkplace(jobId);
+        if (!removed) return false;
         foreach (var citizen in _citizens.Where(citizen => citizen.JobId == jobId).ToArray())
         {
             ReleaseAssignment(citizen);
             citizen.State = CitizenState.Idle;
         }
-        bool removed = JobBroker.RemoveWorkplace(jobId);
-        if (removed) LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
-        return removed;
+        LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
+        return true;
     }
 
     public void Step(float deltaSeconds)
