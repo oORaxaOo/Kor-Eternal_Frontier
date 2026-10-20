@@ -42,11 +42,12 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
     public float ElapsedSeconds { get; set; }
+    public float EnvironmentAccumulatorSeconds { get; set; }
     public string Message { get; set; } = string.Empty;
     public int? SelectedWorkerId { get; set; }
     public int NextOrderId { get; set; }
@@ -63,11 +64,13 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion != 2) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion != 2 && SchemaVersion != 3) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
             throw new InvalidDataException("Colony save contains an invalid simulation clock.");
+        if (!float.IsFinite(EnvironmentAccumulatorSeconds) || EnvironmentAccumulatorSeconds < 0 || EnvironmentAccumulatorSeconds > 1_000_000f)
+            throw new InvalidDataException("Colony save contains an invalid environment simulation accumulator.");
         if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
             throw new InvalidDataException("Colony save is missing a required collection.");
@@ -80,6 +83,10 @@ internal sealed class ColonySnapshot
             CheckCell(tile.X, tile.Y, "tile");
             if (!Enum.IsDefined(tile.Terrain) || !Enum.IsDefined(tile.Architecture))
                 throw new InvalidDataException("Colony save contains an unknown terrain or architecture enum.");
+            if (tile.WaterLevel is < 0 or > 7 || tile.MagmaLevel is < 0 or > 7 ||
+                (tile.WaterLevel > 0 && tile.MagmaLevel > 0) ||
+                !float.IsFinite(tile.TemperatureCelsius) || tile.TemperatureCelsius < -273.15f || tile.TemperatureCelsius > 5_000f)
+                throw new InvalidDataException("Colony save contains invalid tile fluid levels or temperature.");
             if (!tileCoordinates.Add((tile.X, tile.Y)))
                 throw new InvalidDataException("Colony save has duplicate tile coordinates.");
             if (tile.ConstructionOrderId is < 1)
@@ -253,6 +260,9 @@ internal sealed class TileSnapshot
     public TerrainKind Terrain { get; set; }
     public ArchitectureKind Architecture { get; set; }
     public int? ConstructionOrderId { get; set; }
+    public int WaterLevel { get; set; }
+    public int MagmaLevel { get; set; }
+    public float TemperatureCelsius { get; set; } = 20f;
 }
 internal sealed class TileOrderSnapshot
 {
