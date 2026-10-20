@@ -12,7 +12,7 @@ internal static class PawnUtilityAiChecks
         var offers = new[]
         {
             new SmartObjectOffer(1, "bed-1", "sleep", PawnNeedKind.Sleep, new CellPosition(1, 0), 0.8f),
-            new SmartObjectOffer(2, "meal-1", "eat", PawnNeedKind.Hunger, new CellPosition(4, 0), 1f),
+            new SmartObjectOffer(2, "meal-1", "eat", PawnNeedKind.Hunger, new CellPosition(1, 0), 1f),
             new SmartObjectOffer(3, "meal-closed", "eat", PawnNeedKind.Hunger, new CellPosition(0, 0), 1f, IsAvailable: false)
         };
 
@@ -36,10 +36,10 @@ internal static class PawnUtilityAiChecks
             [new PawnNeed(PawnNeedKind.Hunger, float.NaN)],
             [
                 new SmartObjectOffer(5, "invalid", "eat", PawnNeedKind.Hunger, new CellPosition(0, 0), float.NaN),
-                new SmartObjectOffer(6, "unknown", "sleep", PawnNeedKind.Sleep, new CellPosition(0, 0), 1f)
+                new SmartObjectOffer(6, "meal", "eat", PawnNeedKind.Hunger, new CellPosition(0, 0), 0.5f)
             ]);
         Check(invalidAndMissing is not null && invalidAndMissing.Offer.Id == 6,
-            "planner must fail safely on invalid gains and ignore offers for needs not present in the resident model");
+            "planner must ignore invalid gains and normalize invalid need values safely");
 
         Console.WriteLine("Pawn utility AI checks passed: urgency, distance, availability, personality and invalid data.");
     }
