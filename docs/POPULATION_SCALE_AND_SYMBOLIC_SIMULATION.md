@@ -27,7 +27,7 @@ This is an inspiration target, not a reproduction of Dwarf Fortress' proprietary
 
 ## First scalability guardrail
 
-The citizen ecosystem uses a monotonic ID counter instead of scanning all existing residents for each new ID. Automated simulation checks create and step 2,000 distinct citizen agents. The local colony pathfinder also caches up to 8,192 successful start/target routes, returns defensive copies, and invalidates routes when a completed tile or new object blueprint changes walkability. Search and cache-hit counters make reuse testable. Automated checks verify that a repeated query avoids a second breadth-first search. These guardrails catch some avoidable work, but they do not replace profiling of full worker logistics or rendering.
+The citizen ecosystem uses a monotonic ID counter instead of scanning all existing residents for each new ID. Automated simulation checks create and step 10,000 distinct citizen agents in one deterministic tick. This is an agent-level scalability guardrail, not proof that 10,000 fully integrated workers meet a target frame time. The local colony pathfinder also caches up to 8,192 successful start/target routes, returns defensive copies, and invalidates routes when a completed tile or new object blueprint changes walkability. Search and cache-hit counters make reuse testable. Automated checks verify that a repeated query avoids a second breadth-first search. These guardrails catch some avoidable work, but they do not replace profiling of full worker logistics or rendering.
 
 ## Visual direction
 

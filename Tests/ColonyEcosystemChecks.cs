@@ -110,19 +110,20 @@ internal static class ColonyEcosystemChecks
         Check(hungryCitizen.Fatigue > 10f,
             "an exhausted citizen should stop working and recover while idle");
 
-        // Population-scale regression: bulk recruitment must not rescan all prior IDs.
+        // Population-scale regression: 10,000 individually simulated citizens must keep
+        // stable unique IDs and advance in one deterministic tick without a tiny population cap.
         var populationColony = new ColonyEcosystem(40, 26);
         var populationIds = new HashSet<int>();
-        for (int i = 0; i < 2_000; i++)
+        for (int i = 0; i < 10_000; i++)
         {
             var resident = populationColony.AddCitizen($"Resident-{i + 1}", new CellPosition(i % 40, (i / 40) % 26));
             Check(populationIds.Add(resident.Id), "every resident must receive a unique stable simulation ID");
         }
-        Check(populationColony.Citizens.Count == 2_000,
-            "the cached citizen view must expose bulk recruitment without stale snapshots");
+        Check(populationColony.Citizens.Count == 10_000,
+            "the cached citizen view must expose all 10,000 residents without stale snapshots");
         populationColony.Step(0.05f);
         Check(populationColony.Citizens.All(resident => resident.Hunger < 100f),
-            "all residents should advance through the same population simulation tick");
+            "all 10,000 residents should advance through the same population simulation tick");
 
         var recruitmentSimulation = new ColonySimulation();
         int recruited = recruitmentSimulation.RecruitColonists(25);

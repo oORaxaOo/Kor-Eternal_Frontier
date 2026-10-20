@@ -365,10 +365,20 @@ internal sealed class JobBroker
     {
         ArgumentNullException.ThrowIfNull(citizen);
         if (citizen.JobId.HasValue) return FindJob(citizen.JobId.Value);
-        var job = _jobs.Where(candidate => candidate.FreeWorkers > 0)
-            .OrderBy(candidate => Distance(citizen.Position, candidate.Position))
-            .ThenBy(candidate => candidate.Id)
-            .FirstOrDefault();
+        // Avoid a LINQ pipeline and sorting allocation for every idle citizen. A single
+        // deterministic pass selects the nearest available workplace, breaking ties by stable ID.
+        WorkplaceJob? job = null;
+        int bestDistance = int.MaxValue;
+        foreach (var candidate in _jobs)
+        {
+            if (candidate.FreeWorkers <= 0) continue;
+            int distance = Distance(citizen.Position, candidate.Position);
+            if (distance > bestDistance ||
+                (distance == bestDistance && job != null && candidate.Id >= job.Id))
+                continue;
+            job = candidate;
+            bestDistance = distance;
+        }
         if (job == null || !job.AddWorker(citizen.Id)) return null;
         citizen.JobId = job.Id;
         return job;
