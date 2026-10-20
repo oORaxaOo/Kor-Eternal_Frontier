@@ -44,7 +44,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
-- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger and fatigue now emit one event when crossing their critical thresholds; the simulation tick and drain API are exposed for downstream planners. Stockpile, job availability, hazards and incidents are not yet fully event-wired.
+- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger/fatigue threshold crossings, stock additions/withdrawals and workplace availability changes emit data-only notifications; stockpile planning, hazard propagation and incidents are not yet event-wired.
 - A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 
 ## Combined design target: DF depth + Songs of Syx scale + RimWorld storytelling
@@ -52,7 +52,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 These games are design references, not evidence that their proprietary internal implementations match every mechanism in a reverse-engineering description. Kor will combine their useful *design outcomes* while using an architecture suited to this codebase:
 
 1. **World and materials (DF-inspired):** retain the compact local tile grid and make terrain/material, fluid, temperature and occupancy explicit simulation data. Start with 2D tile layers and a stable Z-level contract only when vertical construction is implemented. Fluids and heat must use bounded deterministic updates and material properties; do not introduce a full 3D voxel allocation before gameplay requires it.
-2. **Mass simulation (Songs of Syx-inspired):** retain individual resident IDs and consequential state, but simulate distant/off-screen residents in deterministic cohorts and less frequent time slices. Add spatial buckets and target-oriented flow fields only after benchmarks establish where individual pathfinding is expensive. A flow field is an optimization for many agents sharing a destination, not a replacement for obstacle-aware routes in every task.
+2. **Mass simulation (Songs of Syx-inspired):** retain individual resident IDs and consequential state, but simulate distant/off-screen residents in deterministic cohorts and less frequent time slices. Continuous-world spatial buckets and target-oriented flow fields are implemented for nearby entity queries and repeated local citizen destinations; broader use should be driven by end-to-end benchmarks. A flow field is an optimization for many agents sharing a destination, not a replacement for obstacle-aware routes in every task.
 3. **Personal stories (RimWorld-inspired):** model needs, traits, memories, relationships and health effects as data; process threshold crossings and world incidents through the deterministic event queue. Update expensive systems on staggered tick intervals. Avoid copying RimWorld-specific class names or assuming its exact tick rates are universal.
 4. **Jobs and logistics:** use explicit job states and reservations, verify reachability before assigning a job, and reserve both source quantity and destination capacity. Resource movement must conserve stock. Need/stock/job events should eventually wake only relevant planners instead of polling all agents.
 5. **Incidents and ecology:** a director may schedule seeded incidents using colony state, security, shortages and environmental pressure. Keep event intensity bounded and testable; avoid an opaque random difficulty jump.
@@ -80,9 +80,9 @@ These games are design references, not evidence that their proprietary internal 
 
 ## Implementation sequence
 
-1. Add and test deterministic event scheduling. **Foundation added in this branch.**
-2. Connect events to stock changes, job availability and need thresholds; preserve existing direct-call behavior during migration.
-3. Add a spatial bucket index for continuous-world queries and local agent lookups, with mutation/invalidation tests.
+1. Add and test deterministic event scheduling. **Foundation added.**
+2. Emit events for need thresholds, stock changes and workplace availability. **These notifications are integrated; planner wake-ups and hazard/incident handlers remain future work.**
+3. Add a spatial bucket index for continuous-world queries and local agent lookups, with mutation/invalidation tests. **Continuous-world radius queries now update bucket membership incrementally.**
 4. Extend shared-destination flow fields to the main colony task planner and retain exact path checks for work reservations. **First implementation exists in the high-throughput citizen grid.**
 5. Expand individual needs, traits, memories, relationships and body-part health in small save-compatible slices.
 6. Add tile material definitions, temperature exchange and fluid movement with strict per-tick work budgets.
