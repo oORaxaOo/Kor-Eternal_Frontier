@@ -460,7 +460,7 @@ internal sealed class JobBroker
         {
             int before = job.FreeWorkers;
             job.RemoveWorker(citizen.Id);
-            if (job.FreeWorkers > before)
+            if (before == 0 && job.FreeWorkers > 0)
                 AvailabilityChanged?.Invoke(job.Id, job.FreeWorkers);
         }
         citizen.JobId = null;
@@ -515,15 +515,16 @@ internal sealed class ColonyEcosystem
     public bool RemoveWorkplace(int jobId)
     {
         var job = JobBroker.FindJob(jobId);
-        if (job == null) return false;
+        if (job == null || !JobBroker.RemoveWorkplace(jobId)) return false;
+        // Remove the registry entry before releasing assigned citizens so their release cannot
+        // publish a stale JobBecameAvailable event for a workplace that no longer exists.
         foreach (var citizen in _citizens.Where(citizen => citizen.JobId == jobId).ToArray())
         {
             ReleaseAssignment(citizen);
             citizen.State = CitizenState.Idle;
         }
-        bool removed = JobBroker.RemoveWorkplace(jobId);
-        if (removed) LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
-        return removed;
+        LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
+        return true;
     }
 
     public void Step(float deltaSeconds)
