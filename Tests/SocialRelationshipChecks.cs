@@ -26,9 +26,13 @@ internal static class SocialRelationshipChecks
         var other = second.Get(7, 3) ?? throw new InvalidOperationException("Deterministic pair missing.");
         Require(forward.Affinity == other.Affinity && forward.Tension == other.Tension &&
                 forward.EncounterCount == other.EncounterCount, "Identical encounter sequences must produce identical outcomes.");
-        Require(first.DrainEvents().Select(x => (x.Tick, x.Kind, x.ResidentA, x.ResidentB, x.CurrentScore))
-            .SequenceEqual(second.DrainEvents().Select(x => (x.Tick, x.Kind, x.ResidentA, x.ResidentB, x.CurrentScore))),
+        var firstEvents = first.DrainEvents();
+        var secondEvents = second.DrainEvents();
+        Require(firstEvents.Select(x => (x.Tick, x.Kind, x.ResidentA, x.ResidentB, x.CurrentScore))
+            .SequenceEqual(secondEvents.Select(x => (x.Tick, x.Kind, x.ResidentA, x.ResidentB, x.CurrentScore))),
             "Event ordering must be deterministic.");
+        Require(firstEvents.Count(x => x.Kind == SocialEventKind.FriendshipMilestone) == 1,
+            "Crossing a relationship threshold must emit one milestone rather than repeated spam.");
     }
 
     private static void NeedsInfluenceRelationships()
