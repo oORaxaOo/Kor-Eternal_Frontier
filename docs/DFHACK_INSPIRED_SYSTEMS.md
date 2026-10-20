@@ -19,7 +19,7 @@ DFHack is a Dwarf Fortress extension/modding toolkit, not a drop-in colony simul
 
 ## Newly implemented work-order management slice
 
-- Construction and component-production orders have player-set priorities from 1 (low) to 5 (critical). The live scheduler selects higher-priority eligible work first across these three order families.
+- Construction and component-production orders have player-set priorities from 1 (low) to 5 (critical). The live scheduler selects higher-priority eligible work first across these three order families, and automatic hauling prioritizes resources required by the most urgent blocked construction order before considering lower-priority shortages.
 - Clicking an unfinished blueprint, architecture order, or workbench with queued component production opens an inspector with current priority and mouse controls to adjust it.
 - The inspector reports actionable state: missing material quantities, whether materials are ready, whether work is already in progress, or when no accessible work tile was found. Queued production reports its committed inputs and progress.
 - Priorities are stored in colony save schema v5 and validated; legacy supported save versions default missing priorities to 3.
