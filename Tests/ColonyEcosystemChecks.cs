@@ -144,6 +144,20 @@ internal static class ColonyEcosystemChecks
               restoredRecruitment.Workers.Select(worker => worker.Id).Distinct().Count() == 29,
             "recruitment after loading must continue the ID sequence without collisions");
 
+        var pathCacheColony = new ColonySimulation();
+        var pathStart = new CellPosition(2, 5);
+        var pathTarget = new CellPosition(8, 5);
+        Check(pathCacheColony.TryFindPathForDiagnostics(pathStart, pathTarget, out var firstRoute),
+            "the path-cache fixture should find an open route");
+        int originalRouteLength = firstRoute.Count;
+        firstRoute.Clear();
+        Check(pathCacheColony.TryFindPathForDiagnostics(pathStart, pathTarget, out var secondRoute) &&
+              secondRoute.Count == originalRouteLength,
+            "cached routes must be copied so callers cannot corrupt the cache");
+        Check(pathCacheColony.PathfindingSearches == 1 && pathCacheColony.PathCacheHits == 1 &&
+              pathCacheColony.CachedPathCount == 1,
+            "repeating a route query should reuse the bounded path cache rather than rerun breadth-first search");
+
         var wallGrid = new GridManager(3, 3);
         wallGrid.SetWall(new CellPosition(1, 0));
         wallGrid.SetWall(new CellPosition(0, 1));
