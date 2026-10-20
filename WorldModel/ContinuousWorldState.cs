@@ -119,9 +119,9 @@ internal sealed class ContinuousWorldState
         entity.DestinationX = destinationX;
         entity.DestinationY = destinationY;
         entity.MovementSpeed = speed;
-        _spatialIndexDirty = true;
         if (Distance(entity.X, entity.Y, destinationX, destinationY) <= 0.000001)
         {
+            if (entity.X != destinationX || entity.Y != destinationY) _spatialIndexDirty = true;
             entity.X = destinationX;
             entity.Y = destinationY;
             entity.DestinationX = null;
