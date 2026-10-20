@@ -7,6 +7,37 @@ internal static class ColonyEcosystemChecks
     public static void Run()
     {
 
+        var eventColony = new ColonyEcosystem(5, 5);
+        eventColony.Grid.DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        Check(eventColony.Grid.TryAdd(ResourceKind.Food, 8), "event test stock should be accepted");
+        var addedEvents = eventColony.DrainEvents();
+        Check(addedEvents.Count == 1 &&
+              addedEvents[0].Kind == SimulationEventKind.StockChanged &&
+              addedEvents[0].SubjectId == (long)ResourceKind.Food &&
+              addedEvents[0].Value == 8,
+            "successful stock additions must emit one typed positive stock-change event");
+        Check(eventColony.Grid.TryTake(ResourceKind.Food, 3) == 3, "event test stock should be withdrawn");
+        var takenEvents = eventColony.DrainEvents();
+        Check(takenEvents.Count == 1 && takenEvents[0].Kind == SimulationEventKind.StockChanged &&
+              takenEvents[0].SubjectId == (long)ResourceKind.Food && takenEvents[0].Value == -3,
+            "withdrawals must emit one negative event for the actual resource delta");
+
+        int eventJobId = eventColony.JobBroker.RegisterWorkplace("Event workplace", new CellPosition(2, 2),
+            workerCapacity: 1, outputResource: ResourceKind.Wood);
+        var registeredEvents = eventColony.DrainEvents();
+        Check(registeredEvents.Count == 1 && registeredEvents[0].Kind == SimulationEventKind.JobBecameAvailable &&
+              registeredEvents[0].SubjectId == eventJobId,
+            "registering a workplace must announce its availability");
+        var eventCitizen = eventColony.AddCitizen("Job event probe", new CellPosition(0, 0));
+        Check(eventColony.JobBroker.AssignNext(eventCitizen)?.Id == eventJobId,
+            "the event probe citizen should claim the available workplace");
+        eventColony.JobBroker.Release(eventCitizen);
+        var releasedEvents = eventColony.DrainEvents();
+        Check(releasedEvents.Count == 1 && releasedEvents[0].Kind == SimulationEventKind.JobBecameAvailable &&
+              releasedEvents[0].SubjectId == eventJobId,
+            "releasing the final occupied slot must announce renewed workplace availability");
+
         var needs = new ColonyEcosystem(4, 4);
         var thresholdCitizen = needs.AddCitizen("Threshold probe", new CellPosition(0, 0));
         thresholdCitizen.Hunger = 30.1f;
