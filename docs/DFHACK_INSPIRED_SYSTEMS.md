@@ -1,0 +1,39 @@
+# DFHack-inspired construction and logistics notes
+
+This document records design patterns studied from DFHack's public documentation and how they apply to Kor Eternal Frontier. The game implementation is original; no DFHack source files or assets are copied into this repository.
+
+## Reference material
+
+- DFHack `buildingplan` documentation: https://docs.dfhack.org/en/stable/docs/tools/buildingplan.html
+- DFHack Lua API reference: https://docs.dfhack.org/en/stable/docs/dev/Lua%20API.html
+- DFHack source and licensing notes: https://github.com/DFHack/dfhack and https://github.com/DFHack/dfhack/blob/develop/LICENSE.rst
+
+DFHack is a Dwarf Fortress extension/modding toolkit, not a drop-in colony simulation engine. Its useful contribution here is the interaction and workflow design around planned construction, missing materials, queues, and automation—not wholesale integration of its memory-hacking runtime.
+
+## Implemented in this change
+
+- The build HUD previews material recipes from the same authoritative cost functions used by the construction scheduler.
+- The preview distinguishes **MATERIALS READY** from **WAITING** and lists the missing quantity by resource.
+- Tile blueprints waiting for materials are now visibly different on the map: crimson outline and fill, with an exclamation marker at normal settlement zoom. Gold remains reserved for active construction.
+- Planning is still distinct from physical construction. A blueprint can be designated before the stockpile contains its recipe, but no worker may begin the build until the scheduler successfully consumes the complete material cost. This follows the useful separation in DFHack buildingplan between design intent and executable work.
+
+## Existing mechanics retained
+
+- Each tile/object has an independent construction order and status.
+- Material consumption is checked and applied through the canonical inventory ledger; a failed material check does not consume a partial recipe.
+- Workers gather finite deposits, carry loads, and deliver them to bounded stockpiles.
+- The job scheduler automatically seeks materials required by pending construction orders.
+- Inventory, worker cargo, deposits, construction state, and work progress are part of save/load.
+
+## Next engineering slices
+
+1. Give every planned object a visible status and exact missing-material breakdown, not just the current build selection.
+2. Add a construction queue/inspector with filtering, cancellation, and priority controls.
+3. Add material reservations so multiple orders cannot all appear to own the same available stock; preserve reservations through save/load.
+4. Add configurable production/work orders with target stock levels, input costs, output storage checks, and cancellation/refund rules.
+5. Improve stockpile zoning and per-resource storage capacity, while keeping one canonical inventory ledger.
+6. Add regression scenarios for zero-material starts, concurrent orders competing for the same material, delivery capacity, cancellation, and save/load round trips.
+
+## Validation
+
+The repository's canonical checks are `dotnet build GondwanaGame.csproj --configuration Release` and `dotnet run --project GondwanaGame.csproj --configuration Release -- --self-test`. CI also packages the Linux x86_64 game and smoke-tests the graphical startup path.
