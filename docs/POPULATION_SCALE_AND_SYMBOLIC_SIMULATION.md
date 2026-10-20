@@ -27,7 +27,7 @@ This is an inspiration target, not a reproduction of Dwarf Fortress' proprietary
 
 ## First scalability guardrail
 
-The citizen ecosystem uses a monotonic ID counter instead of scanning all existing residents for each new ID. Automated simulation checks create and step 2,000 distinct citizen agents. This catches accidental quadratic recruitment and basic population-loop regressions, but it does not replace profiling of full worker logistics or rendering.
+The citizen ecosystem uses a monotonic ID counter instead of scanning all existing residents for each new ID. Automated simulation checks create and step 2,000 distinct citizen agents. The local colony pathfinder also caches up to 8,192 successful start/target routes, returns defensive copies, and invalidates routes when a completed tile or new object blueprint changes walkability. Search and cache-hit counters make reuse testable. Automated checks verify that a repeated query avoids a second breadth-first search. These guardrails catch some avoidable work, but they do not replace profiling of full worker logistics or rendering.
 
 ## Visual direction
 
@@ -41,7 +41,7 @@ The citizen ecosystem uses a monotonic ID counter instead of scanning all existi
 
 1. Resident needs beyond hunger and rest, with real ways to satisfy each need.
 2. Housing, household membership, social ties and schedules.
-3. Scalable spatial indexing and cached pathfinding; benchmark 1k, 5k and 10k residents.
+3. Expand spatial indexing and path reuse; add repeatable 1k, 5k and 10k full-worker benchmarks with tick, pathfinding, render and save metrics.
 4. Visible and testable simulation LOD for off-screen residents.
 5. Economic pressure propagation: shortages, job chains, transport bottlenecks and migration.
 6. Ecology interactions: herds, habitat/forage, Blight pressure, danger zones and regional events.
