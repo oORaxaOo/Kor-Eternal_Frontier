@@ -236,6 +236,25 @@ internal static class ColonyEcosystemChecks
               pathCacheColony.CachedPathCount == 1,
             "repeating a route query should reuse the bounded path cache rather than rerun breadth-first search");
 
+        var stressSimulation = new ColonyEcosystem(4, 4);
+        var stressedCitizen = stressSimulation.AddCitizen("Stress probe", new CellPosition(0, 0));
+        stressedCitizen.Hunger = 0f;
+        stressedCitizen.Fatigue = 0f;
+        stressSimulation.Step(60f);
+        Check(stressedCitizen.State == CitizenState.MentalBreak && stressedCitizen.Stress >= 80f &&
+              stressedCitizen.Mood < 10f,
+            "sustained unmet needs must trigger a mental-break state and lower mood");
+        var breakStarted = stressSimulation.DrainEvents().Single(item =>
+            item.Kind == SimulationEventKind.MentalBreakStarted && item.SubjectId == stressedCitizen.Id);
+        Check(breakStarted.Tick == stressSimulation.SimulationTick && breakStarted.Value >= 80f,
+            "mental-break start events must carry stable identity, deterministic tick and stress severity");
+        stressSimulation.Step(30f);
+        Check(stressedCitizen.State == CitizenState.Idle && stressedCitizen.Stress <= 45f,
+            "the mental-break state must recover below its lower hysteresis threshold");
+        Check(stressSimulation.DrainEvents().Any(item =>
+            item.Kind == SimulationEventKind.MentalBreakEnded && item.SubjectId == stressedCitizen.Id),
+            "mental-break recovery must emit a deterministic end event");
+
         var flowGrid = new GridManager(6, 4);
         var flowTarget = new CellPosition(5, 0);
         Check(flowGrid.FindPath(new CellPosition(0, 0), flowTarget)?.Count == 5,
