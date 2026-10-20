@@ -6,6 +6,26 @@ internal static class ColonyEcosystemChecks
 {
     public static void Run()
     {
+
+        var needs = new ColonyEcosystem(4, 4);
+        var thresholdCitizen = needs.AddCitizen("Threshold probe", new CellPosition(0, 0));
+        thresholdCitizen.Hunger = 30.1f;
+        thresholdCitizen.Fatigue = 20.01f;
+        needs.Step(1);
+        var needEvents = needs.DrainEvents();
+        Check(needs.SimulationTick == 1 && needEvents.Count == 2,
+            "crossing hunger and fatigue thresholds must emit events in the current simulation tick");
+        Check(needEvents[0].Kind == SimulationEventKind.NeedThresholdCrossed &&
+              needEvents[0].SubjectId == thresholdCitizen.Id &&
+              needEvents[0].RelatedId == (long)SimulationNeedKind.Hunger &&
+              needEvents[0].Tick == needs.SimulationTick,
+            "hunger threshold events must identify the citizen, need type and deterministic tick");
+        Check(needEvents[1].RelatedId == (long)SimulationNeedKind.Fatigue &&
+              needEvents[1].SubjectId == thresholdCitizen.Id,
+            "fatigue threshold events must be distinguishable from hunger events");
+        needs.Step(1);
+        Check(needs.DrainEvents().Count == 0,
+            "a citizen remaining below a threshold must not emit duplicate crossing events every tick");
         var grid = new GridManager(5, 5, maxStackSize: 10);
         int foodZone = grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
