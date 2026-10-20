@@ -66,6 +66,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float X { get; internal set; } = x;
     public float Y { get; internal set; } = y;
     public float Hunger { get; internal set; } = hunger;
+    public float ThermalExposure { get; internal set; }
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -242,6 +243,7 @@ internal sealed class ColonySimulation
         snapshot.Workers.AddRange(_workers.Select(worker => new ColonyWorkerSnapshot
         {
             Id = worker.Id, Name = worker.Name, X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
+            ThermalExposure = worker.ThermalExposure,
             CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
@@ -304,6 +306,7 @@ internal sealed class ColonySimulation
         {
             var restored = new ColonyWorker(worker.Id, worker.Name, worker.X, worker.Y, worker.Hunger)
             {
+                ThermalExposure = worker.ThermalExposure,
                 CarriedResource = worker.CarriedResource,
                 CarriedAmount = worker.CarriedAmount,
                 Task = worker.Task == null ? null : new WorkerTask(worker.Task.Kind,
@@ -935,12 +938,49 @@ internal sealed class ColonySimulation
         ElapsedSeconds += deltaSeconds;
         StepEnvironment(deltaSeconds);
         StepEcosystem(deltaSeconds);
+        StepEnvironmentalExposure(deltaSeconds);
         AssignJobs();
 
         foreach (var worker in _workers)
         {
             if (worker.Task == null) continue;
             AdvanceWorker(worker, deltaSeconds);
+        }
+    }
+
+    private void StepEnvironmentalExposure(float deltaSeconds)
+    {
+        foreach (var worker in _workers)
+        {
+            int x = Math.Clamp((int)worker.X, 0, Width - 1);
+            int y = Math.Clamp((int)worker.Y, 0, Height - 1);
+            float temperature = _tiles[x, y].TemperatureCelsius;
+            float exposureRate = temperature > 45f ? (temperature - 45f) / 25f
+                : temperature < 0f ? -temperature / 20f : 0f;
+            exposureRate = Math.Clamp(exposureRate, 0f, 4f);
+
+            float previous = worker.ThermalExposure;
+            worker.ThermalExposure = exposureRate > 0
+                ? Math.Min(100f, previous + exposureRate * deltaSeconds)
+                : Math.Max(0f, previous - deltaSeconds * 1.25f);
+
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            if (previous < 15f && worker.ThermalExposure >= 15f)
+            {
+                _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, worker.ThermalExposure);
+                Message = $"{worker.Name} is suffering dangerous thermal exposure.";
+            }
+            else if (previous >= 15f && worker.ThermalExposure < 15f)
+            {
+                _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, 0f);
+                Message = $"{worker.Name} has recovered from thermal exposure.";
+            }
+
+            // Thermal strain reduces rest satisfaction, which in turn makes the existing job
+            // broker release exhausted workers instead of treating heat/cold as a cosmetic effect.
+            if (worker.ThermalExposure > 15f)
+                citizen.Fatigue = Math.Max(0f, citizen.Fatigue -
+                    deltaSeconds * Math.Min(1.5f, (worker.ThermalExposure - 15f) * 0.025f));
         }
     }
 
