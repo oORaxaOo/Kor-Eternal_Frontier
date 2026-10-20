@@ -52,7 +52,7 @@ internal sealed class MainMenuRenderer : IDisposable
             DrawButton(canvas, "EINSTELLUNGEN", 370, 392, 360, 52);
             DrawButton(canvas, "BEENDEN", 370, 458, 360, 52);
             _text.Color = Muted;
-            canvas.DrawText("Linksklick zum Auswählen  •  ESC/Schließen zum Beenden", 550, 578, SKTextAlign.Center, _small, _text);
+            canvas.DrawText("Linksklick zum Auswählen  •  Fenster schließen zum Beenden", 550, 578, SKTextAlign.Center, _small, _text);
         }
         if (!string.IsNullOrWhiteSpace(message))
         {
