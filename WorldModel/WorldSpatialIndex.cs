@@ -10,6 +10,7 @@ internal sealed class WorldSpatialIndex
 
     private readonly Dictionary<long, List<WorldEntityState>> _buckets = [];
     private readonly int _maxBucket;
+    public int RebuildCount { get; private set; }
 
     public WorldSpatialIndex(double worldExtent)
     {
@@ -24,6 +25,7 @@ internal sealed class WorldSpatialIndex
     {
         ArgumentNullException.ThrowIfNull(entities);
         _buckets.Clear();
+        RebuildCount++;
         foreach (var entity in entities)
         {
             int bx = Bucket(entity.X), by = Bucket(entity.Y);
