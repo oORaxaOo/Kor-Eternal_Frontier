@@ -26,6 +26,48 @@ internal static class ColonyEcosystemChecks
         needs.Step(1);
         Check(needs.DrainEvents().Count == 0,
             "a citizen remaining below a threshold must not emit duplicate crossing events every tick");
+        var logisticsEvents = new ColonyEcosystem(4, 4);
+        logisticsEvents.Grid.DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        int eventJobId = logisticsEvents.JobBroker.RegisterWorkplace("Event yard",
+            new CellPosition(3, 3), workerCapacity: 1, outputResource: ResourceKind.Wood);
+        var registeredEvents = logisticsEvents.DrainEvents();
+        Check(registeredEvents.Count == 1 &&
+              registeredEvents[0].Kind == SimulationEventKind.JobBecameAvailable &&
+              registeredEvents[0].SubjectId == eventJobId && registeredEvents[0].RelatedId == 1,
+            "registering a workplace must emit its available capacity");
+
+        Check(logisticsEvents.Grid.TryAdd(ResourceKind.Food, 3),
+            "stock-change events require a successful resource addition");
+        var addedEvents = logisticsEvents.DrainEvents();
+        Check(addedEvents.Count == 1 &&
+              addedEvents[0].Kind == SimulationEventKind.StockChanged &&
+              addedEvents[0].SubjectId == (long)ResourceKind.Food &&
+              addedEvents[0].RelatedId == 3 && addedEvents[0].Value == 3,
+            "resource additions must publish resource identity, new stock and positive delta");
+        Check(logisticsEvents.Grid.TryTake(ResourceKind.Food, 1) == 1,
+            "stock-change event fixture must withdraw the requested resource");
+        var takenEvents = logisticsEvents.DrainEvents();
+        Check(takenEvents.Count == 1 && takenEvents[0].Kind == SimulationEventKind.StockChanged &&
+              takenEvents[0].RelatedId == 2 && takenEvents[0].Value == -1,
+            "resource withdrawals must publish the remaining stock and negative delta");
+
+        var eventCitizen = logisticsEvents.AddCitizen("Availability probe", new CellPosition(2, 2));
+        Check(logisticsEvents.JobBroker.AssignNext(eventCitizen)?.Id == eventJobId,
+            "availability event fixture must occupy the only workplace slot");
+        logisticsEvents.JobBroker.Release(eventCitizen);
+        var releasedEvents = logisticsEvents.DrainEvents();
+        Check(releasedEvents.Count == 1 &&
+              releasedEvents[0].Kind == SimulationEventKind.JobBecameAvailable &&
+              releasedEvents[0].SubjectId == eventJobId && releasedEvents[0].RelatedId == 1,
+            "releasing the final assigned worker must publish newly available workplace capacity");
+
+        Check(logisticsEvents.JobBroker.AssignNext(eventCitizen)?.Id == eventJobId,
+            "the workplace should accept a worker again before removal");
+        Check(logisticsEvents.RemoveWorkplace(eventJobId) && eventCitizen.JobId == null &&
+              logisticsEvents.DrainEvents().Count == 0,
+            "removing a workplace must release its worker without publishing a stale availability event");
+
         var grid = new GridManager(5, 5, maxStackSize: 10);
         int foodZone = grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);

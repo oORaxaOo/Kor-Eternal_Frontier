@@ -49,6 +49,8 @@ internal sealed class GridManager
     private readonly Queue<int> _flowFieldOrder = new();
     private int _nextZoneId = 1;
 
+    internal event Action<ResourceKind, int, int>? StockChanged;
+
     internal int FlowFieldBuilds { get; private set; }
     internal int FlowFieldCacheHits { get; private set; }
     internal int CachedFlowFieldCount => _flowFieldsByTarget.Count;
@@ -193,11 +195,16 @@ internal sealed class GridManager
             return false;
         }
         _reservations.Remove(reservationId);
+        StockChanged?.Invoke(reservation.Resource, reservation.Amount, ResourceCount(reservation.Resource));
         return true;
     }
 
-    public bool TryAdd(ResourceKind resource, int amount) =>
-        amount > 0 && CanStore(resource, amount) && TryAddCore(resource, amount);
+    public bool TryAdd(ResourceKind resource, int amount)
+    {
+        if (amount <= 0 || !CanStore(resource, amount) || !TryAddCore(resource, amount)) return false;
+        StockChanged?.Invoke(resource, amount, ResourceCount(resource));
+        return true;
+    }
 
     public int TryTake(ResourceKind resource, int requested)
     {
@@ -212,9 +219,15 @@ internal sealed class GridManager
             tile.Amount -= taken;
             remaining -= taken;
             if (tile.Amount == 0) tile.Resource = null;
-            if (remaining == 0) return requested;
+            if (remaining == 0)
+            {
+                StockChanged?.Invoke(resource, -requested, ResourceCount(resource));
+                return requested;
+            }
         }
-        return requested - remaining;
+        int takenTotal = requested - remaining;
+        if (takenTotal > 0) StockChanged?.Invoke(resource, -takenTotal, ResourceCount(resource));
+        return takenTotal;
     }
 
     public CellPosition? FindNearestResource(ResourceKind resource, CellPosition origin)
@@ -391,6 +404,7 @@ internal sealed class JobBroker
 {
     private readonly List<WorkplaceJob> _jobs = [];
     private int _nextJobId = 1;
+    internal event Action<int, int>? AvailabilityChanged;
     public IReadOnlyList<WorkplaceJob> Jobs => _jobs.AsReadOnly();
 
     public int RegisterWorkplace(string name, CellPosition position, int workerCapacity,
@@ -401,7 +415,9 @@ internal sealed class JobBroker
             float.IsNaN(workSeconds) || float.IsInfinity(workSeconds))
             throw new ArgumentOutOfRangeException(nameof(workerCapacity), "Capacity, output and work duration must be positive.");
         int id = _nextJobId++;
-        _jobs.Add(new WorkplaceJob(id, name, position, workerCapacity, outputResource, outputAmount, workSeconds));
+        var job = new WorkplaceJob(id, name, position, workerCapacity, outputResource, outputAmount, workSeconds);
+        _jobs.Add(job);
+        AvailabilityChanged?.Invoke(job.Id, job.FreeWorkers);
         return id;
     }
 
@@ -439,7 +455,14 @@ internal sealed class JobBroker
     public void Release(CitizenAgent citizen)
     {
         if (citizen.JobId is not int jobId) return;
-        FindJob(jobId)?.RemoveWorker(citizen.Id);
+        var job = FindJob(jobId);
+        if (job != null)
+        {
+            int before = job.FreeWorkers;
+            job.RemoveWorker(citizen.Id);
+            if (before == 0 && job.FreeWorkers > 0)
+                AvailabilityChanged?.Invoke(job.Id, job.FreeWorkers);
+        }
         citizen.JobId = null;
         citizen.WorkProgress = 0;
     }
@@ -471,6 +494,10 @@ internal sealed class ColonyEcosystem
     {
         Grid = new GridManager(width, height);
         _citizenView = _citizens.AsReadOnly();
+        Grid.StockChanged += (resource, delta, total) =>
+            _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
+        JobBroker.AvailabilityChanged += (jobId, freeWorkers) =>
+            _events.Enqueue(SimulationTick, SimulationEventKind.JobBecameAvailable, jobId, freeWorkers);
     }
 
     public CitizenAgent AddCitizen(string name, CellPosition position)
@@ -488,15 +515,16 @@ internal sealed class ColonyEcosystem
     public bool RemoveWorkplace(int jobId)
     {
         var job = JobBroker.FindJob(jobId);
-        if (job == null) return false;
+        if (job == null || !JobBroker.RemoveWorkplace(jobId)) return false;
+        // Remove the registry entry before releasing assigned citizens so their release cannot
+        // publish a stale JobBecameAvailable event for a workplace that no longer exists.
         foreach (var citizen in _citizens.Where(citizen => citizen.JobId == jobId).ToArray())
         {
             ReleaseAssignment(citizen);
             citizen.State = CitizenState.Idle;
         }
-        bool removed = JobBroker.RemoveWorkplace(jobId);
-        if (removed) LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
-        return removed;
+        LastEvent = $"Workplace {job.Name} was removed; assigned citizens were released.";
+        return true;
     }
 
     public void Step(float deltaSeconds)
