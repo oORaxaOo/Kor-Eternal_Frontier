@@ -36,6 +36,21 @@ internal static class ColonyEcosystemChecks
             "citizen inspection must explain critical hunger and missing food using live simulation state");
         Check(needs.InspectCitizen(9999) is null,
             "citizen inspection must return no result for an unknown citizen ID");
+        var utilityDrivenNeeds = new ColonyEcosystem(4, 4);
+        utilityDrivenNeeds.Grid.DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        Check(utilityDrivenNeeds.Grid.TryAdd(ResourceKind.Food, 2),
+            "utility-driven need arbitration requires reachable stored food");
+        var utilityCitizen = utilityDrivenNeeds.AddCitizen("Utility probe", new CellPosition(1, 1));
+        utilityCitizen.Hunger = 10f;
+        utilityCitizen.Fatigue = 5f;
+        utilityCitizen.Personality.SetWeight(PawnNeedKind.Hunger, 3f);
+        utilityDrivenNeeds.Step(0.1f);
+        Check(utilityCitizen.State == CitizenState.MovingToStorage,
+            "live citizen behavior must use personality-weighted utility scores to choose food over rest");
+        Check(utilityCitizen.JobId is null && utilityDrivenNeeds.Grid.ReservedCount(ResourceKind.Wood) == 0,
+            "interrupting for a utility-selected need must not strand a job or output reservation");
+
         var logisticsEvents = new ColonyEcosystem(4, 4);
         logisticsEvents.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
