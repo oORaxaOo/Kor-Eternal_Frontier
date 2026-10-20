@@ -9,6 +9,7 @@ internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, Storag
 internal enum ResourceKind { Wood, Stone, Food, Alloy, Components }
 internal enum ConstructionStatus { Planned, WaitingForMaterials, UnderConstruction, Complete, Blocked }
 internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce }
+internal enum WorkOrderKind { TileConstruction, ObjectConstruction, Production }
 
 internal readonly record struct CellPosition(int X, int Y);
 internal readonly record struct PathCacheKey(CellPosition Start, CellPosition Target);
@@ -28,6 +29,8 @@ internal sealed class TileConstructionOrder(int id, CellPosition cell, Architect
     public int Id { get; } = id;
     public CellPosition Cell { get; } = cell;
     public ArchitectureKind Target { get; } = target;
+    /// <summary>Player-defined importance from 1 (low) to 5 (critical).</summary>
+    public int Priority { get; set; } = 3;
     public ConstructionStatus Status { get; internal set; } = ConstructionStatus.Planned;
     public float WorkDone { get; internal set; }
     public int WorkRequired { get; } = workRequired;
@@ -38,6 +41,7 @@ internal sealed class PlaceableObjectState(int id, PlaceableKind kind, CellPosit
 {
     public int Id { get; } = id;
     public PlaceableKind Kind { get; } = kind;
+    public int Priority { get; set; } = 3;
     public CellPosition Origin { get; } = origin;
     public int Width { get; } = width;
     public int Height { get; } = height;
@@ -90,6 +94,7 @@ internal sealed class ProductionOrder(int id, int workstationId, float workRequi
     public int Id { get; } = id;
     public int WorkstationId { get; } = workstationId;
     public float WorkRequired { get; } = workRequired;
+    public int Priority { get; set; } = 3;
     public float WorkDone { get; internal set; }
     public bool Complete { get; internal set; }
     public bool Assigned { get; internal set; }
@@ -137,6 +142,8 @@ internal sealed class ColonySimulation
     private int _nextProductionId = 1;
     private float _environmentAccumulatorSeconds;
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
+    private WorkOrderKind? _selectedWorkOrderKind;
+    private int? _selectedWorkOrderId;
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
@@ -147,6 +154,9 @@ internal sealed class ColonySimulation
     public string Message { get; private set; } = "Colony ready. Design architecture per tile or place an object blueprint.";
     public void SetMessage(string message) => Message = message;
     public int? SelectedWorkerId { get; private set; }
+    public int? SelectedWorkOrderId => _selectedWorkOrderId;
+    public int SelectedWorkOrderPriority => GetSelectedWorkOrderPriority() ?? 3;
+    public string SelectedWorkOrderSummary => GetSelectedWorkOrderSummary();
     public float ElapsedSeconds { get; private set; }
     public int CompletedTileOrders => _tileOrders.Count(x => x.Status == ConstructionStatus.Complete);
     public int CompletedObjects => _objects.Count(x => x.IsBuilt);
@@ -199,7 +209,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 4,
+            SchemaVersion = 5,
             SocialTick = _socialTick,
             SocialNetwork = _socialRelationships.CaptureSnapshot(),
             IncidentManager = _incidentManager.CaptureSnapshot(),
@@ -236,13 +246,13 @@ internal sealed class ColonySimulation
         snapshot.TileOrders.AddRange(_tileOrders.Select(order => new TileOrderSnapshot
         {
             Id = order.Id, X = order.Cell.X, Y = order.Cell.Y, Target = order.Target,
-            Status = order.Status, WorkDone = order.WorkDone, WorkRequired = order.WorkRequired
+            Status = order.Status, WorkDone = order.WorkDone, WorkRequired = order.WorkRequired, Priority = order.Priority
         }));
         snapshot.Objects.AddRange(_objects.Select(item => new PlaceableObjectSnapshot
         {
             Id = item.Id, Kind = item.Kind, X = item.Origin.X, Y = item.Origin.Y,
             Width = item.Width, Height = item.Height, Status = item.Status,
-            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired
+            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, Priority = item.Priority
         }));
         snapshot.Deposits.AddRange(_deposits.Select(deposit => new ResourceDepositSnapshot
         {
@@ -274,7 +284,7 @@ internal sealed class ColonySimulation
         snapshot.ProductionOrders.AddRange(_productionOrders.Select(order => new ProductionOrderSnapshot
         {
             Id = order.Id, WorkstationId = order.WorkstationId, WorkRequired = order.WorkRequired,
-            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
+            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned, Priority = order.Priority
         }));
         return snapshot;
     }
@@ -298,14 +308,14 @@ internal sealed class ColonySimulation
         simulation._tileOrders.AddRange(snapshot.TileOrders.Select(order =>
         {
             var restored = new TileConstructionOrder(order.Id, new CellPosition(order.X, order.Y), order.Target, order.WorkRequired)
-            { Status = order.Status, WorkDone = order.WorkDone };
+            { Status = order.Status, WorkDone = order.WorkDone, Priority = order.Priority };
             return restored;
         }));
 
         simulation._objects.Clear();
         simulation._objects.AddRange(snapshot.Objects.Select(item => new PlaceableObjectState(
             item.Id, item.Kind, new CellPosition(item.X, item.Y), item.Width, item.Height,
-            item.WorkRequired, item.Status) { WorkDone = item.WorkDone }));
+            item.WorkRequired, item.Status) { WorkDone = item.WorkDone, Priority = item.Priority }));
 
         simulation._deposits.Clear();
         simulation._deposits.AddRange(snapshot.Deposits.Select(deposit => new ResourceDeposit(
@@ -343,7 +353,7 @@ internal sealed class ColonySimulation
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired)
         {
-            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
+            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned, Priority = order.Priority
         }));
 
         simulation._nextOrderId = snapshot.NextOrderId;
@@ -803,6 +813,118 @@ internal sealed class ColonySimulation
         _tileOrders.FirstOrDefault(o => o.Cell.X == x && o.Cell.Y == y &&
             o.Status is not (ConstructionStatus.Complete or ConstructionStatus.Blocked));
 
+    /// <summary>Selects an unfinished blueprint or queued production order by clicking its world tile.</summary>
+    public bool SelectWorkOrderAt(float worldX, float worldY)
+    {
+        int x = (int)MathF.Floor(worldX), y = (int)MathF.Floor(worldY);
+        _selectedWorkOrderKind = null;
+        _selectedWorkOrderId = null;
+        if (!InBounds(x, y)) return false;
+
+        var cell = new CellPosition(x, y);
+        var objectOrder = _objects
+            .Where(item => item.Occupies(cell) && !item.IsBuilt)
+            .OrderBy(item => item.Id)
+            .FirstOrDefault();
+        if (objectOrder != null)
+        {
+            SelectWorkOrder(WorkOrderKind.ObjectConstruction, objectOrder.Id);
+            Message = $"Selected {objectOrder.Kind} blueprint. Priority {objectOrder.Priority}/5.";
+            return true;
+        }
+
+        var tileOrder = _tileOrders
+            .Where(order => order.Cell == cell && order.Status != ConstructionStatus.Complete)
+            .OrderBy(order => order.Id)
+            .FirstOrDefault();
+        if (tileOrder != null)
+        {
+            SelectWorkOrder(WorkOrderKind.TileConstruction, tileOrder.Id);
+            Message = $"Selected {tileOrder.Target} order. Priority {tileOrder.Priority}/5.";
+            return true;
+        }
+
+        var builtObject = ObjectAt(x, y);
+        if (builtObject?.Kind == PlaceableKind.Workbench && builtObject.IsBuilt)
+        {
+            var production = _productionOrders
+                .Where(order => order.WorkstationId == builtObject.Id && !order.Complete)
+                .OrderByDescending(order => order.Priority)
+                .ThenBy(order => order.Id)
+                .FirstOrDefault();
+            if (production != null)
+            {
+                SelectWorkOrder(WorkOrderKind.Production, production.Id);
+                Message = $"Selected component production order. Priority {production.Priority}/5.";
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Adjusts the selected order priority. 5 is critical; 1 is low.</summary>
+    public bool ChangeSelectedWorkOrderPriority(int delta)
+    {
+        if (delta == 0 || !_selectedWorkOrderId.HasValue || !_selectedWorkOrderKind.HasValue)
+            return false;
+
+        int? current = GetSelectedWorkOrderPriority();
+        if (!current.HasValue) return false;
+        int priority = Math.Clamp(current.Value + Math.Sign(delta), 1, 5);
+        switch (_selectedWorkOrderKind.Value)
+        {
+            case WorkOrderKind.TileConstruction:
+                var tile = _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId.Value);
+                if (tile == null || tile.Status == ConstructionStatus.Complete) return false;
+                tile.Priority = priority;
+                break;
+            case WorkOrderKind.ObjectConstruction:
+                var item = _objects.FirstOrDefault(order => order.Id == _selectedWorkOrderId.Value);
+                if (item == null || item.IsBuilt) return false;
+                item.Priority = priority;
+                break;
+            case WorkOrderKind.Production:
+                var production = _productionOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId.Value);
+                if (production == null || production.Complete) return false;
+                production.Priority = priority;
+                break;
+            default:
+                return false;
+        }
+
+        Message = $"Work order priority changed to {priority}/5 (5 is highest).";
+        return true;
+    }
+
+    private void SelectWorkOrder(WorkOrderKind kind, int id)
+    {
+        _selectedWorkOrderKind = kind;
+        _selectedWorkOrderId = id;
+    }
+
+    private int? GetSelectedWorkOrderPriority() => _selectedWorkOrderKind switch
+    {
+        WorkOrderKind.TileConstruction => _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
+        WorkOrderKind.ObjectConstruction => _objects.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
+        WorkOrderKind.Production => _productionOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId)?.Priority,
+        _ => null
+    };
+
+    private string GetSelectedWorkOrderSummary() => _selectedWorkOrderKind switch
+    {
+        WorkOrderKind.TileConstruction => _tileOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } tileOrder
+            ? $"{tileOrder.Target} ({tileOrder.Cell.X},{tileOrder.Cell.Y}) / {tileOrder.Status}"
+            : "No work order selected",
+        WorkOrderKind.ObjectConstruction => _objects.FirstOrDefault(item => item.Id == _selectedWorkOrderId) is { } objectOrder
+            ? $"{objectOrder.Kind} ({objectOrder.Origin.X},{objectOrder.Origin.Y}) / {objectOrder.Status}"
+            : "No work order selected",
+        WorkOrderKind.Production => _productionOrders.FirstOrDefault(order => order.Id == _selectedWorkOrderId) is { } productionOrder
+            ? $"Components at bench #{productionOrder.WorkstationId} / {(productionOrder.Complete ? "Complete" : productionOrder.Assigned ? "Assigned" : "Queued")}"
+            : "No work order selected",
+        _ => "Select a blueprint or workbench on the map"
+    };
+
     public bool DesignTileConstruction(int x, int y, ArchitectureKind target)
     {
         if (target is ArchitectureKind.None)
@@ -1120,16 +1242,21 @@ internal sealed class ColonySimulation
                 continue;
             }
 
-            if (TryAssignTileBuild(worker)) continue;
-            if (TryAssignObjectBuild(worker)) continue;
-            if (TryAssignProduction(worker)) continue;
+            bool assigned = false;
+            // Priority is evaluated across tile builds, object blueprints and production orders.
+            // Within one priority level, task-type order remains stable and existing behavior is preserved.
+            for (int priority = 5; priority >= 1 && !assigned; priority--)
+                assigned = TryAssignTileBuild(worker, priority) ||
+                           TryAssignObjectBuild(worker, priority) ||
+                           TryAssignProduction(worker, priority);
+            if (assigned) continue;
             TryAssignGatherForShortage(worker);
         }
     }
 
-    private bool TryAssignTileBuild(ColonyWorker worker)
+    private bool TryAssignTileBuild(ColonyWorker worker, int priority)
     {
-        foreach (var order in _tileOrders.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
+        foreach (var order in _tileOrders.Where(o => (o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials) && o.Priority == priority).OrderBy(o => o.Id))
         {
             var workCell = FindWorkCell(worker, order.Cell, 1, 1);
             if (!workCell.HasValue) { order.Status = ConstructionStatus.Blocked; continue; }
@@ -1156,9 +1283,9 @@ internal sealed class ColonySimulation
         return false;
     }
 
-    private bool TryAssignObjectBuild(ColonyWorker worker)
+    private bool TryAssignObjectBuild(ColonyWorker worker, int priority)
     {
-        foreach (var item in _objects.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
+        foreach (var item in _objects.Where(o => (o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials) && o.Priority == priority).OrderBy(o => o.Id))
         {
             if (!TryGetFootprint(item.Kind, out _, out _, out _)) continue;
             var workCell = FindWorkCell(worker, item.Origin, item.Width, item.Height);
@@ -1183,9 +1310,9 @@ internal sealed class ColonySimulation
         return false;
     }
 
-    private bool TryAssignProduction(ColonyWorker worker)
+    private bool TryAssignProduction(ColonyWorker worker, int priority)
     {
-        foreach (var order in _productionOrders.Where(o => !o.Complete && !o.Assigned))
+        foreach (var order in _productionOrders.Where(o => !o.Complete && !o.Assigned && o.Priority == priority).OrderBy(o => o.Id))
         {
             var station = _objects.FirstOrDefault(o => o.Id == order.WorkstationId && o.IsBuilt);
             if (station == null) { order.Complete = true; continue; }
