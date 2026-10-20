@@ -46,6 +46,9 @@ jobs:
       - name: Run simulation and unified-session checks
         run: dotnet run --project GondwanaGame.csproj --configuration Release --no-build -- --self-test
 
+      - name: Install virtual display for graphical startup checks
+        run: sudo apt-get update && sudo apt-get install --yes xvfb
+
       - name: Publish self-contained Linux x86_64 build
         run: dotnet publish GondwanaGame.csproj --configuration Release --runtime linux-x64 --self-contained true --output artifacts/Kor-Eternal-Frontier/linux-x64
 
@@ -53,6 +56,11 @@ jobs:
         run: |
           test -f artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
           file artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
+
+      - name: Smoke-test graphical startup, menu-to-game transition, and clean shutdown
+        env:
+          SDL_VIDEODRIVER: x11
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame --smoke-test
 
       - name: Upload downloadable Linux build
         uses: actions/upload-artifact@v4
