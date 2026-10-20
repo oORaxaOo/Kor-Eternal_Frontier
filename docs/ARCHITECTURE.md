@@ -44,7 +44,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - Shared settlement inventories, travel-time shipments and storage-capacity checks.
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
-- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger and fatigue now emit one event when crossing their critical thresholds; the simulation tick and drain API are exposed for downstream planners. Stockpile, job availability, hazards and incidents are not yet fully event-wired.
+- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger and fatigue now emit one event when crossing their critical thresholds; the simulation tick and drain API are exposed for downstream planners. Stockpile additions/withdrawals and workplace availability now emit deterministic events. Hazards and incidents are not yet fully event-wired.
 - A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 
 ## Combined design target: DF depth + Songs of Syx scale + RimWorld storytelling
