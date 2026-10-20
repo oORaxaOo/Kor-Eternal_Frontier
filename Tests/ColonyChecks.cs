@@ -39,6 +39,25 @@ internal static class ColonyChecks
         float wallHeating = NeighbourHeating(ArchitectureKind.Wall);
         Check(openHeating > doorHeating && doorHeating > wallHeating && wallHeating > 20f,
             "open tiles must exchange heat fastest, doors partially insulate, and walls strongly reduce but do not eliminate heat transfer");
+
+        var thermalHazard = new ColonySimulation();
+        thermalHazard.TileAt(16, 12)!.TemperatureCelsius = 5_000f;
+        for (int i = 0; i < 20; i++) thermalHazard.Step(0.25f);
+        var exposedWorker = thermalHazard.Workers.Single(worker => worker.Id == 1);
+        var exposedCitizen = thermalHazard.CitizenForWorker(1)!;
+        Check(exposedWorker.ThermalExposure >= 15f,
+            "sustained extreme tile temperature must accumulate resident thermal exposure");
+        Check(exposedCitizen.Fatigue < 99.9f,
+            "thermal exposure must reduce rest satisfaction beyond ordinary fatigue drain");
+        var hazardEvents = thermalHazard.DrainEvents();
+        Check(hazardEvents.Any(item => item.Kind == SimulationEventKind.HazardChanged &&
+              item.SubjectId == exposedCitizen.Id &&
+              item.RelatedId == (long)SimulationHazardKind.ThermalExposure && item.Value > 0),
+            "crossing the thermal danger threshold must emit a stable-ID hazard event");
+        var restoredHazard = ColonySaveService.Deserialize(ColonySaveService.Serialize(thermalHazard));
+        Check(Math.Abs(restoredHazard.Workers.Single(worker => worker.Id == 1).ThermalExposure -
+              exposedWorker.ThermalExposure) < 0.001f,
+            "thermal exposure must survive a save/load round trip");
         string environmentSave = ColonySaveService.Serialize(environment);
         var restoredEnvironment = ColonySaveService.Deserialize(environmentSave);
         Check(restoredEnvironment.TotalFluid(FluidKind.Water) == environment.TotalFluid(FluidKind.Water) &&
