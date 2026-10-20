@@ -11,6 +11,14 @@ internal static class IntegrationChecks
         var world = new WorldSimulation(70241);
         var home = world.SpatialWorld.Entities.Single(entity =>
             entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+
+        // Social and incident state must survive the canonical unified-session save.
+        for (int tick = 1; tick <= 25; tick++)
+            world.Colony.SocialRelationships.RecordEncounter(1, 2, tick, 100, 100, 100, true, 100, 100, 100, true);
+        world.Colony.Incidents.Consume(world.Colony.SocialRelationships.DrainEvents());
+        Check(world.Colony.SocialRelationships.Get(1, 2)?.Affinity <= -60 &&
+              world.Colony.Incidents.Incidents.Any(item => item.Code == "resident_conflict"),
+            "resident conflict milestones must produce an auditable incident");
         int wood = world.Colony.ResourceCount(ResourceKind.Wood);
         Check(wood == (int)world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood),
             "local colony and strategic world must expose one shared resource balance");
@@ -27,6 +35,9 @@ internal static class IntegrationChecks
         }
 
         var restored = GameSessionService.Deserialize(json);
+        Check(restored.Colony.SocialRelationships.Get(2, 1)?.EncounterCount == 25 &&
+              restored.Colony.Incidents.Incidents.Any(item => item.Code == "resident_conflict"),
+            "unified session save/load must preserve relationship and incident history");
         var restoredHome = restored.ContinuousWorld.Entities.Single(entity => entity.Id == home.Id);
         Check(restored.Colony.ResourceCount(ResourceKind.Wood) == wood &&
               (int)restored.ContinuousWorld.InventoryAt(restoredHome.Id, WorldResourceKind.Wood) == wood,
