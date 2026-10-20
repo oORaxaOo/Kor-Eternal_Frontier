@@ -5,6 +5,7 @@ internal enum GridTileKind { Ground, Wall, Stockpile }
 
 /// <summary>The four states are intentionally presentation-independent.</summary>
 internal enum CitizenState { Idle, Working, MovingToStorage, MovingToJob }
+internal enum SimulationNeedKind { Hunger = 1, Fatigue = 2 }
 
 /// <summary>
 /// Compact tile data. Coordinates are encoded by the array index rather than repeated per tile.
@@ -456,11 +457,15 @@ internal sealed class ColonyEcosystem
     private readonly List<CitizenAgent> _citizens = [];
     private readonly IReadOnlyList<CitizenAgent> _citizenView;
     private int _nextCitizenId = 1;
+    private readonly SimulationEventQueue _events = new();
     public GridManager Grid { get; }
     public JobBroker JobBroker { get; } = new();
     // Cache the read-only wrapper: UI, save and simulation code may query this every frame.
     public IReadOnlyList<CitizenAgent> Citizens => _citizenView;
     public float ElapsedSeconds { get; private set; }
+    public long SimulationTick { get; private set; }
+    public IReadOnlyList<SimulationEvent> DrainEvents(int maxCount = 4096) =>
+        _events.DrainDue(SimulationTick, maxCount);
     public string LastEvent { get; private set; } = "Colony systems online.";
 
     public ColonyEcosystem(int width, int height)
@@ -499,9 +504,14 @@ internal sealed class ColonyEcosystem
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
+        SimulationTick++;
         foreach (var citizen in _citizens)
         {
+            float previousHunger = citizen.Hunger;
             citizen.Hunger = Math.Max(0, citizen.Hunger - deltaSeconds * 0.30f);
+            if (previousHunger >= 30f && citizen.Hunger < 30f)
+                _events.Enqueue(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
+                    (long)SimulationNeedKind.Hunger, citizen.Hunger);
             // Rest satisfaction declines slowly at baseline and faster during travel/work.
             float fatigueDrain = citizen.State switch
             {
@@ -509,7 +519,11 @@ internal sealed class ColonyEcosystem
                 CitizenState.MovingToJob => 0.12f,
                 _ => 0.04f
             };
+            float previousFatigue = citizen.Fatigue;
             citizen.Fatigue = Math.Max(0, citizen.Fatigue - deltaSeconds * fatigueDrain);
+            if (previousFatigue >= 20f && citizen.Fatigue < 20f)
+                _events.Enqueue(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
+                    (long)SimulationNeedKind.Fatigue, citizen.Fatigue);
 
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
