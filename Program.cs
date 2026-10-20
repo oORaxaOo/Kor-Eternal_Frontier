@@ -25,11 +25,13 @@ internal static class Program
         IntPtr window = IntPtr.Zero, rendererHandle = IntPtr.Zero;
         SdlAdapter? adapter = null;
         ColonyRenderer? painter = null;
+        MainMenuRenderer? menuPainter = null;
         Engine? engine = null;
-        bool engineStarted = false;
+        bool engineStarted = false, sdlInitialized = false;
         try
         {
             if (Sdl.SDL_Init(Sdl.InitVideo) < 0) throw new InvalidOperationException(Sdl.Error());
+            sdlInitialized = true;
             window = Sdl.SDL_CreateWindow("KOR-ETERNAL FRONTIER", 1100, 720, Sdl.WindowResizable);
             if (window == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
@@ -37,8 +39,11 @@ internal static class Program
 
             var world = new WorldSimulation(70241);
             var simulation = world.Colony;
+            bool gameStarted = false, settingsMenu = false, startPaused = false;
+            string menuMessage = string.Empty;
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
+            menuPainter = new MainMenuRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
             using var scene = new Scene();
             host.Bind(scene, false);
@@ -52,7 +57,11 @@ internal static class Program
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, paused = false;
-            host.RenderBackbufferPostScene += canvas => painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+            host.RenderBackbufferPostScene += canvas =>
+            {
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
+            };
             engine = Engine.Instance;
             engine.Initialize();
             engine.Configuration.TargetFPS = 60;
@@ -76,7 +85,7 @@ internal static class Program
                 double frame = Math.Min(clock.Elapsed.TotalSeconds, .1);
                 clock.Restart();
                 accumulator += frame;
-                if (!paused)
+                if (gameStarted && !paused)
                 {
                     while (accumulator >= .1) { world.Step(.1f); simulation = world.Colony; accumulator -= .1; }
                 }
@@ -117,7 +126,41 @@ internal static class Program
 
                 if (left && !wasLeft)
                 {
-                    if (!worldView && Hit(logicalMouse.X, logicalMouse.Y, 920, 660, 1085, 687))
+                    if (!gameStarted)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (settingsMenu)
+                        {
+                            if (Hit(mx, my, 370, 420, 730, 472)) startPaused = !startPaused;
+                            else if (Hit(mx, my, 370, 490, 730, 542)) { settingsMenu = false; menuMessage = string.Empty; }
+                        }
+                        else if (Hit(mx, my, 370, 260, 730, 312))
+                        {
+                            world = new WorldSimulation(70241);
+                            simulation = world.Colony;
+                            paused = startPaused;
+                            world.IsPaused = paused;
+                            gameStarted = true;
+                            menuMessage = string.Empty;
+                        }
+                        else if (Hit(mx, my, 370, 326, 730, 378))
+                        {
+                            try
+                            {
+                                var loaded = GameSessionService.Load();
+                                world = new WorldSimulation(70241);
+                                world.Restore(loaded);
+                                simulation = world.Colony;
+                                paused = false;
+                                gameStarted = true;
+                                menuMessage = string.Empty;
+                            }
+                            catch (Exception ex) { menuMessage = $"Spielstand konnte nicht geladen werden: {ex.Message}"; }
+                        }
+                        else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
+                        else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
+                    }
+                    else if (!worldView && Hit(logicalMouse.X, logicalMouse.Y, 920, 660, 1085, 687))
                     {
                         int recruited = simulation.RecruitColonists(10);
                         simulation.SetMessage(recruited > 0
@@ -236,7 +279,7 @@ internal static class Program
                         }
                     }
                 }
-                if (inWorldView && right && !wasRight)
+                if (gameStarted && inWorldView && right && !wasRight)
                 {
                     if (worldView && selectedWorldEntityId.HasValue && !world.SpatialWorld.Shipments.Any(shipment => shipment.CarrierEntityId == selectedWorldEntityId.Value && shipment.Status == WorldShipmentStatus.InTransit) && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
                     {
@@ -250,6 +293,7 @@ internal static class Program
 
                 engine.Tick();
                 context.Drain();
+                if (args.Contains("--smoke-test", StringComparer.Ordinal) && appLifetime.Elapsed >= TimeSpan.FromSeconds(1)) gameStarted = true;
                 if (args.Contains("--smoke-test", StringComparer.Ordinal) && appLifetime.Elapsed >= TimeSpan.FromSeconds(2)) running = false;
                 Sdl.SDL_Delay(4);
             }
@@ -266,10 +310,10 @@ internal static class Program
         finally
         {
             if (engineStarted) { engine!.StopAndWait(); engine.Dispose(); }
-            painter?.Dispose(); adapter?.Dispose();
+            menuPainter?.Dispose(); painter?.Dispose(); adapter?.Dispose();
             if (rendererHandle != IntPtr.Zero) Sdl.SDL_DestroyRenderer(rendererHandle);
             if (window != IntPtr.Zero) Sdl.SDL_DestroyWindow(window);
-            Sdl.SDL_Quit();
+            if (sdlInitialized) Sdl.SDL_Quit();
         }
     }
 
