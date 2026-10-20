@@ -41,15 +41,20 @@ internal static class ColonyChecks
             "open tiles must exchange heat fastest, doors partially insulate, and walls strongly reduce but do not eliminate heat transfer");
 
         var thermalHazard = new ColonySimulation();
+        var thermalControl = new ColonySimulation();
         thermalHazard.TileAt(16, 12)!.TemperatureCelsius = 5_000f;
-        for (int i = 0; i < 20; i++) thermalHazard.Step(0.25f);
+        for (int i = 0; i < 20; i++)
+        {
+            thermalHazard.Step(0.25f);
+            thermalControl.Step(0.25f);
+        }
         var exposedWorker = thermalHazard.Workers.Single(worker => worker.Id == 1);
         var exposedCitizen = thermalHazard.CitizenForWorker(1)!;
         Check(exposedWorker.ThermalExposure >= 15f,
             "sustained extreme tile temperature must accumulate resident thermal exposure");
-        Check(exposedCitizen.Fatigue < 99.9f,
+        Check(exposedCitizen.Fatigue < thermalControl.CitizenForWorker(1)!.Fatigue,
             "thermal exposure must reduce rest satisfaction beyond ordinary fatigue drain");
-        var hazardEvents = thermalHazard.DrainEvents();
+        var hazardEvents = thermalHazard.DrainSimulationEvents();
         Check(hazardEvents.Any(item => item.Kind == SimulationEventKind.HazardChanged &&
               item.SubjectId == exposedCitizen.Id &&
               item.RelatedId == (long)SimulationHazardKind.ThermalExposure && item.Value > 0),
