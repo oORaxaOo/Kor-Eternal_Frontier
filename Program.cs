@@ -204,12 +204,20 @@ internal static class Program
                         int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
                         if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                         else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
-                        else simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
+                        else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                     }
-                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 493 && logicalMouse.Y < 650)
+                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 423 && logicalMouse.Y < 650)
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
-                        if (Hit(mx, my, 784, 501, 850, 523))
+                        if (!worldView && Hit(mx, my, 784, 425, 838, 447))
+                        {
+                            simulation.ChangeSelectedWorkOrderPriority(-1);
+                        }
+                        else if (!worldView && Hit(mx, my, 842, 425, 896, 447))
+                        {
+                            simulation.ChangeSelectedWorkOrderPriority(1);
+                        }
+                        else if (Hit(mx, my, 784, 501, 850, 523))
                         {
                             paused = !paused;
                             world.IsPaused = paused;
