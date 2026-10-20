@@ -587,6 +587,9 @@ internal sealed class ColonySimulation
     public CitizenAgent? CitizenForWorker(int workerId) =>
         _citizensByWorker.TryGetValue(workerId, out var citizen) ? citizen : null;
 
+    internal IReadOnlyList<SimulationEvent> DrainSimulationEvents(int maxCount = 4096) =>
+        _ecosystem.DrainEvents(maxCount);
+
     /// <summary>
     /// Recruits a batch of named, individually simulated residents. A batch is bounded to keep
     /// accidental UI calls from freezing a frame; the settlement itself has no small population cap.
