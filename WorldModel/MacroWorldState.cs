@@ -731,11 +731,39 @@ internal sealed class MacroWorldState
     {
         // Migration for saves created before macro turns and route requests became slice-based.
         if (MacroTurnsScheduled < MacroTurnsProcessed) MacroTurnsScheduled = MacroTurnsProcessed;
+        MarketTurnAccumulator ??= new MacroMarketAccumulator();
+        TurnHungryCellIds ??= [];
+        TurnBestDonorCellIds ??= [];
+        TurnBestDonorDistances ??= [];
         if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Arrivals is null || ConsumedArrivalIds is null || Market is null || Research is null ||
-            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount || (MacroTurnCursor > 0 && MacroTurnsProcessed >= MacroTurnsScheduled) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
+            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 ||
+            MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn ||
+            !Enum.IsDefined(MacroTurnPhase) || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount ||
+            (MacroTurnCursor > 0 && MacroTurnsProcessed >= MacroTurnsScheduled) ||
+            (MacroTurnPhase != MacroTurnPhase.Idle && MacroTurnsProcessed >= MacroTurnsScheduled) ||
+            (MacroTurnPhase == MacroTurnPhase.Idle && MacroTurnCursor != 0) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Math.Max(Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max(), Arrivals.Select(a => a.Id).DefaultIfEmpty(0).Max()))
             throw new InvalidDataException("Macro world data has invalid dimensions or counters.");
+        var aggregateValues = new[]
+        {
+            MarketTurnAccumulator.FoodDemand, MarketTurnAccumulator.FoodSupply,
+            MarketTurnAccumulator.WoodDemand, MarketTurnAccumulator.WoodSupply,
+            MarketTurnAccumulator.StoneDemand, MarketTurnAccumulator.StoneSupply,
+            MarketTurnAccumulator.AlloyDemand, MarketTurnAccumulator.AlloySupply,
+            MarketTurnAccumulator.EnergyDemand, MarketTurnAccumulator.EnergySupply,
+            MarketTurnAccumulator.ComponentsDemand, MarketTurnAccumulator.ComponentsSupply
+        };
+        if (aggregateValues.Any(value => !double.IsFinite(value) || value < 0) ||
+            TurnHungryCellIds.Any(pair => pair.Key <= 0 || pair.Value < 1 || pair.Value > CellCount ||
+                Cells[pair.Value - 1].OwningFactionId != pair.Key) ||
+            TurnBestDonorCellIds.Any(pair => pair.Key <= 0 || pair.Value < 1 || pair.Value > CellCount ||
+                Cells[pair.Value - 1].OwningFactionId != pair.Key) ||
+            TurnBestDonorDistances.Any(pair => pair.Key <= 0 || !double.IsFinite(pair.Value) || pair.Value < 0 ||
+                !TurnBestDonorCellIds.ContainsKey(pair.Key)) ||
+            TurnBestDonorCellIds.Keys.Any(key => !TurnBestDonorDistances.ContainsKey(key)))
+            throw new InvalidDataException("Macro turn aggregation state is invalid.");
+
         foreach (var cell in Cells)
         {
             if (cell.CellId < 1 || cell.CellId > CellCount || cell.X < 0 || cell.X >= Columns || cell.Y < 0 || cell.Y >= Rows ||
