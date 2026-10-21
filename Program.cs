@@ -72,6 +72,9 @@ internal static class Program
             bool running = true, wasLeft = false, wasRight = false, wasMiddle = false;
             float pendingWheelY = 0;
             float previousMouseX = 0, previousMouseY = 0;
+            bool architectureDragActive = false;
+            int architectureDragStartX = 0, architectureDragStartY = 0, architectureDragLastX = 0, architectureDragLastY = 0;
+            ArchitectureKind architectureDragKind = ArchitectureKind.None;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
