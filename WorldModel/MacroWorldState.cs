@@ -46,6 +46,18 @@ internal sealed class MacroCaravanState
 
 internal sealed record WorldNotification(long Id, long Tick, string Category, string Message, int CellId, bool Important);
 
+internal sealed class MacroCaravanArrival
+{
+    public long Id { get; set; }
+    public int FactionId { get; set; }
+    public int TargetCellId { get; set; }
+    public bool IsRefugeeWave { get; set; }
+    public int Population { get; set; }
+    public int SpawnedVisitorCount { get; set; }
+    public long NotificationId { get; set; }
+    public Dictionary<MacroResource, float> Cargo { get; set; } = [];
+}
+
 internal sealed class MarketSnapshot
 {
     public float FoodPrice { get; set; } = 1f;
@@ -115,6 +127,8 @@ internal sealed class MacroWorldState
     public MacroCellData[] Cells { get; set; } = new MacroCellData[CellCount];
     public Dictionary<string, int> FactionIds { get; set; } = new(StringComparer.Ordinal);
     public List<MacroCaravanState> Caravans { get; set; } = [];
+    public List<MacroCaravanArrival> Arrivals { get; set; } = [];
+    public HashSet<long> ConsumedArrivalIds { get; set; } = [];
     public List<WorldNotification> Notifications { get; set; } = [];
     public MarketSnapshot Market { get; set; } = new();
     public ResearchProgressState Research { get; set; } = new();
@@ -334,20 +348,33 @@ internal sealed class MacroWorldState
             }
 
             ref var destination = ref Cells[caravan.TargetCellId - 1];
-            foreach (var cargo in caravan.Cargo)
+            long notificationId;
+            if (destination.IsLocalMapGenerated)
             {
-                switch (cargo.Key)
+                notificationId = AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at the Kor colony cell with {caravan.Cargo.Values.Sum():0} units of cargo.", destination.CellId, true);
+                Arrivals.Add(new MacroCaravanArrival
                 {
-                    case MacroResource.Food: destination.FoodCount += cargo.Value; break;
-                    case MacroResource.Wood: destination.WoodCount += cargo.Value; break;
-                    case MacroResource.Stone: destination.StoneCount += cargo.Value; break;
-                    case MacroResource.Alloy: destination.AlloyCount += cargo.Value; break;
-                    case MacroResource.Energy: destination.EnergyCount += cargo.Value; break;
-                    case MacroResource.Knowledge: destination.KnowledgeCount += cargo.Value; break;
-                    case MacroResource.Components: destination.ComponentsCount += cargo.Value; break;
-                }
+                    Id = caravan.Id, FactionId = caravan.FactionId, TargetCellId = destination.CellId,
+                    NotificationId = notificationId, Cargo = new Dictionary<MacroResource, float>(caravan.Cargo)
+                });
             }
-            AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at cell {destination.CellId}; cargo was added to its ledger.", destination.CellId, destination.IsLocalMapGenerated);
+            else
+            {
+                foreach (var cargo in caravan.Cargo)
+                {
+                    switch (cargo.Key)
+                    {
+                        case MacroResource.Food: destination.FoodCount += cargo.Value; break;
+                        case MacroResource.Wood: destination.WoodCount += cargo.Value; break;
+                        case MacroResource.Stone: destination.StoneCount += cargo.Value; break;
+                        case MacroResource.Alloy: destination.AlloyCount += cargo.Value; break;
+                        case MacroResource.Energy: destination.EnergyCount += cargo.Value; break;
+                        case MacroResource.Knowledge: destination.KnowledgeCount += cargo.Value; break;
+                        case MacroResource.Components: destination.ComponentsCount += cargo.Value; break;
+                    }
+                }
+                AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at cell {destination.CellId}; cargo was added to its ledger.", destination.CellId, false);
+            }
             Caravans.RemoveAt(i);
         }
     }
@@ -361,8 +388,16 @@ internal sealed class MacroWorldState
             .OrderBy(c => Distance(c.X, c.Y, sourceX, sourceY)).FirstOrDefault();
         if (destination.CellId == 0) return;
         int refugeeCount = Math.Min(12, Math.Max(2, source.Population / 1000));
+        int sourceFactionId = source.OwningFactionId;
+        int sourceCellId = source.CellId;
         source.Population = Math.Max(0, source.Population - refugeeCount);
-        AddNotification(SimulationTicks, "refugees", $"{refugeeCount} refugees fled cell {source.CellId} toward the Kor colony. Local admission is awaiting player resolution.", destination.CellId, true);
+        long arrivalId = NextCaravanId++;
+        long notificationId = AddNotification(SimulationTicks, "refugees", $"{refugeeCount} refugees fled macro cell {sourceCellId} toward the Kor colony. Decide whether to admit or dismiss them.", destination.CellId, true);
+        Arrivals.Add(new MacroCaravanArrival
+        {
+            Id = arrivalId, FactionId = sourceFactionId, TargetCellId = destination.CellId,
+            IsRefugeeWave = true, Population = refugeeCount, NotificationId = notificationId
+        });
     }
 
     private void EvaluateIncidentSlice(ContinuousWorldState continuous, int cellsPerTick)
@@ -398,18 +433,20 @@ internal sealed class MacroWorldState
             AddNotification(SimulationTicks, "market", $"Alloy price surged to {Market.AlloyPrice:0.00}× amid industrial and military demand.", 0, true);
     }
 
-    private void AddNotification(long tick, string category, string message, int cellId, bool important)
+    private long AddNotification(long tick, string category, string message, int cellId, bool important)
     {
         if (Notifications.Count >= 500) Notifications.RemoveAt(0);
-        Notifications.Add(new WorldNotification(NextNotificationId++, tick, category, message, cellId, important));
+        long id = NextNotificationId++;
+        Notifications.Add(new WorldNotification(id, tick, category, message, cellId, important));
+        return id;
     }
 
     public void Validate()
     {
-        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Market is null || Research is null ||
+        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Arrivals is null || ConsumedArrivalIds is null || Market is null || Research is null ||
             SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > SimulationTicks / TicksPerMacroTurn || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
-            NextCaravanId <= Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max())
+            NextCaravanId <= Math.Max(Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max(), Arrivals.Select(a => a.Id).DefaultIfEmpty(0).Max()))
             throw new InvalidDataException("Macro world data has invalid dimensions or counters.");
         foreach (var cell in Cells)
         {
@@ -429,6 +466,16 @@ internal sealed class MacroWorldState
                 caravan.Cargo is null || caravan.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
                 throw new InvalidDataException("Macro caravan contains invalid values.");
         }
+        foreach (var arrival in Arrivals)
+        {
+            if (arrival.Id <= 0 || arrival.FactionId < 0 || arrival.TargetCellId < 1 || arrival.TargetCellId > CellCount ||
+                arrival.Population < 0 || arrival.SpawnedVisitorCount < 0 || arrival.SpawnedVisitorCount > arrival.Population && arrival.IsRefugeeWave ||
+                arrival.NotificationId <= 0 || arrival.Cargo is null ||
+                arrival.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
+                throw new InvalidDataException("Macro caravan arrival contains invalid values.");
+        }
+        if (ConsumedArrivalIds.Any(id => !Arrivals.Any(arrival => arrival.Id == id)))
+            throw new InvalidDataException("Macro arrival consumption state references a missing arrival.");
         if (Market.FoodPrice is < 0.25f or > 8f || Market.WoodPrice is < 0.25f or > 8f ||
             Market.StonePrice is < 0.25f or > 8f || Market.AlloyPrice is < 0.25f or > 8f ||
             Market.EnergyPrice is < 0.25f or > 8f || Market.ComponentsPrice is < 0.25f or > 8f)
