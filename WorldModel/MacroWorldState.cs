@@ -73,41 +73,74 @@ internal sealed class MarketSnapshot
     public long LastUpdatedTick { get; set; }
 }
 
+internal enum MacroTurnPhase : byte { Idle, Economy, ReliefScan }
+
+/// <summary>Serializable accumulators collected as each macro cell is processed.</summary>
+internal sealed class MacroMarketAccumulator
+{
+    public double FoodDemand { get; set; }
+    public double FoodSupply { get; set; }
+    public double WoodDemand { get; set; }
+    public double WoodSupply { get; set; }
+    public double StoneDemand { get; set; }
+    public double StoneSupply { get; set; }
+    public double AlloyDemand { get; set; }
+    public double AlloySupply { get; set; }
+    public double EnergyDemand { get; set; }
+    public double EnergySupply { get; set; }
+    public double ComponentsDemand { get; set; }
+    public double ComponentsSupply { get; set; }
+
+    public void Reset()
+    {
+        FoodDemand = FoodSupply = WoodDemand = WoodSupply = 0;
+        StoneDemand = StoneSupply = AlloyDemand = AlloySupply = 0;
+        EnergyDemand = EnergySupply = ComponentsDemand = ComponentsSupply = 0;
+    }
+}
+
 /// <summary>Supply/demand pricing based on the macro ledger. Prices are bounded to prevent runaway values.</summary>
 internal static class MarketSystem
 {
+    public static void Accumulate(MacroMarketAccumulator totals, in MacroCellData cell)
+    {
+        ArgumentNullException.ThrowIfNull(totals);
+        if (cell.OwningFactionId == 0 || cell.Population <= 0) return;
+        double population = cell.Population;
+        totals.FoodDemand += population * 0.01d;
+        totals.FoodSupply += Math.Max(0, cell.FoodCount);
+        totals.WoodDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0018d : 0.0006d);
+        totals.WoodSupply += Math.Max(0, cell.WoodCount);
+        totals.StoneDemand += population * (cell.ProductionFocus == ProductionFocus.Mining ? 0.001d : 0.00025d);
+        totals.StoneSupply += Math.Max(0, cell.StoneCount);
+        totals.AlloyDemand += population * (cell.ProductionFocus == ProductionFocus.Military ? 0.001d : 0.00015d);
+        totals.AlloySupply += Math.Max(0, cell.AlloyCount);
+        totals.EnergyDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0012d : 0.0002d);
+        totals.EnergySupply += Math.Max(0, cell.EnergyCount);
+        totals.ComponentsDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0008d : 0.0001d);
+        totals.ComponentsSupply += Math.Max(0, cell.ComponentsCount);
+    }
+
+    /// <summary>Initial-world refresh; normal macro turns use their timesliced accumulator.</summary>
     public static void UpdatePrices(MacroWorldState world, long tick)
     {
         ArgumentNullException.ThrowIfNull(world);
-        double foodDemand = 0, foodSupply = 0, woodDemand = 0, woodSupply = 0;
-        double stoneDemand = 0, stoneSupply = 0, alloyDemand = 0, alloySupply = 0;
-        double energyDemand = 0, energySupply = 0, componentsDemand = 0, componentsSupply = 0;
+        var totals = new MacroMarketAccumulator();
+        foreach (ref readonly var cell in world.Cells.AsSpan()) Accumulate(totals, cell);
+        ApplyTotals(world.Market, totals, tick);
+    }
 
-        foreach (ref readonly var cell in world.Cells.AsSpan())
-        {
-            if (cell.OwningFactionId == 0 || cell.Population <= 0) continue;
-            double population = cell.Population;
-            foodDemand += population * 0.01d;
-            foodSupply += Math.Max(0, cell.FoodCount);
-            woodDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0018d : 0.0006d);
-            woodSupply += Math.Max(0, cell.WoodCount);
-            stoneDemand += population * (cell.ProductionFocus == ProductionFocus.Mining ? 0.001d : 0.00025d);
-            stoneSupply += Math.Max(0, cell.StoneCount);
-            alloyDemand += population * (cell.ProductionFocus == ProductionFocus.Military ? 0.001d : 0.00015d);
-            alloySupply += Math.Max(0, cell.AlloyCount);
-            energyDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0012d : 0.0002d);
-            energySupply += Math.Max(0, cell.EnergyCount);
-            componentsDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0008d : 0.0001d);
-            componentsSupply += Math.Max(0, cell.ComponentsCount);
-        }
-
-        world.Market.FoodPrice = Price(foodDemand, foodSupply);
-        world.Market.WoodPrice = Price(woodDemand, woodSupply);
-        world.Market.StonePrice = Price(stoneDemand, stoneSupply);
-        world.Market.AlloyPrice = Price(alloyDemand, alloySupply);
-        world.Market.EnergyPrice = Price(energyDemand, energySupply);
-        world.Market.ComponentsPrice = Price(componentsDemand, componentsSupply);
-        world.Market.LastUpdatedTick = tick;
+    public static void ApplyTotals(MarketSnapshot market, MacroMarketAccumulator totals, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(market);
+        ArgumentNullException.ThrowIfNull(totals);
+        market.FoodPrice = Price(totals.FoodDemand, totals.FoodSupply);
+        market.WoodPrice = Price(totals.WoodDemand, totals.WoodSupply);
+        market.StonePrice = Price(totals.StoneDemand, totals.StoneSupply);
+        market.AlloyPrice = Price(totals.AlloyDemand, totals.AlloySupply);
+        market.EnergyPrice = Price(totals.EnergyDemand, totals.EnergySupply);
+        market.ComponentsPrice = Price(totals.ComponentsDemand, totals.ComponentsSupply);
+        market.LastUpdatedTick = tick;
     }
 
     private static float Price(double demand, double supply)
