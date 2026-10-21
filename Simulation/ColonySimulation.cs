@@ -1528,7 +1528,7 @@ internal sealed class ColonySimulation
         var inventory = Enum.GetValues<ResourceKind>().ToDictionary(resource => resource, ResourceCount);
         var objects = _objects.Select(item => (Kind: item.Kind, Built: item.IsBuilt));
         var architecture = _tiles.Cast<TileCell>().Where(tile => tile.Architecture != ArchitectureKind.None)
-            .Select(tile => (Kind: tile.Architecture));
+            .Select(tile => tile.Architecture);
         return _wealth.Sample(_tickManager.TickCount, inventory, objects, architecture);
     }
 
