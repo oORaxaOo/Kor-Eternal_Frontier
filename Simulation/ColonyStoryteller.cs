@@ -89,7 +89,7 @@ internal sealed class ColonyStoryteller
         var storyteller = new ColonyStoryteller(snapshot.Rules ?? throw new InvalidDataException("Storyteller save is missing rule definitions.")) { _nextId = snapshot.NextId };
         foreach (var item in snapshot.Events)
         {
-            if (item.Id <= 0 || item.Tick < 0 || item.Severity is < 1 or > 3 ||
+            if (item.Id <= 0 || item.Tick < 0 || item.Severity is < 1 or > 3 || item.ThreatPoints is < 0 or > 250 ||
                 string.IsNullOrWhiteSpace(item.Code) || string.IsNullOrWhiteSpace(item.Message))
                 throw new InvalidDataException("Storyteller save contains an invalid event.");
             storyteller._events.Enqueue(item);
