@@ -23,11 +23,52 @@ internal static class MacroWorldChecks
         macro.Advance(399.9, first);
         Check(macro.SimulationTicks == 23_994 && macro.MacroTurnsProcessed == 0, "Macro economy must wait for the full 24,000-tick interval.");
         macro.Advance(0.1, first);
-        Check(macro.SimulationTicks == 24_000 && macro.MacroTurnsProcessed == 1, "The first macro turn must run on tick 24,000.");
-        Check(macro.Market.LastUpdatedTick == 24_000, "Market prices must refresh on the macro turn.");
+        Check(macro.SimulationTicks == 24_000 && macro.MacroTurnsScheduled == 1 && macro.MacroTurnsProcessed == 0,
+            "Tick 24,000 must schedule the first macro turn without running the whole grid synchronously.");
+        Check(macro.MacroTurnCursor == 128, "A macro update must process no more than its bounded cell slice.");
+        for (int frame = 0; frame < 100 && macro.MacroTurnsProcessed == 0; frame++)
+            macro.Advance(0.1, first);
+        Check(macro.MacroTurnsProcessed == 1 && macro.MacroTurnCursor == 0,
+            "A scheduled macro turn must complete across multiple bounded slices.");
+        Check(macro.Market.LastUpdatedTick == 24_000, "Market prices must refresh against the scheduled macro-turn tick.");
         Check(macro.Market.FoodPrice is >= 0.25f and <= 8f, "Food market price must stay bounded.");
         Check(macro.Notifications.All(item => item.Id > 0 && !string.IsNullOrWhiteSpace(item.Message)), "World notifications must be valid.");
         macro.Validate();
+
+        // The async route scheduler must bound background concurrency, return deterministic A* paths,
+        // and never expose mutable live-world state to worker threads.
+        var routeScheduler = new BackgroundWorldRouteScheduler();
+        var routeCosts = Enumerable.Repeat(1f, MacroWorldState.CellCount).ToArray();
+        var routeRequests = new List<(long Id, int Start, int Target)>();
+        int routeCount = routeScheduler.MaxConcurrentRoutes;
+        for (int i = 0; i < routeCount; i++)
+        {
+            int startCell = 1 + i * 17;
+            int targetCell = MacroWorldState.CellCount - i * 23;
+            bool queued = routeScheduler.TrySchedule(i + 1, targetCell, MacroWorldState.Columns, startCell, routeCosts);
+            if (queued) routeRequests.Add((i + 1, startCell, targetCell));
+        }
+        Check(routeRequests.Count == routeCount, "Route scheduler should fill but never exceed its worker budget.");
+        Check(routeScheduler.InFlightCount <= routeScheduler.MaxConcurrentRoutes, "Background route count must remain bounded.");
+        var routeResults = new List<BackgroundWorldRouteResult>();
+        var timeout = System.Diagnostics.Stopwatch.StartNew();
+        while (routeResults.Count < routeRequests.Count && timeout.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            Thread.Sleep(1);
+            routeResults.AddRange(routeScheduler.DrainCompleted());
+        }
+        Check(routeResults.Count == routeRequests.Count && routeResults.All(result => result.Error is null && result.Nodes is { Count: > 0 }),
+            "All background macro route requests must complete without errors.");
+        foreach (var request in routeRequests)
+        {
+            var route = routeResults.Single(result => result.CaravanId == request.Id).Nodes!;
+            Check(route[0] == new WorldRouteNode((request.Start - 1) % MacroWorldState.Columns, (request.Start - 1) / MacroWorldState.Columns),
+                "A* path must start at its requested cell.");
+            Check(route[^1] == new WorldRouteNode((request.Target - 1) % MacroWorldState.Columns, (request.Target - 1) / MacroWorldState.Columns),
+                "A* path must end at its requested cell.");
+            Check(route.Zip(route.Skip(1), (a, b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y) == 1).All(adjacent => adjacent),
+                "Background A* routes must contain only orthogonally adjacent cells.");
+        }
 
         var database = new DatabaseBootstrap();
         database.LoadOrGenerate();
