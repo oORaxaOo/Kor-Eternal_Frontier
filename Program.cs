@@ -56,13 +56,16 @@ internal static class Program
             float worldCameraX = (float)(ContinuousWorldState.WorldExtent / 2), worldCameraY = (float)(ContinuousWorldState.WorldExtent / 2);
             long? selectedWorldEntityId = null;
             WorldResourceKind? selectedShipmentResource = null;
+            bool factionDashboardOpen = false;
+            string? selectedFactionName = "Kor";
+            int factionTab = 0;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -197,6 +200,34 @@ internal static class Program
                         }
                         else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
                         else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
+                    }
+                    else if (factionDashboardOpen)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (Hit(mx, my, 970, 80, 1046, 106)) factionDashboardOpen = false;
+                        else if (Hit(mx, my, 410, 207, 518, 233)) factionTab = 0;
+                        else if (Hit(mx, my, 526, 207, 634, 233)) factionTab = 1;
+                        else if (Hit(mx, my, 642, 207, 750, 233)) factionTab = 2;
+                        else if (Hit(mx, my, 66, 173, 354, 212)) selectedFactionName = world.SpatialWorld.FactionIntelligence.OrderBy(profile => profile.Faction == "Kor" ? 0 : 1).ThenBy(profile => profile.Faction, StringComparer.Ordinal).ElementAtOrDefault(0)?.Faction;
+                        else
+                        {
+                            var roster = world.SpatialWorld.FactionIntelligence.OrderBy(profile => profile.Faction == "Kor" ? 0 : 1).ThenBy(profile => profile.Faction, StringComparer.Ordinal).Take(10).ToArray();
+                            for (int i = 0; i < roster.Length; i++)
+                            {
+                                float rowTop = 173 + i * 43;
+                                if (Hit(mx, my, 66, rowTop, 354, rowTop + 39))
+                                {
+                                    selectedFactionName = roster[i].Faction;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 955, 8, 1005, 35))
+                    {
+                        factionDashboardOpen = true;
+                        if (!world.SpatialWorld.FactionIntelligence.Any(profile => profile.Faction == selectedFactionName))
+                            selectedFactionName = "Kor";
                     }
                     else if (!worldView && Hit(logicalMouse.X, logicalMouse.Y, 920, 660, 1085, 687))
                     {

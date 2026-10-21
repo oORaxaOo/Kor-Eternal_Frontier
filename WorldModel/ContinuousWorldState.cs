@@ -65,6 +65,7 @@ internal sealed class ContinuousWorldState
     public List<WorldShipmentState> Shipments { get; set; } = [];
     public WorldEcologyState Ecology { get; set; } = new();
     public RegionalWorldMap RegionalMap { get; set; } = new();
+    public List<FactionIntelligenceState> FactionIntelligence { get; set; } = [];
 
     [System.Text.Json.Serialization.JsonIgnore]
     private WorldSpatialIndex? _spatialIndex;
@@ -119,6 +120,7 @@ internal sealed class ContinuousWorldState
             if (random.NextDouble() > 0.45) state.AddEntity(WorldEntityKind.Caravan, $"{faction} Traders", faction, Math.Clamp(settlement.X + random.Next(-2_500, 2_501), 0, WorldExtent), Math.Clamp(settlement.Y + random.Next(-2_500, 2_501), 0, WorldExtent));
         }
         state.Ecology.Initialize(seed);
+        FactionIntelligenceSystem.Initialize(state);
         state.Validate();
         return state;
 
@@ -180,6 +182,7 @@ internal sealed class ContinuousWorldState
         Ecology ??= new WorldEcologyState();
         if (Ecology.Herds.Count == 0 && Ecology.Hotspots.Count == 0) Ecology.Initialize(Seed);
         Ecology.Step(deltaSeconds, ClockSeconds, Seed);
+        FactionIntelligenceSystem.Step(this, deltaSeconds);
         // Continuous settlement food production is integrated directly against elapsed world time.
         foreach (var settlement in Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement))
         {
@@ -355,6 +358,8 @@ internal sealed class ContinuousWorldState
 
     public void Validate()
     {
+        FactionIntelligence ??= [];
+        if (FactionIntelligence.Count == 0) FactionIntelligenceSystem.Initialize(this);
         if (SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported continuous world schema version: {SchemaVersion}.");
         Ecology ??= new WorldEcologyState();
