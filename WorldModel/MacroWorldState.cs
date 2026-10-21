@@ -532,26 +532,32 @@ internal sealed class MacroWorldState
 
     private void DispatchReliefCaravans()
     {
-        var factionIds = FactionIds.OrderBy(pair => pair.Value).ToArray();
-        foreach (var (faction, factionId) in factionIds)
+        foreach (var faction in FactionIds.OrderBy(pair => pair.Value))
         {
-            var hungry = Cells.Where(c => c.OwningFactionId == factionId && c.Population > 0 && c.FoodCount < c.Population * 0.004f)
-                .OrderBy(c => c.FoodCount).ThenBy(c => c.CellId).FirstOrDefault();
-            if (hungry.CellId == 0) continue;
-            var donor = Cells.Where(c => c.OwningFactionId == factionId && c.CellId != hungry.CellId && c.FoodCount > c.Population * 0.02f)
-                .OrderBy(c => Distance(c.X, c.Y, hungry.X, hungry.Y)).ThenBy(c => c.CellId).FirstOrDefault();
-            if (donor.CellId == 0) continue;
-            ref var source = ref Cells[donor.CellId - 1];
+            int factionId = faction.Value;
+            if (!TurnHungryCellIds.TryGetValue(factionId, out int hungryCellId) ||
+                !TurnBestDonorCellIds.TryGetValue(factionId, out int donorCellId))
+                continue;
+
+            ref var hungry = ref Cells[hungryCellId - 1];
+            ref var source = ref Cells[donorCellId - 1];
+            if (source.OwningFactionId != factionId || hungry.OwningFactionId != factionId ||
+                source.CellId == hungry.CellId || source.Population <= 0 || hungry.Population <= 0 ||
+                source.FoodCount <= source.Population * 0.02f || hungry.FoodCount >= hungry.Population * 0.004f)
+                continue;
+
             float amount = Math.Min(100f, Math.Max(0f, source.FoodCount - source.Population * 0.01f));
             if (amount <= 0) continue;
             source.FoodCount -= amount;
             Caravans.Add(new MacroCaravanState
             {
                 Id = NextCaravanId++, FactionId = factionId, X = source.X, Y = source.Y,
-                TargetCellId = hungry.CellId, TravelSpeed = 0.05f,
+                TargetCellId = hungryCellId, TravelSpeed = 0.05f,
                 Cargo = new Dictionary<MacroResource, float> { [MacroResource.Food] = amount }
             });
-            AddNotification(SimulationTicks, "trade", $"{faction} dispatched a relief caravan carrying {amount:0} food to cell {hungry.CellId}.", hungry.CellId, false);
+            AddNotification(SimulationTicks, "trade",
+                $"{faction.Key} dispatched a relief caravan carrying {amount:0} food to cell {hungryCellId}.",
+                hungryCellId, false);
         }
     }
 
@@ -686,10 +692,10 @@ internal sealed class MacroWorldState
         TickSliceCursor = end >= Cells.Length ? 0 : end;
     }
 
-    private void UpdatePricesAndEmitMarketNews(long priceSampleTick)
+    private void UpdatePricesAndEmitMarketNews(long priceSampleTick, MacroMarketAccumulator turnTotals)
     {
         float previousFood = Market.FoodPrice, previousAlloy = Market.AlloyPrice;
-        MarketSystem.UpdatePrices(this, priceSampleTick);
+        MarketSystem.ApplyTotals(Market, turnTotals, priceSampleTick);
         if (previousFood > 0 && Market.FoodPrice >= previousFood * 1.4f)
             AddNotification(SimulationTicks, "market", $"Global food price surged to {Market.FoodPrice:0.00}× as supplies tightened.", 0, true);
         if (previousAlloy > 0 && Market.AlloyPrice >= previousAlloy * 1.4f)
