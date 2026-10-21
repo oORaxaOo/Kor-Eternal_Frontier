@@ -102,23 +102,33 @@ internal sealed class MacroMarketAccumulator
 /// <summary>Supply/demand pricing based on the macro ledger. Prices are bounded to prevent runaway values.</summary>
 internal static class MarketSystem
 {
-    public static void Accumulate(MacroMarketAccumulator totals, in MacroCellData cell)
+    public static void Accumulate(MacroMarketAccumulator totals, in MacroCellData cell, double multiplier = 1d)
     {
         ArgumentNullException.ThrowIfNull(totals);
-        if (cell.OwningFactionId == 0 || cell.Population <= 0) return;
-        double population = cell.Population;
+        if (!double.IsFinite(multiplier) || cell.OwningFactionId == 0 || cell.Population <= 0) return;
+        double population = cell.Population * multiplier;
         totals.FoodDemand += population * 0.01d;
-        totals.FoodSupply += Math.Max(0, cell.FoodCount);
+        totals.FoodSupply += Math.Max(0, cell.FoodCount) * multiplier;
         totals.WoodDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0018d : 0.0006d);
-        totals.WoodSupply += Math.Max(0, cell.WoodCount);
+        totals.WoodSupply += Math.Max(0, cell.WoodCount) * multiplier;
         totals.StoneDemand += population * (cell.ProductionFocus == ProductionFocus.Mining ? 0.001d : 0.00025d);
-        totals.StoneSupply += Math.Max(0, cell.StoneCount);
+        totals.StoneSupply += Math.Max(0, cell.StoneCount) * multiplier;
         totals.AlloyDemand += population * (cell.ProductionFocus == ProductionFocus.Military ? 0.001d : 0.00015d);
-        totals.AlloySupply += Math.Max(0, cell.AlloyCount);
+        totals.AlloySupply += Math.Max(0, cell.AlloyCount) * multiplier;
         totals.EnergyDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0012d : 0.0002d);
-        totals.EnergySupply += Math.Max(0, cell.EnergyCount);
+        totals.EnergySupply += Math.Max(0, cell.EnergyCount) * multiplier;
         totals.ComponentsDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0008d : 0.0001d);
-        totals.ComponentsSupply += Math.Max(0, cell.ComponentsCount);
+        totals.ComponentsSupply += Math.Max(0, cell.ComponentsCount) * multiplier;
+    }
+
+    public static void ReplacePopulationContribution(MacroMarketAccumulator totals, in MacroCellData currentCell, int previousPopulation)
+    {
+        ArgumentNullException.ThrowIfNull(totals);
+        if (previousPopulation <= 0 || currentCell.OwningFactionId == 0) return;
+        var previousCell = currentCell;
+        previousCell.Population = previousPopulation;
+        Accumulate(totals, previousCell, -1d);
+        Accumulate(totals, currentCell);
     }
 
     /// <summary>Initial-world refresh; normal macro turns use their timesliced accumulator.</summary>
@@ -703,14 +713,21 @@ internal sealed class MacroWorldState
                 cell.BlightPresence = Math.Min(1f, pressure + 0.0005f);
                 if (cell.BlightPresence >= 0.95f && cell.Population > 0)
                 {
+                    int previousPopulation = cell.Population;
                     int lost = Math.Max(1, cell.Population / 100);
                     cell.Population -= lost;
+                    if (IsCellAlreadyIncludedInMarketTurn(i))
+                        MarketSystem.ReplacePopulationContribution(MarketTurnAccumulator, cell, previousPopulation);
                     AddNotification(SimulationTicks, "blight", $"Blight consumed cell {cell.CellId}; {lost} residents were lost or displaced.", cell.CellId, true);
                 }
             }
         }
         TickSliceCursor = end >= Cells.Length ? 0 : end;
     }
+
+    private bool IsCellAlreadyIncludedInMarketTurn(int cellIndex)
+        => TurnPhase == MacroTurnPhase.ReliefScan ||
+           (TurnPhase == MacroTurnPhase.Economy && cellIndex < MacroTurnCursor);
 
     private void UpdatePricesAndEmitMarketNews(long priceSampleTick, MacroMarketAccumulator turnTotals)
     {
