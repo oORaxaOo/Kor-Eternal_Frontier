@@ -25,8 +25,9 @@ internal static class MacroWorldChecks
         macro.Advance(0.1, first);
         Check(macro.SimulationTicks == 24_000 && macro.MacroTurnsScheduled == 1 && macro.MacroTurnsProcessed == 0,
             "Tick 24,000 must schedule the first macro turn without running the whole grid synchronously.");
-        Check(macro.MacroTurnCursor == 128, "A macro update must process no more than its bounded cell slice.");
-        for (int frame = 0; frame < 100 && macro.MacroTurnsProcessed == 0; frame++)
+        Check(macro.MacroTurnPhase == MacroTurnPhase.Economy && macro.MacroTurnCursor == 128,
+            "A macro update must process no more than its bounded cell slice.");
+        for (int frame = 0; frame < 200 && macro.MacroTurnsProcessed == 0; frame++)
             macro.Advance(0.1, first);
         Check(macro.MacroTurnsProcessed == 1 && macro.MacroTurnCursor == 0,
             "A scheduled macro turn must complete across multiple bounded slices.");
