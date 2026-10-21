@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using KorTheBlight.Simulation.Research;
 
 namespace KorTheBlight.WorldModel;
 
@@ -115,6 +116,7 @@ internal sealed class MacroWorldState
     public List<MacroCaravanState> Caravans { get; set; } = [];
     public List<WorldNotification> Notifications { get; set; } = [];
     public MarketSnapshot Market { get; set; } = new();
+    public ResearchProgressState Research { get; set; } = new();
     public long SimulationTicks { get; set; }
     public double FractionalTickRemainder { get; set; }
     public long NextNotificationId { get; set; } = 1;
@@ -401,7 +403,7 @@ internal sealed class MacroWorldState
 
     public void Validate()
     {
-        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Market is null ||
+        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Market is null || Research is null ||
             SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > SimulationTicks / TicksPerMacroTurn || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max())
