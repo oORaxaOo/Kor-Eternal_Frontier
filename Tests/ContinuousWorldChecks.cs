@@ -39,7 +39,7 @@ internal static class ContinuousWorldChecks
 
         var pressureWorld = ContinuousWorldState.Generate(4401);
         var exposedSettlement = pressureWorld.Entities.First(entity =>
-            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction != "Kor");
         var initialHotspot = pressureWorld.Ecology.Hotspots[0];
         exposedSettlement.X = initialHotspot.X;
         exposedSettlement.Y = initialHotspot.Y;
