@@ -98,7 +98,30 @@ internal static class Program
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
                 if (pendingWheelY != 0 && gameStarted)
                 {
-                    zoom = Math.Clamp(zoom * MathF.Pow(1.12f, pendingWheelY), .08f, 1.7f);
+                    float oldZoom = zoom;
+                    bool wasWorldView = oldZoom < .65f;
+                    if (wasWorldView)
+                    {
+                        var anchor = ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, oldZoom);
+                        zoom = Math.Clamp(oldZoom * MathF.Pow(1.12f, pendingWheelY), .08f, 1.7f);
+                        if (zoom < .65f)
+                        {
+                            float scale = ContinuousWorldProjection.Scale(zoom);
+                            worldCameraX = Math.Clamp((float)(anchor.X - (logicalMouse.X - 385f) / scale), 0f, (float)ContinuousWorldState.WorldExtent);
+                            worldCameraY = Math.Clamp((float)(anchor.Y - (logicalMouse.Y - 356f) / scale), 0f, (float)ContinuousWorldState.WorldExtent);
+                        }
+                    }
+                    else
+                    {
+                        var anchor = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, oldZoom);
+                        zoom = Math.Clamp(oldZoom * MathF.Pow(1.12f, pendingWheelY), .08f, 1.7f);
+                        if (zoom >= .65f)
+                        {
+                            float scale = OrthogonalGridProjection.TileSize * Math.Clamp(zoom, .25f, 4f);
+                            cameraX = Math.Clamp(logicalMouse.X - 385f - (anchor.X - ColonySimulation.Width / 2f) * scale, -500f, 500f);
+                            cameraY = Math.Clamp(logicalMouse.Y - 350f - (anchor.Y - ColonySimulation.Height / 2f) * scale, -400f, 400f);
+                        }
+                    }
                     pendingWheelY = 0;
                 }
                 bool worldView = zoom < .65f;
