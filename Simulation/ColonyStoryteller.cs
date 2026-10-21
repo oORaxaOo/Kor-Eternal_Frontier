@@ -67,6 +67,7 @@ internal sealed class ColonyStoryteller
     public ColonyStorytellerSnapshot CaptureSnapshot() => new()
     {
         NextId = _nextId,
+        Rules = _rules.ToList(),
         Events = _events.ToList(),
         LastTriggered = _lastTriggered.Select(pair => new StorytellerCooldownSnapshot { Code = pair.Key, Tick = pair.Value }).ToList(),
         ActiveRules = _activeRules.ToList()
@@ -77,9 +78,10 @@ internal sealed class ColonyStoryteller
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.NextId < 1 || snapshot.Events is null || snapshot.Events.Count > MaximumEvents ||
             snapshot.LastTriggered is null || snapshot.LastTriggered.Count > 1024 ||
+            snapshot.Rules is null || snapshot.Rules.Count > 1024 ||
             snapshot.ActiveRules is null || snapshot.ActiveRules.Count > 1024)
             throw new InvalidDataException("Storyteller save contains invalid collection sizes.");
-        var storyteller = new ColonyStoryteller { _nextId = snapshot.NextId };
+        var storyteller = new ColonyStoryteller(snapshot.Rules ?? throw new InvalidDataException("Storyteller save is missing rule definitions.")) { _nextId = snapshot.NextId };
         foreach (var item in snapshot.Events)
         {
             if (item.Id <= 0 || item.Tick < 0 || item.Severity is < 1 or > 3 ||
@@ -131,6 +133,7 @@ internal sealed class ColonyStoryteller
 internal sealed class ColonyStorytellerSnapshot
 {
     public long NextId { get; set; } = 1;
+    public List<StorytellerRule> Rules { get; set; } = [];
     public List<StorytellerEvent> Events { get; set; } = [];
     public List<StorytellerCooldownSnapshot> LastTriggered { get; set; } = [];
     public List<string> ActiveRules { get; set; } = [];
