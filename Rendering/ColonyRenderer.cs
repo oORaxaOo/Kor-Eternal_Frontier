@@ -740,7 +740,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"Time: {(int)(simulation.ElapsedSeconds / 60)}m {((int)simulation.ElapsedSeconds % 60):00}s", 790, 215, SKTextAlign.Left, _normalFont, _text);
         canvas.DrawText(paused ? "SIMULATION PAUSED" : "SIMULATION RUNNING", 790, 239, SKTextAlign.Left, _normalFont, _text);
         _text.Color = simulation.InventoryFreeCapacity == 0 ? Crimson : TextColor;
-        canvas.DrawText($"Storage: {simulation.InventoryUsed}/{simulation.InventoryCapacity}", 790, 263, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Storage {simulation.InventoryUsed}/{simulation.InventoryCapacity} | Wealth {simulation.Wealth.TotalWealth:0} | TP {simulation.Wealth.ThreatPoints}", 790, 263, SKTextAlign.Left, _smallFont, _text);
 
         _text.Color = Gold;
         canvas.DrawText(worldView ? "WORLD ENTITY INSPECTOR" : "STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
