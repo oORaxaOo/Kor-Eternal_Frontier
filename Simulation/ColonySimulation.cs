@@ -272,6 +272,7 @@ internal sealed class ColonySimulation
         {
             SchemaVersion = 8,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
+            Wealth = _wealth.Current,
             SocialTick = _socialTick,
             SocialNetwork = _socialRelationships.CaptureSnapshot(),
             IncidentManager = _incidentManager.CaptureSnapshot(),
@@ -440,6 +441,7 @@ internal sealed class ColonySimulation
         simulation._environmentAccumulatorSeconds = snapshot.EnvironmentAccumulatorSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
+        simulation._wealth.Restore(snapshot.Wealth);
         var workerIdsForPriorities = simulation._workers.Select(worker => worker.Id).ToHashSet();
         var restoredPriorities = WorkPriorityMatrix.Restore(snapshot.WorkPriorities, workerIdsForPriorities);
         foreach (var workerId in workerIdsForPriorities)
@@ -1512,13 +1514,17 @@ internal sealed class ColonySimulation
     {
         float averageStress = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Stress);
         float averageHunger = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Hunger);
-        _storyteller.Step(_socialTick, new StorytellerColonyState(
-            _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger));
         var inventory = Enum.GetValues<ResourceKind>().ToDictionary(resource => resource, ResourceCount);
         var objects = _objects.Select(item => (Kind: item.Kind, Built: item.IsBuilt));
         var architecture = _tiles.Cast<TileCell>().Where(tile => tile.Architecture != ArchitectureKind.None)
             .Select(tile => (Kind: tile.Architecture));
-        _wealth.Sample(_socialTick, inventory, objects, architecture);
+        var wealth = _wealth.Sample(_socialTick, inventory, objects, architecture);
+        var events = _storyteller.Step(_socialTick, new StorytellerColonyState(
+            _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger,
+            wealth.TotalWealth, wealth.ThreatPoints));
+        var threatEvent = events.FirstOrDefault(item => item.ThreatPoints > 0);
+        if (threatEvent != null)
+            Message = $"STORYTELLER INCIDENT: {threatEvent.Message} | threat budget {threatEvent.ThreatPoints} points.";
     }
 
 
