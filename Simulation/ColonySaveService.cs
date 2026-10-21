@@ -277,6 +277,7 @@ internal sealed class ColonySnapshot
             var residents = workerIds.ToHashSet();
             _ = SocialRelationshipNetwork.Restore(SocialNetwork!, residents);
             _ = KorTheBlight.Simulation.IncidentManager.Restore(IncidentManager!, residents);
+            if (SchemaVersion >= 7) _ = ColonyStoryteller.Restore(Storyteller!);
         }
 
         if (SelectedWorkerId.HasValue && !workerIds.Contains(SelectedWorkerId.Value))
