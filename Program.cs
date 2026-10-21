@@ -56,10 +56,10 @@ internal static class Program
             WorldResourceKind? selectedShipmentResource = null;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
-            bool placingObject = false, excavationMode = false, paused = false;
+            bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -70,6 +70,7 @@ internal static class Program
             engineStarted = true;
 
             bool running = true, wasLeft = false, wasRight = false, wasMiddle = false;
+            float pendingWheelY = 0;
             float previousMouseX = 0, previousMouseY = 0;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
@@ -79,6 +80,7 @@ internal static class Program
                 while (Sdl.SDL_PollEvent(out var e) != 0)
                 {
                     if (e.Type == Sdl.EventQuit || e.Type == Sdl.EventWindowClose) running = false;
+                    else if (e.Type == Sdl.EventMouseWheel) pendingWheelY += e.WheelY;
                     else if (e.Type == Sdl.EventWindowResized && Sdl.SDL_GetWindowSize(window, out int width, out int height)) adapter.Resize(width, height);
                 }
 
@@ -94,6 +96,34 @@ internal static class Program
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
+                if (pendingWheelY != 0 && gameStarted)
+                {
+                    float oldZoom = zoom;
+                    bool wasWorldView = oldZoom < .65f;
+                    if (wasWorldView)
+                    {
+                        var anchor = ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, oldZoom);
+                        zoom = Math.Clamp(oldZoom * MathF.Pow(1.12f, pendingWheelY), .08f, 1.7f);
+                        if (zoom < .65f)
+                        {
+                            float scale = ContinuousWorldProjection.Scale(zoom);
+                            worldCameraX = Math.Clamp((float)(anchor.X - (logicalMouse.X - 385f) / scale), 0f, (float)ContinuousWorldState.WorldExtent);
+                            worldCameraY = Math.Clamp((float)(anchor.Y - (logicalMouse.Y - 356f) / scale), 0f, (float)ContinuousWorldState.WorldExtent);
+                        }
+                    }
+                    else
+                    {
+                        var anchor = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, oldZoom);
+                        zoom = Math.Clamp(oldZoom * MathF.Pow(1.12f, pendingWheelY), .08f, 1.7f);
+                        if (zoom >= .65f)
+                        {
+                            float scale = OrthogonalGridProjection.TileSize * Math.Clamp(zoom, .25f, 4f);
+                            cameraX = Math.Clamp(logicalMouse.X - 385f - (anchor.X - ColonySimulation.Width / 2f) * scale, -500f, 500f);
+                            cameraY = Math.Clamp(logicalMouse.Y - 350f - (anchor.Y - ColonySimulation.Height / 2f) * scale, -400f, 400f);
+                        }
+                    }
+                    pendingWheelY = 0;
+                }
                 bool worldView = zoom < .65f;
                 var continuousMouse = ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, zoom);
                 var colonyMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
@@ -202,7 +232,8 @@ internal static class Program
                     else if (inWorldView)
                     {
                         int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
-                        if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
+                        if (demolitionMode) simulation.DemolishAt(tileX, tileY);
+                        else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                         else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
                         else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
                         else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
@@ -239,6 +270,7 @@ internal static class Program
                             architectureMode = ArchitectureKind.None;
                             placingObject = false;
                             excavationMode = false;
+                            demolitionMode = false;
                             simulation.SetMessage("Current placement mode cancelled.");
                         }
                         else if (Hit(mx, my, 784, 527, 850, 549))
@@ -265,6 +297,10 @@ internal static class Program
                         {
                             zoom = Math.Min(1.7f, zoom * 1.15f);
                         }
+                        else if (!worldView && simulation.SelectedWorkOrderId.HasValue && Hit(mx, my, 904, 425, 1086, 447))
+                        {
+                            simulation.CancelSelectedWorkOrder();
+                        }
                         else if (worldView && Hit(mx, my, 784, 566, 838, 588)) { selectedShipmentResource = WorldResourceKind.Wood; simulation.SetMessage("Cargo selected: Wood. Select a caravan, then click a destination settlement."); }
                         else if (worldView && Hit(mx, my, 842, 566, 896, 588)) { selectedShipmentResource = WorldResourceKind.Stone; simulation.SetMessage("Cargo selected: Stone. Select a caravan, then click a destination settlement."); }
                         else if (worldView && Hit(mx, my, 900, 566, 954, 588)) { selectedShipmentResource = WorldResourceKind.Food; simulation.SetMessage("Cargo selected: Food. Select a caravan, then click a destination settlement."); }
@@ -272,11 +308,11 @@ internal static class Program
                         else if (worldView && Hit(mx, my, 1016, 566, 1070, 588)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
                         else if (worldView && Hit(mx, my, 784, 593, 1086, 615)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
                         else if (!worldView && Hit(mx, my, 784, 566, 829, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 834, 566, 879, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 884, 566, 929, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
+                        else if (!worldView && Hit(mx, my, 834, 566, 879, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 884, 566, 929, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; demolitionMode = false; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
                         else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
                         else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
                         else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
@@ -287,7 +323,8 @@ internal static class Program
                             architectureMode = ArchitectureKind.None;
                             placingObject = false;
                             excavationMode = false;
-                            simulation.SetMessage("Placement cancelled.");
+                            demolitionMode = !demolitionMode;
+                            simulation.SetMessage(demolitionMode ? "Demolition mode: click a completed structure or built tile." : "Demolition mode disabled.");
                         }
                     }
                 }
@@ -384,10 +421,10 @@ internal sealed class PumpSynchronizationContext : SynchronizationContext
 internal static class Sdl
 {
     private const string Lib = "SDL3";
-    public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206;
+    public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206, EventMouseWheel = 0x403;
     public const uint ButtonLeftMask = 1, ButtonMiddleMask = 2, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; }
+    [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; [FieldOffset(40)] public float WheelY; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_CreateWindow([MarshalAs(UnmanagedType.LPUTF8Str)] string title, int w, int h, uint flags);

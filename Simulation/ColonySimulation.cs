@@ -1151,6 +1151,136 @@ internal sealed class ColonySimulation
         return true;
     }
 
+    /// <summary>Cancels a selected blueprint before construction work consumes materials.</summary>
+    public bool CancelSelectedWorkOrder()
+    {
+        if (!_selectedWorkOrderKind.HasValue || !_selectedWorkOrderId.HasValue)
+        {
+            Message = "Select a planned blueprint or work order first.";
+            return false;
+        }
+
+        switch (_selectedWorkOrderKind.Value)
+        {
+            case WorkOrderKind.TileConstruction:
+            {
+                var order = _tileOrders.FirstOrDefault(item => item.Id == _selectedWorkOrderId.Value);
+                if (order == null || order.Status is ConstructionStatus.Complete or ConstructionStatus.UnderConstruction)
+                {
+                    Message = "Only a planned or material-waiting tile order can be cancelled safely.";
+                    return false;
+                }
+                _tileOrders.Remove(order);
+                if (InBounds(order.Cell.X, order.Cell.Y) && _tiles[order.Cell.X, order.Cell.Y].ConstructionOrderId == order.Id)
+                    _tiles[order.Cell.X, order.Cell.Y].ConstructionOrderId = null;
+                break;
+            }
+            case WorkOrderKind.ObjectConstruction:
+            {
+                var item = _objects.FirstOrDefault(obj => obj.Id == _selectedWorkOrderId.Value);
+                if (item == null || item.IsBuilt || item.Status == ConstructionStatus.UnderConstruction)
+                {
+                    Message = "Only a planned or material-waiting object blueprint can be cancelled safely.";
+                    return false;
+                }
+                _objects.Remove(item);
+                _gardenJobsByObject.Remove(item.Id);
+                _storageZonesByObject.Remove(item.Id);
+                InvalidatePathCache();
+                break;
+            }
+            case WorkOrderKind.Excavation:
+            {
+                var order = _excavationOrders.FirstOrDefault(item => item.Id == _selectedWorkOrderId.Value);
+                if (order == null || order.Status is ConstructionStatus.Complete or ConstructionStatus.UnderConstruction)
+                {
+                    Message = "Only a planned excavation order can be cancelled safely.";
+                    return false;
+                }
+                _excavationOrders.Remove(order);
+                break;
+            }
+            default:
+                Message = "This work order cannot be cancelled as a blueprint.";
+                return false;
+        }
+
+        _selectedWorkOrderKind = null;
+        _selectedWorkOrderId = null;
+        Message = "Planned order cancelled.";
+        return true;
+    }
+
+    /// <summary>Demolishes completed player-built structures or architecture at a grid cell.</summary>
+    public bool DemolishAt(int x, int y)
+    {
+        if (!InBounds(x, y))
+        {
+            Message = "That tile is outside the map.";
+            return false;
+        }
+
+        var item = ObjectAt(x, y);
+        if (item != null)
+        {
+            if (!item.IsBuilt)
+            {
+                Message = "This is an unfinished blueprint. Select it and use Cancel Order instead.";
+                return false;
+            }
+            if (item.Kind is PlaceableKind.Habitat or PlaceableKind.Stockpile)
+            {
+                Message = "The starter habitat and stockpile are protected in this foundation build.";
+                return false;
+            }
+            if (item.Kind == PlaceableKind.StorageRack &&
+                InventoryUsed > Math.Max(0, InventoryCapacity - StorageRackCapacity))
+            {
+                Message = "Cannot remove this rack yet: remaining storage would be too small for current inventory.";
+                return false;
+            }
+            if (_productionOrders.Any(order => order.WorkstationId == item.Id && !order.Complete))
+            {
+                Message = "Finish production at this workstation before demolishing it.";
+                return false;
+            }
+
+            _objects.Remove(item);
+            _gardenJobsByObject.Remove(item.Id);
+            _storageZonesByObject.Remove(item.Id);
+            if (_selectedWorkOrderKind == WorkOrderKind.ObjectConstruction && _selectedWorkOrderId == item.Id)
+            {
+                _selectedWorkOrderKind = null;
+                _selectedWorkOrderId = null;
+            }
+            InvalidatePathCache();
+            Message = $"{item.Kind} demolished.";
+            return true;
+        }
+
+        var tile = _tiles[x, y];
+        if (tile.ConstructionOrderId.HasValue)
+        {
+            Message = "This tile has an unfinished blueprint. Select it and use Cancel Order instead.";
+            return false;
+        }
+        if (tile.Architecture == ArchitectureKind.None)
+        {
+            Message = "Nothing to demolish on this tile.";
+            return false;
+        }
+        if (_workers.Any(worker => (int)MathF.Floor(worker.X) == x && (int)MathF.Floor(worker.Y) == y))
+        {
+            Message = "Move the colonist away from this tile before demolishing it.";
+            return false;
+        }
+
+        tile.Architecture = ArchitectureKind.None;
+        InvalidatePathCache();
+        Message = $"Architecture at ({x}, {y}) demolished.";
+        return true;
+    }
+
     public bool SelectWorkerAt(float worldX, float worldY)
     {
         // A linear nearest-resident scan avoids sorting the entire population on every click.

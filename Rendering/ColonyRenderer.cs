@@ -29,7 +29,7 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool paused, float speedMultiplier,
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         canvas.Clear(Background);
@@ -42,7 +42,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
         }
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -375,7 +375,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool excavationMode, bool paused, float speedMultiplier, bool worldView,
+        PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         _fill.Color = Background;
@@ -455,6 +455,7 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawText($"Current priority: {simulation.SelectedWorkOrderPriority}/5", 790, 416, SKTextAlign.Left, _smallFont, _text);
             DrawButton(canvas, "P -", 784, 425, 54, 22, simulation.SelectedWorkOrderPriority <= 1);
             DrawButton(canvas, "P +", 842, 425, 54, 22, simulation.SelectedWorkOrderPriority >= 5);
+            DrawButton(canvas, "CANCEL ORDER", 904, 425, 182, 22);
             _muted.Color = MutedColor;
             canvas.DrawText(simulation.SelectedWorkOrderDiagnostic, 790, 462, SKTextAlign.Left, _smallFont, _muted);
         }
@@ -529,22 +530,24 @@ internal sealed class ColonyRenderer : IDisposable
             DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
             DrawButton(canvas, "GEN", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.Generator);
             DrawButton(canvas, "GARDEN", 988, 593, 47, 22, placingObject && objectType == PlaceableKind.Garden);
-            DrawButton(canvas, "CANCEL", 1039, 593, 47, 22);
+            DrawButton(canvas, demolitionMode ? "DONE" : "REMOVE", 1039, 593, 47, 22, demolitionMode);
         }
 
         _muted.Color = MutedColor;
         string actionHint = worldView
             ? (selectedShipmentResource.HasValue ? $"Cargo: 25 {selectedShipmentResource.Value}; click caravan, then destination" : "Select cargo, then caravan and destination")
-            : excavationMode
-                ? "DIG: click solid rock; mined stone appears on the ground and must be hauled"
-                : simulation.ConstructionCostStatus(architectureMode, objectType, placingObject);
+            : demolitionMode
+                ? "REMOVE: click a completed structure or built tile"
+                : excavationMode
+                    ? "DIG: click solid rock; mined stone appears on the ground and must be hauled"
+                    : simulation.ConstructionCostStatus(architectureMode, objectType, placingObject);
         _muted.Color = !worldView && (placingObject || architectureMode != ArchitectureKind.None) &&
                        actionHint.Contains("WAITING:", StringComparison.Ordinal)
             ? Crimson : MutedColor;
         canvas.DrawText(actionHint, 790, 635, SKTextAlign.Left, _smallFont, _muted);
         canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
 
-        string mode = placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
+        string mode = demolitionMode ? "DEMOLITION MODE" : placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             excavationMode ? "EXCAVATION DESIGNATION" :
             architectureMode != ArchitectureKind.None ? $"TILE CONSTRUCTION: {architectureMode}" : "SELECT / INSPECT";
         _text.Color = paused ? Gold : MutedColor;
