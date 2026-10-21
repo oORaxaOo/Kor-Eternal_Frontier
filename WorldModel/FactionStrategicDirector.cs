@@ -5,7 +5,6 @@ internal static class FactionStrategicDirector
 {
     public const long DecisionIntervalTicks = 20_000;
     public const double SecondsPerTick = 1d / 60d;
-    private static readonly Dictionary<string, long> LastDecisionTick = new(StringComparer.Ordinal);
 
     public static void Step(ContinuousWorldState world)
     {
@@ -13,10 +12,9 @@ internal static class FactionStrategicDirector
         foreach (var profile in world.FactionIntelligence.OrderBy(item => item.Faction, StringComparer.Ordinal))
         {
             if (profile.Faction == "Kor") continue;
-            long previous = LastDecisionTick.GetValueOrDefault(profile.Faction, -1);
-            if (previous >= 0 && tick - previous < DecisionIntervalTicks) continue;
+            if (tick - profile.LastStrategicDecisionTick < DecisionIntervalTicks) continue;
             if (tick < DecisionIntervalTicks) continue;
-            LastDecisionTick[profile.Faction] = tick;
+            profile.LastStrategicDecisionTick = tick;
             var settlements = world.Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == profile.Faction)
                 .OrderBy(entity => entity.Id).ToArray();
             if (settlements.Length == 0) continue;
