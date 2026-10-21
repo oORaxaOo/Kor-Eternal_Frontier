@@ -48,6 +48,14 @@ internal static class ColonyChecks
         Check(weightedPath && weightedRoute.Count > 4 && !weightedRoute.Contains(new CellPosition(1, 2)),
             "A* must prefer a longer low-cost route over an expensive direct cell");
 
+        var previewValidation = new ColonySimulation();
+        Check(previewValidation.TryGetPlacementFootprint(PlaceableKind.Garden, out int gardenWidth, out int gardenHeight) &&
+              gardenWidth == 3 && gardenHeight == 3,
+            "the placement preview must expose the actual garden footprint dimensions");
+        bool diningTablePreviewValid = previewValidation.CanPlaceObjectAt(PlaceableKind.DiningTable, 6, 6);
+        Check((previewValidation.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0) == diningTablePreviewValid,
+            "placement preview validity must use the same footprint rules as actual blueprint placement");
+
         var environment = new ColonySimulation();
         var furnitureChecks = new ColonySimulation();
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0, "dining table should accept a blueprint");
