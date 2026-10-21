@@ -48,6 +48,7 @@ internal sealed class ColonySnapshot
     public IncidentManagerSnapshot? IncidentManager { get; set; }
     public ColonyStorytellerSnapshot? Storyteller { get; set; }
     public WorkPriorityMatrixSnapshot? WorkPriorities { get; set; }
+    public ColonyWealthSnapshot? Wealth { get; set; }
     public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
@@ -79,6 +80,8 @@ internal sealed class ColonySnapshot
             throw new InvalidDataException("Current colony save is missing storyteller state.");
         if (SchemaVersion >= 8 && WorkPriorities is null)
             throw new InvalidDataException("Current colony save is missing work-priority matrix state.");
+        if (SchemaVersion >= 8 && Wealth is null)
+            throw new InvalidDataException("Current colony save is missing wealth metrics.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
