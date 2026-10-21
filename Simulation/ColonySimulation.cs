@@ -250,6 +250,44 @@ internal sealed class ColonySimulation
         ResourceKind.Components => market.ComponentsPrice,
         _ => 1f
     };
+
+    public bool TradeWithVisitor(int workerId, MarketSnapshot market)
+    {
+        var visitor = _workers.FirstOrDefault(worker => worker.Id == workerId && worker.IsExternalVisitor && !worker.IsLeaving);
+        if (visitor is null || visitor.TradeCargo.Count == 0) return false;
+        double cargoValue = visitor.TradeCargo.Sum(pair => pair.Value * MarketPrice(pair.Key, market));
+        foreach (var resource in new[] { ResourceKind.Food, ResourceKind.Wood, ResourceKind.Stone, ResourceKind.Alloy, ResourceKind.Components })
+        {
+            float price = MarketPrice(resource, market);
+            int amount = (int)Math.Ceiling(cargoValue / Math.Max(0.25f, price));
+            if (amount > 0 && amount <= ResourceCount(resource) &&
+                TradeWithVisitor(workerId, resource, amount, market)) return true;
+        }
+        return false;
+    }
+
+    public bool ResolveExternalVisitor(int workerId, bool admit)
+    {
+        var visitor = _workers.FirstOrDefault(worker => worker.Id == workerId && worker.IsExternalVisitor);
+        if (visitor is null) return false;
+        if (admit)
+        {
+            visitor.IsExternalVisitor = false;
+            visitor.IsLeaving = false;
+            visitor.Faction = "Kor";
+            visitor.TradeCargo.Clear();
+            visitor.Task = null;
+            Message = $"{visitor.Name} was welcomed into Kor. Local population is now {_workers.Count(worker => !worker.IsExternalVisitor)}.";
+            return true;
+        }
+
+        var edge = new CellPosition(Width - 1, Math.Clamp((int)visitor.Y, 0, Height - 1));
+        if (!TryFindPath(visitor, edge, out var route)) return false;
+        visitor.IsLeaving = true;
+        visitor.Task = new WorkerTask(ColonyTaskKind.Move, edge, route);
+        Message = $"{visitor.Name} was asked to leave the colony.";
+        return true;
+    }
     public int? SelectedWorkerId { get; private set; }
     public int? SelectedWorkOrderId => _selectedWorkOrderId;
     public int SelectedWorkOrderPriority => GetSelectedWorkOrderPriority() ?? 3;
