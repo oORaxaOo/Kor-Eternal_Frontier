@@ -25,7 +25,8 @@ internal sealed class WorldSimulation
         SpatialWorld = ContinuousWorldState.Generate(seed);
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
         var database = new DatabaseBootstrap();
-        string dataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "data");
+        string dataDirectory = Path.Combine(AppContext.BaseDirectory, "data");
+        if (!Directory.Exists(dataDirectory)) dataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "data");
         database.LoadOrGenerate(dataDirectory);
         ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
     }
@@ -100,7 +101,9 @@ internal sealed class WorldSimulation
         SpatialWorld = session.ContinuousWorld;
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
         var database = new DatabaseBootstrap();
-        database.LoadOrGenerate(Path.Combine(Directory.GetCurrentDirectory(), "data"));
+        string dataDirectory = Path.Combine(AppContext.BaseDirectory, "data");
+        if (!Directory.Exists(dataDirectory)) dataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "data");
+        database.LoadOrGenerate(dataDirectory);
         ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
         ElapsedSeconds = SpatialWorld.ClockSeconds;
         _simulationAccumulator = 0f;
