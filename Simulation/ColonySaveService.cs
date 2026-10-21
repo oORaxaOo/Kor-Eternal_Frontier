@@ -368,6 +368,10 @@ internal sealed class ColonyWorkerSnapshot
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public string Faction { get; set; } = "Kor";
+    public bool IsExternalVisitor { get; set; }
+    public bool IsLeaving { get; set; }
+    public Dictionary<ResourceKind, int> TradeCargo { get; set; } = [];
     public float X { get; set; }
     public float Y { get; set; }
     public float Hunger { get; set; }
