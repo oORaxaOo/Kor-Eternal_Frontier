@@ -45,7 +45,7 @@ internal static class StrategicSystemsChecks
                 [ResourceKind.Alloy] = 100, [ResourceKind.Components] = 100
             },
             new[] { (PlaceableKind.Habitat, true), (PlaceableKind.Generator, true), (PlaceableKind.Lamp, false) },
-            new[] { (ArchitectureKind.Wall), (ArchitectureKind.Door) });
+            new[] { (Kind: ArchitectureKind.Wall), (Kind: ArchitectureKind.Door) });
         Check(sampled.TotalWealth == sampled.StoredResourcesValue + sampled.StructuresValue &&
               sampled.ThreatPoints is > 0 and <= 250,
             "wealth must include market-valued stock and built structures and produce a bounded threat budget");
