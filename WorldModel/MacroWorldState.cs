@@ -867,7 +867,6 @@ internal sealed class MacroWorldState
         {
             if (arrival.Id <= 0 || arrival.FactionId < 0 || arrival.TargetCellId < 1 || arrival.TargetCellId > CellCount ||
                 arrival.Population < 0 || arrival.SourceCellId < 0 || arrival.SourceCellId > CellCount ||
-                arrival.IsRefugeeWave && arrival.SourceCellId == 0 ||
                 arrival.SpawnedVisitorCount < 0 || arrival.SpawnedVisitorCount > arrival.Population && arrival.IsRefugeeWave ||
                 arrival.NotificationId <= 0 || arrival.Cargo is null ||
                 arrival.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
