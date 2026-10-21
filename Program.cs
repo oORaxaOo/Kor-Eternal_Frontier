@@ -503,7 +503,7 @@ internal static class Sdl
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206, EventMouseWheel = 0x403;
     public const uint ButtonLeftMask = 1, ButtonMiddleMask = 2, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; [FieldOffset(44)] public float WheelY; }
+    [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; [FieldOffset(28)] public float WheelY; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_CreateWindow([MarshalAs(UnmanagedType.LPUTF8Str)] string title, int w, int h, uint flags);
