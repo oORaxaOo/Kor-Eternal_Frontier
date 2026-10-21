@@ -555,12 +555,12 @@ internal sealed class ColonySimulation
         // processed over subsequent steps rather than triggering an unbounded catch-up loop.
         _environmentAccumulatorSeconds = Math.Min(_environmentAccumulatorSeconds + deltaSeconds, 1_000_000f);
         int steps = 0;
-        while (_environmentAccumulatorSeconds >= 1f && steps < 8)
+        while (_environmentAccumulatorSeconds >= 1f - 1e-5f && steps < 8)
         {
             StepFluidLevels(FluidKind.Water);
             StepFluidLevels(FluidKind.Magma);
             StepTemperature();
-            _environmentAccumulatorSeconds -= 1f;
+            _environmentAccumulatorSeconds = Math.Max(0f, _environmentAccumulatorSeconds - 1f);
             steps++;
         }
     }
