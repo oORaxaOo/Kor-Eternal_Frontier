@@ -373,6 +373,7 @@ internal sealed class CitizenAgent(int id, string name, CellPosition position)
     public float Hunger { get; internal set; } = 100f;
     public float Fatigue { get; internal set; } = 100f;
     public float Stress { get; internal set; }
+    public PawnPersonality Personality { get; } = new();
     public float Mood => Math.Clamp((Hunger + Fatigue) * 0.5f - Stress * 0.5f, 0f, 100f);
     public float Happiness => Mood;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
@@ -698,7 +699,10 @@ internal sealed class ColonyEcosystem
 
             // Food is the highest-priority need. A citizen releases the job and its reserved output
             // slot before travelling, so neither worker capacity nor storage can become stranded.
-            if (citizen.Hunger < 30f && citizen.CanReceiveJob && citizen.State != CitizenState.MovingToStorage)
+            if (citizen.Hunger < 30f &&
+                (Grid.FindNearestResource(ResourceKind.Food, citizen.Position) is null ||
+                 ShouldPrioritizeNeed(citizen, PawnNeedKind.Hunger)) &&
+                citizen.CanReceiveJob && citizen.State != CitizenState.MovingToStorage)
             {
                 ReleaseAssignment(citizen);
                 var food = Grid.FindNearestResource(ResourceKind.Food, citizen.Position);
@@ -732,7 +736,7 @@ internal sealed class ColonyEcosystem
                 continue;
             }
 
-            if (citizen.Fatigue < 20f)
+            if (citizen.Fatigue < 20f && ShouldPrioritizeNeed(citizen, PawnNeedKind.Sleep))
             {
                 ReleaseAssignment(citizen);
                 citizen.State = CitizenState.Idle;
@@ -778,6 +782,29 @@ internal sealed class ColonyEcosystem
                 LastEvent = $"No route to workplace {job.Name}.";
             }
         }
+    }
+
+    /// <summary>
+    /// Uses the utility planner to arbitrate between urgent food and rest needs while preserving
+    /// the existing movement, job reservation and recovery state machine.
+    /// </summary>
+    private bool ShouldPrioritizeNeed(CitizenAgent citizen, PawnNeedKind requestedNeed)
+    {
+        var needs = new[]
+        {
+            new PawnNeed(PawnNeedKind.Hunger, citizen.Hunger / 100f),
+            new PawnNeed(PawnNeedKind.Sleep, citizen.Fatigue / 100f)
+        };
+        var offers = new List<SmartObjectOffer>(2);
+        if (citizen.Hunger < 30f && Grid.FindNearestResource(ResourceKind.Food, citizen.Position) is CellPosition foodPosition)
+            offers.Add(new SmartObjectOffer(1, "food-stockpile", "eat", PawnNeedKind.Hunger,
+                foodPosition, 0.65f));
+        if (citizen.Fatigue < 20f)
+            offers.Add(new SmartObjectOffer(2, "rest-recovery", "rest", PawnNeedKind.Sleep,
+                citizen.Position, 0.8f));
+
+        var decision = PawnUtilityPlanner.Choose(citizen.Position, needs, offers, citizen.Personality);
+        return decision?.Need == requestedNeed;
     }
 
     private static void UpdateStress(CitizenAgent citizen, float deltaSeconds)
