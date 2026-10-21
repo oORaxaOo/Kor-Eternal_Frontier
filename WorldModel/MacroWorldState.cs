@@ -57,6 +57,7 @@ internal sealed class MacroCaravanArrival
     public int TargetCellId { get; set; }
     public bool IsRefugeeWave { get; set; }
     public int Population { get; set; }
+    public int SourceCellId { get; set; }
     public int SpawnedVisitorCount { get; set; }
     public long NotificationId { get; set; }
     public Dictionary<MacroResource, float> Cargo { get; set; } = [];
@@ -196,6 +197,7 @@ internal sealed class MacroWorldState
     private readonly BackgroundWorldRouteScheduler _routeScheduler = new();
     private const int MacroCellsPerSlice = 128;
     private const int IncidentCellsPerSlice = 128;
+    private const int MaxPendingMacroArrivals = 256;
     public int Seed { get; set; }
 
     public static MacroWorldState Generate(int seed, RegionalWorldMap regions, IReadOnlyList<WorldEntityState> entities,
@@ -650,7 +652,7 @@ internal sealed class MacroWorldState
                 notificationId = AddNotification(SimulationTicks, "trade",
                     $"A relief caravan arrived at the Kor colony cell with {caravan.Cargo.Values.Sum():0} units of cargo.",
                     destination.CellId, true);
-                Arrivals.Add(new MacroCaravanArrival
+                QueueArrival(new MacroCaravanArrival
                 {
                     Id = caravan.Id, FactionId = caravan.FactionId, TargetCellId = destination.CellId,
                     NotificationId = notificationId, Cargo = new Dictionary<MacroResource, float>(caravan.Cargo)
@@ -692,10 +694,11 @@ internal sealed class MacroWorldState
         source.Population = Math.Max(0, source.Population - refugeeCount);
         long arrivalId = NextCaravanId++;
         long notificationId = AddNotification(SimulationTicks, "refugees", $"{refugeeCount} refugees fled macro cell {sourceCellId} toward the Kor colony. Decide whether to admit or dismiss them.", destination.CellId, true);
-        Arrivals.Add(new MacroCaravanArrival
+        QueueArrival(new MacroCaravanArrival
         {
             Id = arrivalId, FactionId = sourceFactionId, TargetCellId = destination.CellId,
-            IsRefugeeWave = true, Population = refugeeCount, NotificationId = notificationId
+            IsRefugeeWave = true, Population = refugeeCount, SourceCellId = sourceCellId,
+            NotificationId = notificationId
         });
     }
 
@@ -737,6 +740,52 @@ internal sealed class MacroWorldState
             AddNotification(SimulationTicks, "market", $"Global food price surged to {Market.FoodPrice:0.00}× as supplies tightened.", 0, true);
         if (previousAlloy > 0 && Market.AlloyPrice >= previousAlloy * 1.4f)
             AddNotification(SimulationTicks, "market", $"Alloy price surged to {Market.AlloyPrice:0.00}× amid industrial and military demand.", 0, true);
+    }
+
+    private void QueueArrival(MacroCaravanArrival arrival)
+    {
+        if (Arrivals.Count < MaxPendingMacroArrivals)
+        {
+            Arrivals.Add(arrival);
+            return;
+        }
+
+        // Do not let a blocked local map create an unbounded pending-event list.
+        // Preserve economy value in abstract cells, and return refugees to their source if the
+        // micro layer cannot accept more visitors yet.
+        if (arrival.IsRefugeeWave)
+        {
+            if (arrival.SourceCellId > 0 && arrival.SourceCellId <= Cells.Length)
+            {
+                ref var source = ref Cells[arrival.SourceCellId - 1];
+                source.Population = Math.Min(100_000, source.Population + arrival.Population);
+                AddNotification(SimulationTicks, "arrival_queue_full",
+                    $"Visitor queue is full; {arrival.Population} refugees remain abstract in macro cell {source.CellId}.",
+                    source.CellId, true);
+            }
+            return;
+        }
+
+        if (arrival.TargetCellId > 0 && arrival.TargetCellId <= Cells.Length)
+        {
+            ref var destination = ref Cells[arrival.TargetCellId - 1];
+            foreach (var item in arrival.Cargo)
+            {
+                switch (item.Key)
+                {
+                    case MacroResource.Food: destination.FoodCount += item.Value; break;
+                    case MacroResource.Wood: destination.WoodCount += item.Value; break;
+                    case MacroResource.Stone: destination.StoneCount += item.Value; break;
+                    case MacroResource.Alloy: destination.AlloyCount += item.Value; break;
+                    case MacroResource.Energy: destination.EnergyCount += item.Value; break;
+                    case MacroResource.Knowledge: destination.KnowledgeCount += item.Value; break;
+                    case MacroResource.Components: destination.ComponentsCount += item.Value; break;
+                }
+            }
+            AddNotification(SimulationTicks, "arrival_queue_full",
+                $"Visitor queue is full; caravan cargo was reconciled to abstract macro cell {destination.CellId}.",
+                destination.CellId, true);
+        }
     }
 
     private long AddNotification(long tick, string category, string message, int cellId, bool important)
@@ -817,7 +866,9 @@ internal sealed class MacroWorldState
         foreach (var arrival in Arrivals)
         {
             if (arrival.Id <= 0 || arrival.FactionId < 0 || arrival.TargetCellId < 1 || arrival.TargetCellId > CellCount ||
-                arrival.Population < 0 || arrival.SpawnedVisitorCount < 0 || arrival.SpawnedVisitorCount > arrival.Population && arrival.IsRefugeeWave ||
+                arrival.Population < 0 || arrival.SourceCellId < 0 || arrival.SourceCellId > CellCount ||
+                arrival.IsRefugeeWave && arrival.SourceCellId == 0 ||
+                arrival.SpawnedVisitorCount < 0 || arrival.SpawnedVisitorCount > arrival.Population && arrival.IsRefugeeWave ||
                 arrival.NotificationId <= 0 || arrival.Cargo is null ||
                 arrival.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
                 throw new InvalidDataException("Macro caravan arrival contains invalid values.");
