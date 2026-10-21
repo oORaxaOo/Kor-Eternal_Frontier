@@ -35,7 +35,7 @@ internal static class WorldSimulationChecks
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
 
-        var caravan = world.SpatialWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
+        var caravan = world.SpatialWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan && entity.Faction == "Kor");
         var destination = world.SpatialWorld.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
         Check(world.SpatialWorld.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 5, 1_000),
             "the canonical home ledger must fund a strategic shipment");
