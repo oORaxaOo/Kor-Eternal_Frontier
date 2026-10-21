@@ -471,6 +471,7 @@ internal sealed class ColonySimulation
             simulation._storyteller = ColonyStoryteller.Restore(snapshot.Storyteller);
         simulation._tickManager.RestoreTickCount((long)Math.Round(simulation.ElapsedSeconds * TickManager.TicksPerSecond));
         simulation.SyncThingGrid();
+        simulation.RefreshWealthMetrics();
         return simulation;
     }
 
