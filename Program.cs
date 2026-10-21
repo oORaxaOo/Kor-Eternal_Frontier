@@ -46,6 +46,7 @@ internal static class Program
             painter = new ColonyRenderer();
             menuPainter = new MainMenuRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
+            float previewMouseX = 385, previewMouseY = 350;
             using var scene = new Scene();
             host.Bind(scene, false);
             host.ViewManager.ConfigureSingleFullView();
@@ -61,7 +62,7 @@ internal static class Program
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -101,6 +102,8 @@ internal static class Program
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
+                previewMouseX = logicalMouse.X;
+                previewMouseY = logicalMouse.Y;
                 if (pendingWheelY != 0 && gameStarted)
                 {
                     float oldZoom = zoom;
