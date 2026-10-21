@@ -31,7 +31,7 @@ internal sealed class ColonyRenderer : IDisposable
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource,
-        float mouseScreenX, float mouseScreenY)
+        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -45,6 +45,8 @@ internal sealed class ColonyRenderer : IDisposable
             DrawPlacementPreview(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, mouseScreenX, mouseScreenY);
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawFactionButton(canvas, factionDashboardOpen);
+        if (factionDashboardOpen) DrawFactionDashboard(canvas, spatialWorld, selectedFactionName, factionTab);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -452,6 +454,134 @@ internal sealed class ColonyRenderer : IDisposable
         }
     }
 
+
+    private void DrawFactionButton(SKCanvas canvas, bool isOpen)
+    {
+        _fill.Color = isOpen ? new SKColor(87, 28, 35) : new SKColor(28, 35, 32);
+        canvas.DrawRoundRect(new SKRect(955, 8, 1005, 34), 3, 3, _fill);
+        _line.Color = isOpen ? Crimson : Border;
+        canvas.DrawRoundRect(new SKRect(955, 8, 1005, 34), 3, 3, _line);
+        _text.Color = isOpen ? Gold : TextColor;
+        canvas.DrawText("FACTIONS", 980, 25, SKTextAlign.Center, _smallFont, _text);
+    }
+
+    private void DrawFactionDashboard(SKCanvas canvas, ContinuousWorldState world, string? selectedFactionName, int tab)
+    {
+        _fill.Color = new SKColor(5, 8, 9, 238);
+        canvas.DrawRect(new SKRect(35, 70, 1065, 642), _fill);
+        _line.Color = new SKColor(115, 45, 51);
+        _line.StrokeWidth = 2;
+        canvas.DrawRect(new SKRect(35, 70, 1065, 642), _line);
+        _text.Color = Crimson;
+        canvas.DrawText("STRATEGIC FACTION INTELLIGENCE", 58, 101, SKTextAlign.Left, _titleFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"DIRECTOR CYCLE · WORLD T+{world.ClockSeconds / 60:0.0} MIN · {world.FactionIntelligence.Count} FACTIONS", 60, 121, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "CLOSE ×", 970, 80, 76, 26);
+
+        _fill.Color = Panel;
+        canvas.DrawRoundRect(new SKRect(55, 138, 365, 615), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(385, 138, 1045, 615), 4, 4, _fill);
+        _line.Color = Border;
+        canvas.DrawRoundRect(new SKRect(55, 138, 365, 615), 4, 4, _line);
+        canvas.DrawRoundRect(new SKRect(385, 138, 1045, 615), 4, 4, _line);
+        _text.Color = Gold;
+        canvas.DrawText("FACTION ROSTER", 70, 161, SKTextAlign.Left, _headingFont, _text);
+
+        var profiles = world.FactionIntelligence.OrderBy(profile => profile.Faction == "Kor" ? 0 : 1)
+            .ThenBy(profile => profile.Faction, StringComparer.Ordinal).ToArray();
+        int rowY = 190;
+        foreach (var profile in profiles.Take(10))
+        {
+            bool selected = profile.Faction == selectedFactionName;
+            _fill.Color = selected ? new SKColor(77, 28, 35) : new SKColor(24, 31, 30);
+            canvas.DrawRoundRect(new SKRect(66, rowY - 17, 354, rowY + 22), 3, 3, _fill);
+            _line.Color = selected ? Crimson : Border;
+            canvas.DrawRoundRect(new SKRect(66, rowY - 17, 354, rowY + 22), 3, 3, _line);
+            _text.Color = selected ? Gold : TextColor;
+            canvas.DrawText($"{(profile.Faction == "Kor" ? "◆" : "◇")} {profile.Faction}", 77, rowY, SKTextAlign.Left, _normalFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText($"{profile.TerritoryCount} sites · threat {profile.ThreatLevel}/100", 77, rowY + 15, SKTextAlign.Left, _smallFont, _muted);
+            rowY += 43;
+        }
+
+        var active = profiles.FirstOrDefault(profile => profile.Faction == selectedFactionName) ?? profiles.FirstOrDefault();
+        if (active == null)
+        {
+            _text.Color = TextColor;
+            canvas.DrawText("No faction intelligence available.", 410, 180, SKTextAlign.Left, _normalFont, _text);
+            return;
+        }
+
+        _text.Color = Gold;
+        canvas.DrawText(active.Faction.ToUpperInvariant(), 410, 170, SKTextAlign.Left, _titleFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"STANCE TOWARD KOR: {active.StanceToward()}   ·   STRATEGY: {active.Strategy}", 412, 191, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "OVERVIEW", 410, 207, 108, 26, tab == 0);
+        DrawButton(canvas, "DIPLOMACY", 526, 207, 108, 26, tab == 1);
+        DrawButton(canvas, "THREAT / AI", 642, 207, 108, 26, tab == 2);
+
+        if (tab == 1)
+        {
+            _text.Color = Gold;
+            canvas.DrawText("RELATIONSHIP MATRIX", 410, 260, SKTextAlign.Left, _headingFont, _text);
+            int y = 286;
+            foreach (var relation in active.Relationships.OrderByDescending(item => item.Score).Take(8))
+            {
+                _text.Color = TextColor;
+                canvas.DrawText(relation.OtherFaction, 412, y, SKTextAlign.Left, _normalFont, _text);
+                _text.Color = relation.Score >= 30 ? new SKColor(125, 220, 155) : relation.Score <= -30 ? new SKColor(255, 110, 110) : TextColor;
+                canvas.DrawText($"{relation.Score:+#;-#;0}/100", 660, y, SKTextAlign.Left, _normalFont, _text);
+                y += 24;
+                foreach (var modifier in relation.Modifiers.Take(2))
+                {
+                    _muted.Color = MutedColor;
+                    canvas.DrawText($"· {modifier.Cause}: {modifier.Value:+#;-#;0}", 430, y, SKTextAlign.Left, _smallFont, _muted);
+                    y += 16;
+                }
+                y += 5;
+                if (y > 575) break;
+            }
+        }
+        else if (tab == 2)
+        {
+            _text.Color = Gold;
+            canvas.DrawText("STRATEGIC DIRECTOR", 410, 260, SKTextAlign.Left, _headingFont, _text);
+            _text.Color = TextColor;
+            canvas.DrawText($"Current plan: {active.Strategy}", 412, 292, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Aggression: {active.Aggression}/100", 412, 320, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"War / reorientation pressure: {active.ThreatLevel}/100", 412, 348, SKTextAlign.Left, _normalFont, _text);
+            DrawThreatMeter(canvas, 412, 365, 600, active.ThreatLevel);
+            _muted.Color = MutedColor;
+            string assessment = active.ThreatLevel >= 70 ? "HIGH · strategic posture is elevated" :
+                active.ThreatLevel >= 40 ? "MODERATE · monitor border and military changes" :
+                "LOW · no elevated strategic pressure detected";
+            canvas.DrawText(assessment, 412, 405, SKTextAlign.Left, _normalFont, _muted);
+            canvas.DrawText($"Last director evaluation: T+{active.LastDecisionAt / 60:0.0} min", 412, 432, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Threat is an estimate, not a declaration of war.", 412, 459, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            _text.Color = Gold;
+            canvas.DrawText("MACROECONOMICS", 410, 260, SKTextAlign.Left, _headingFont, _text);
+            _text.Color = TextColor;
+            canvas.DrawText($"Territories / settlements: {active.TerritoryCount}", 412, 291, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Treasury estimate: {active.Treasury:N0} K-Credits", 412, 318, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Military power estimate: {active.MilitaryPower:N0}", 412, 345, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Relationship with Kor: {active.RelationshipTo("Kor"):+#;-#;0}/100", 412, 372, SKTextAlign.Left, _normalFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText("Values are generated simulation estimates and update with the world.", 412, 410, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Diplomatic actions are not enabled yet; this panel is read-only.", 412, 430, SKTextAlign.Left, _smallFont, _muted);
+        }
+    }
+
+    private void DrawThreatMeter(SKCanvas canvas, float x, float y, float width, int value)
+    {
+        _fill.Color = new SKColor(40, 47, 44);
+        canvas.DrawRoundRect(new SKRect(x, y, x + width, y + 14), 3, 3, _fill);
+        _fill.Color = value >= 70 ? Crimson : value >= 40 ? Gold : new SKColor(75, 155, 105);
+        canvas.DrawRoundRect(new SKRect(x, y, x + width * Math.Clamp(value, 0, 100) / 100f, y + 14), 3, 3, _fill);
+    }
+
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
         PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
@@ -472,6 +602,7 @@ internal sealed class ColonyRenderer : IDisposable
         _muted.Color = MutedColor;
         canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "SYMBOLIC COLONY GRID / LIVE SIMULATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
 
+        DrawFactionButton(canvas, false);
         _fill.Color = new SKColor(28, 35, 32);
         canvas.DrawRoundRect(new SKRect(1010, 10, 1084, 31), 3, 3, _fill);
         _text.Color = new SKColor(125, 220, 155);
