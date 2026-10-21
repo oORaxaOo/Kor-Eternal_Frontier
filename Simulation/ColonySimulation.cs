@@ -1811,10 +1811,12 @@ internal sealed class ColonySimulation
             .ThenBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f))
             .ThenBy(d => d.Id)
             .FirstOrDefault();
-        if (deposit == null) return;
-        if (!TryFindPath(worker, deposit.Cell, out var route)) return;
+        if (deposit == null) return false;
+        if (!TryFindPath(worker, deposit.Cell, out var route)) return false;
+        if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, 1, 1)) return false;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
         Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} for a priority {priorityByResource[deposit.Resource]} order.";
+        return true;
     }
 
     private bool IsDepositReserved(int depositId, int exceptWorkerId) =>
