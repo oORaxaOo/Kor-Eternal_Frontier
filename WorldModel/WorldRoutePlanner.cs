@@ -64,7 +64,7 @@ internal static class WorldRoutePlanner
             y >= item.Y * RegionalWorldMap.RegionSize && y < (item.Y + 1) * RegionalWorldMap.RegionSize);
         string biome = region?.Biome.ToString() ?? "Plains";
         return biome.Contains("Mountain", StringComparison.OrdinalIgnoreCase) ? 2.4 :
-               biome.Contains("Swamp", StringComparison.OrdinalIgnoreCase) ? 1.9 :
+               biome.Contains("Wetland", StringComparison.OrdinalIgnoreCase) ? 1.9 :
                biome.Contains("Desert", StringComparison.OrdinalIgnoreCase) ? 1.45 :
                biome.Contains("Forest", StringComparison.OrdinalIgnoreCase) ? 1.25 : 1.0;
     }
