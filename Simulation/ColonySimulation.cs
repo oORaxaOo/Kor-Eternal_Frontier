@@ -97,6 +97,7 @@ internal sealed class WorkerTask(ColonyTaskKind kind, CellPosition target, List<
     public int TargetId { get; set; }
     public float WorkDone { get; set; }
     public int DepositId { get; set; }
+    public PawnJobTracker JobTracker { get; } = new(kind, target);
 }
 
 internal sealed class ProductionOrder(int id, int workstationId, float workRequired)
@@ -124,10 +125,16 @@ internal sealed class ColonySimulation
     private const int CarryCapacity = 5;
     private const int MaxCachedPaths = 8_192;
     private readonly Dictionary<PathCacheKey, List<CellPosition>> _pathCache = [];
+    private readonly TickManager _tickManager = new();
+    private readonly ThingGrid _thingGrid = new();
     private readonly Queue<PathCacheKey> _pathCacheOrder = new();
     internal int PathfindingSearches { get; private set; }
     internal int PathCacheHits { get; private set; }
     internal int CachedPathCount => _pathCache.Count;
+    internal TickManager Clock => _tickManager;
+    internal ThingGrid Things => _thingGrid;
+    public float SimulationSpeed => _tickManager.SpeedMultiplier;
+    public void SetSimulationSpeed(float multiplier) => _tickManager.SetSpeed(multiplier);
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
     private readonly List<ExcavationOrder> _excavationOrders = [];
@@ -1369,24 +1376,67 @@ internal sealed class ColonySimulation
         Message = $"{worker.Name} moving to ({x}, {y}).";
     }
 
+    /// <summary>
+    /// Advances simulation time through deterministic 60 Hz ticks, independent from render FPS.
+    /// Movement and exposure are tick-driven; planning/economy run at 10 Hz; social and global
+    /// systems are staggered to avoid repeatedly scanning the whole colony every frame.
+    /// </summary>
     public void Step(float deltaSeconds)
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
-        ElapsedSeconds += deltaSeconds;
-        StepEnvironment(deltaSeconds);
-        StepEcosystem(deltaSeconds);
-        StepEnvironmentalExposure(deltaSeconds);
-        AssignJobs();
-
-        foreach (var worker in _workers)
+        float workCycleElapsed = 0f;
+        _tickManager.Advance(deltaSeconds, tick =>
         {
-            if (worker.Task == null) continue;
-            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
-                continue;
-            AdvanceWorker(worker, deltaSeconds);
-        }
-        StepSocialRelationships(deltaSeconds);
-        StepStoryteller();
+            float dt = tick.DeltaSeconds;
+            ElapsedSeconds += dt;
+            workCycleElapsed += dt;
+
+            // Fluid/thermal simulation already owns its own accumulator, so it can be called safely
+            // at tick cadence while doing expensive environment work only when due.
+            StepEnvironment(dt);
+            StepEnvironmentalExposure(dt);
+
+            if (tick.IsWorkCycle)
+            {
+                StepEcosystem(workCycleElapsed);
+                workCycleElapsed = 0f;
+                AssignJobs();
+            }
+
+            foreach (var worker in _workers)
+            {
+                if (worker.Task == null) continue;
+                if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
+                    continue;
+                AdvanceWorker(worker, dt);
+            }
+
+            if (tick.IsRare)
+                StepSocialRelationships(TickManager.RareInterval / (float)TickManager.TicksPerSecond);
+            if (tick.IsGlobal)
+                StepStoryteller();
+            SyncThingGrid();
+        });
+    }
+
+    private void SyncThingGrid()
+    {
+        var things = new List<Thing>(_workers.Count + _objects.Count + _deposits.Count + 32);
+        foreach (var worker in _workers)
+            things.Add(new PawnThing(worker.Id, new CellPosition(
+                Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1))));
+        foreach (var item in _objects)
+            things.Add(new BuildingThing(item.Id, item.Kind, item.Origin));
+        foreach (var deposit in _deposits.Where(item => item.Amount > 0))
+            things.Add(new ResourceThing(deposit.Id, deposit.Resource, deposit.Amount, deposit.Cell));
+        for (int y = 0; y < Height; y++)
+            for (int x = 0; x < Width; x++)
+            {
+                var architecture = _tiles[x, y].Architecture;
+                if (architecture != ArchitectureKind.None)
+                    things.Add(new ArchitectureThing(new CellPosition(x, y), architecture));
+            }
+        _thingGrid.Rebuild(things);
     }
 
     private void StepStoryteller()
@@ -1718,6 +1768,9 @@ internal sealed class ColonySimulation
             return;
         }
 
+        if (task.JobTracker.CurrentToil?.Kind == PawnToilKind.MoveTo)
+            task.JobTracker.AdvanceToNextToil();
+
         switch (task.Kind)
         {
             case ColonyTaskKind.Move:
@@ -1742,6 +1795,7 @@ internal sealed class ColonySimulation
                 WorkOnExcavation(worker, task, deltaSeconds);
                 break;
         }
+        if (!ReferenceEquals(worker.Task, task)) task.JobTracker.Finish();
     }
 
     private void CompleteGather(ColonyWorker worker, WorkerTask task)
@@ -1935,36 +1989,8 @@ internal sealed class ColonySimulation
         }
 
         PathfindingSearches++;
-        var previous = new CellPosition?[Width, Height];
-        var visited = new bool[Width, Height];
-        var queue = new Queue<CellPosition>();
-        queue.Enqueue(start);
-        visited[start.X, start.Y] = true;
-
-        CellPosition[] directions = [new(0, -1), new(1, 0), new(0, 1), new(-1, 0)];
-        while (queue.Count > 0 && !visited[target.X, target.Y])
-        {
-            var current = queue.Dequeue();
-            foreach (var direction in directions)
-            {
-                var next = new CellPosition(current.X + direction.X, current.Y + direction.Y);
-                if (!InBounds(next.X, next.Y) || visited[next.X, next.Y] || !IsWalkable(next)) continue;
-                visited[next.X, next.Y] = true;
-                previous[next.X, next.Y] = current;
-                queue.Enqueue(next);
-            }
-        }
-        if (!visited[target.X, target.Y]) return false;
-
-        var cursor = target;
-        while (cursor != start)
-        {
-            path.Add(cursor);
-            var prior = previous[cursor.X, cursor.Y];
-            if (!prior.HasValue) return false;
-            cursor = prior.Value;
-        }
-        path.Reverse();
+        if (!AStarPathfinder.TryFindPath(Width, Height, start, target, IsWalkable, MovementCostAt, out path))
+            return false;
         StoreCachedPath(key, path);
         return true;
     }
@@ -1992,6 +2018,19 @@ internal sealed class ColonySimulation
     {
         _pathCache.Clear();
         _pathCacheOrder.Clear();
+    }
+
+    private int MovementCostAt(CellPosition cell)
+    {
+        var tile = _tiles[cell.X, cell.Y];
+        return tile.Architecture switch
+        {
+            ArchitectureKind.Path => 1,
+            ArchitectureKind.Floor => 2,
+            ArchitectureKind.Door => 3,
+            ArchitectureKind.Conduit => 2,
+            _ => 2
+        };
     }
 
     private bool IsWalkable(CellPosition cell)
