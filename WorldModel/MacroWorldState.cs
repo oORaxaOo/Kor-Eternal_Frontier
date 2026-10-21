@@ -176,7 +176,7 @@ internal sealed class MacroWorldState
     public int MacroTurnsProcessed { get; set; }
     public int MacroTurnsScheduled { get; set; }
     public int MacroTurnCursor { get; set; }
-    public MacroTurnPhase MacroTurnPhase { get; set; }
+    public MacroTurnPhase TurnPhase { get; set; }
     public MacroMarketAccumulator MarketTurnAccumulator { get; set; } = new();
     public Dictionary<int, int> TurnHungryCellIds { get; set; } = [];
     public Dictionary<int, int> TurnBestDonorCellIds { get; set; } = [];
@@ -333,13 +333,13 @@ internal sealed class MacroWorldState
         int remaining = Math.Max(1, cellBudget);
         while (remaining > 0)
         {
-            if (MacroTurnPhase == MacroTurnPhase.Idle)
+            if (TurnPhase == MacroTurnPhase.Idle)
             {
                 if (MacroTurnsProcessed >= MacroTurnsScheduled) break;
                 BeginMacroTurn();
             }
 
-            if (MacroTurnPhase == MacroTurnPhase.Economy)
+            if (TurnPhase == MacroTurnPhase.Economy)
             {
                 int index = MacroTurnCursor;
                 ProcessMacroCell(index, continuous);
@@ -350,12 +350,12 @@ internal sealed class MacroWorldState
                 if (MacroTurnCursor >= Cells.Length)
                 {
                     MacroTurnCursor = 0;
-                    MacroTurnPhase = MacroTurnPhase.ReliefScan;
+                    TurnPhase = MacroTurnPhase.ReliefScan;
                 }
                 continue;
             }
 
-            if (MacroTurnPhase == MacroTurnPhase.ReliefScan)
+            if (TurnPhase == MacroTurnPhase.ReliefScan)
             {
                 ConsiderReliefDonor(MacroTurnCursor);
                 MacroTurnCursor++;
@@ -368,7 +368,7 @@ internal sealed class MacroWorldState
                 continue;
             }
 
-            throw new InvalidDataException($"Unknown macro turn phase: {MacroTurnPhase}.");
+            throw new InvalidDataException($"Unknown macro turn phase: {TurnPhase}.");
         }
     }
 
@@ -380,7 +380,7 @@ internal sealed class MacroWorldState
         TurnBestDonorCellIds.Clear();
         TurnBestDonorDistances.Clear();
         MacroTurnCursor = 0;
-        MacroTurnPhase = MacroTurnPhase.Economy;
+        TurnPhase = MacroTurnPhase.Economy;
     }
 
     private void CompleteMacroTurn()
@@ -392,7 +392,7 @@ internal sealed class MacroWorldState
         TurnBestDonorCellIds.Clear();
         TurnBestDonorDistances.Clear();
         MacroTurnsProcessed++;
-        MacroTurnPhase = MacroTurnPhase.Idle;
+        TurnPhase = MacroTurnPhase.Idle;
     }
 
     private void ProcessMacroCell(int index, ContinuousWorldState continuous)
@@ -740,7 +740,7 @@ internal sealed class MacroWorldState
             MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn ||
             !Enum.IsDefined(MacroTurnPhase) || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount ||
             (MacroTurnCursor > 0 && MacroTurnsProcessed >= MacroTurnsScheduled) ||
-            (MacroTurnPhase != MacroTurnPhase.Idle && MacroTurnsProcessed >= MacroTurnsScheduled) ||
+            (TurnPhase != MacroTurnPhase.Idle && MacroTurnsProcessed >= MacroTurnsScheduled) ||
             (MacroTurnPhase == MacroTurnPhase.Idle && MacroTurnCursor != 0) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Math.Max(Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max(), Arrivals.Select(a => a.Id).DefaultIfEmpty(0).Max()))
