@@ -215,9 +215,11 @@ internal sealed class ColonySimulation
             int x = random.Next(1, Width - 1), y = random.Next(1, Height - 1);
             if (x is >= 12 and <= 22 && y is >= 5 and <= 16) continue;
             if (x is >= 8 and <= 19 && y is >= 7 and <= 14) continue;
+            if (x is >= 22 and <= 27 && y is >= 14 and <= 20) continue;
             _tiles[x, y].Terrain = TerrainKind.Rock;
             if (random.NextDouble() > 0.55 && x + 1 < Width && y + 1 < Height &&
-                !(x + 1 is >= 12 and <= 22 && y + 1 is >= 5 and <= 16))
+                !(x + 1 is >= 12 and <= 22 && y + 1 is >= 5 and <= 16) &&
+                !(x + 1 is >= 22 and <= 27 && y is >= 14 and <= 20))
                 _tiles[x + 1, y].Terrain = TerrainKind.Rock;
         }
 
