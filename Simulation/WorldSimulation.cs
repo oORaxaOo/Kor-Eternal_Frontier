@@ -1,4 +1,5 @@
 using KorTheBlight.WorldModel;
+using KorTheBlight.Simulation.Research;
 
 namespace KorTheBlight.Simulation;
 
@@ -16,12 +17,17 @@ internal sealed class WorldSimulation
     public double ElapsedSeconds { get; private set; }
     public bool IsPaused { get; set; }
     public float SpeedMultiplier { get; private set; } = 1f;
+    public ResearchManager ResearchManager { get; private set; } = null!;
 
     public WorldSimulation(int seed)
     {
         Colony = new ColonySimulation(seed);
         SpatialWorld = ContinuousWorldState.Generate(seed);
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
+        var database = new DatabaseBootstrap();
+        string dataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "data");
+        database.LoadOrGenerate(dataDirectory);
+        ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
     }
 
     /// <summary>Advances the unified simulation clock. deltaSeconds is real elapsed time.</summary>
@@ -93,6 +99,9 @@ internal sealed class WorldSimulation
         Colony = session.Colony;
         SpatialWorld = session.ContinuousWorld;
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
+        var database = new DatabaseBootstrap();
+        database.LoadOrGenerate(Path.Combine(Directory.GetCurrentDirectory(), "data"));
+        ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
         ElapsedSeconds = SpatialWorld.ClockSeconds;
         _simulationAccumulator = 0f;
     }
