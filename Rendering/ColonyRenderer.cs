@@ -585,7 +585,23 @@ internal sealed class ColonyRenderer : IDisposable
         _line.Color = Gold;
         canvas.DrawRoundRect(new SKRect(14, 476, 374, 646), 5, 5, _line);
         _text.Color = Gold;
-        canvas.DrawText($"{worker.Name}  /  COLONIST INSPECTOR", 24, 497, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText(worker.IsExternalVisitor
+            ? $"{worker.Name}  /  VISITOR"
+            : $"{worker.Name}  /  COLONIST INSPECTOR", 24, 497, SKTextAlign.Left, _headingFont, _text);
+        if (worker.IsExternalVisitor)
+        {
+            DrawButton(canvas, worker.TradeCargo.Count == 0 ? "ADMIT" : "TRADE", 22, 506, 100, 22);
+            DrawButton(canvas, "DISMISS", 128, 506, 100, 22);
+            _text.Color = TextColor;
+            canvas.DrawText($"Faction: {worker.Faction}", 24, 552, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Cargo: {(worker.TradeCargo.Count == 0 ? "none" : string.Join(", ", worker.TradeCargo.Select(item => $"{item.Key} {item.Value}")))}", 24, 574, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Status: {(worker.IsLeaving ? "Leaving" : worker.Task is null ? "Waiting at stockpile" : "Entering colony")}", 24, 596, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText(worker.TradeCargo.Count == 0
+                ? "Admit this visitor to grow the colony, or dismiss them."
+                : "Trade exchanges cargo at current macro market prices.", 24, 624, SKTextAlign.Left, _smallFont, _muted);
+            return;
+        }
         DrawButton(canvas, "STATUS", 22, 506, 100, 22, tab == 0);
         DrawButton(canvas, "SOCIAL", 128, 506, 100, 22, tab == 1);
         _text.Color = TextColor;
