@@ -31,7 +31,7 @@ internal sealed class ColonyRenderer : IDisposable
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource,
-        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab)
+        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab, int workMatrixPage)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -50,7 +50,7 @@ internal sealed class ColonyRenderer : IDisposable
         if (!worldView && !workMatrixOpen && simulation.SelectedWorkerId.HasValue)
             DrawWorkerInspector(canvas, simulation, workerInspectorTab);
         if (factionDashboardOpen) DrawFactionDashboard(canvas, spatialWorld, selectedFactionName, factionTab);
-        if (workMatrixOpen) DrawWorkMatrix(canvas, simulation);
+        if (workMatrixOpen) DrawWorkMatrix(canvas, simulation, workMatrixPage);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -518,7 +518,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
     }
 
-    private void DrawWorkMatrix(SKCanvas canvas, ColonySimulation simulation)
+    private void DrawWorkMatrix(SKCanvas canvas, ColonySimulation simulation, int page)
     {
         _fill.Color = new SKColor(8, 11, 12, 250);
         canvas.DrawRoundRect(new SKRect(130, 112, 970, 624), 8, 8, _fill);
@@ -536,7 +536,7 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawText(categories[i].ToString().ToUpperInvariant(), columnX[i] + 32, 212, SKTextAlign.Center, _smallFont, _text);
         }
         int rowY = 244;
-        foreach (var worker in simulation.Workers.Take(9))
+        foreach (var worker in simulation.Workers.Skip(page * 9).Take(9))
         {
             _text.Color = TextColor;
             canvas.DrawText(worker.Name, 160, rowY + 17, SKTextAlign.Left, _normalFont, _text);
@@ -548,7 +548,9 @@ internal sealed class ColonyRenderer : IDisposable
             rowY += 38;
         }
         _muted.Color = MutedColor;
-        canvas.DrawText("Priorities are saved with the colony. Job assignment still respects material availability, needs and active reservations.", 155, 590, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText($"Page {page + 1}/{Math.Max(1, (simulation.Workers.Count + 8) / 9)} · priorities persist with the colony", 155, 598, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "PREV", 710, 584, 60, 28, page == 0);
+        DrawButton(canvas, "NEXT", 778, 584, 60, 28, (page + 1) * 9 >= simulation.Workers.Count);
         DrawButton(canvas, "CLOSE", 850, 584, 92, 28);
     }
 
