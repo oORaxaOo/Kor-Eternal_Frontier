@@ -585,8 +585,10 @@ internal sealed class MacroWorldState
 
     public void Validate()
     {
+        // Migration for saves created before macro turns and route requests became slice-based.
+        if (MacroTurnsScheduled < MacroTurnsProcessed) MacroTurnsScheduled = MacroTurnsProcessed;
         if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Arrivals is null || ConsumedArrivalIds is null || Market is null || Research is null ||
-            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > SimulationTicks / TicksPerMacroTurn || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
+            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount || (MacroTurnCursor > 0 && MacroTurnsProcessed >= MacroTurnsScheduled) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Math.Max(Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max(), Arrivals.Select(a => a.Id).DefaultIfEmpty(0).Max()))
             throw new InvalidDataException("Macro world data has invalid dimensions or counters.");
@@ -604,8 +606,12 @@ internal sealed class MacroWorldState
         foreach (var caravan in Caravans)
         {
             if (caravan.Id <= 0 || caravan.FactionId <= 0 || !float.IsFinite(caravan.X) || !float.IsFinite(caravan.Y) ||
+                caravan.X < 0 || caravan.X >= Columns || caravan.Y < 0 || caravan.Y >= Rows ||
                 !float.IsFinite(caravan.TravelSpeed) || caravan.TravelSpeed <= 0 || caravan.TargetCellId < 1 || caravan.TargetCellId > CellCount ||
-                caravan.Cargo is null || caravan.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
+                caravan.Cargo is null || caravan.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0) ||
+                caravan.RouteNodes is null || caravan.RouteIndex < 0 || caravan.RouteIndex > caravan.RouteNodes.Count ||
+                caravan.RouteReady && (caravan.RoutePending || caravan.RouteNodes.Count == 0) ||
+                caravan.RouteNodes.Any(node => node.X < 0 || node.X >= Columns || node.Y < 0 || node.Y >= Rows))
                 throw new InvalidDataException("Macro caravan contains invalid values.");
         }
         foreach (var arrival in Arrivals)
