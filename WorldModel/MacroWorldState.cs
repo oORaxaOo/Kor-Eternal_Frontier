@@ -566,6 +566,9 @@ internal sealed class MacroWorldState
             float amount = Math.Min(100f, Math.Max(0f, source.FoodCount - source.Population * 0.01f));
             if (amount <= 0) continue;
             source.FoodCount -= amount;
+            // Market supply is accumulated during the economy slice; account for relief cargo
+            // removed from source inventories before finalizing the turn's dynamic prices.
+            MarketTurnAccumulator.FoodSupply = Math.Max(0d, MarketTurnAccumulator.FoodSupply - amount);
             Caravans.Add(new MacroCaravanState
             {
                 Id = NextCaravanId++, FactionId = factionId, X = source.X, Y = source.Y,
