@@ -536,7 +536,7 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawText(categories[i].ToString().ToUpperInvariant(), columnX[i] + 32, 212, SKTextAlign.Center, _smallFont, _text);
         }
         int rowY = 244;
-        foreach (var worker in simulation.Workers.Take(12))
+        foreach (var worker in simulation.Workers.Take(9))
         {
             _text.Color = TextColor;
             canvas.DrawText(worker.Name, 160, rowY + 17, SKTextAlign.Left, _normalFont, _text);
