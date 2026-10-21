@@ -42,10 +42,11 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 6;
+    public int SchemaVersion { get; set; } = 7;
     public long SocialTick { get; set; }
     public SocialNetworkSnapshot? SocialNetwork { get; set; }
     public IncidentManagerSnapshot? IncidentManager { get; set; }
+    public ColonyStorytellerSnapshot? Storyteller { get; set; }
     public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
@@ -69,10 +70,12 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4 && SchemaVersion != 5 && SchemaVersion != 6) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4 && SchemaVersion != 5 && SchemaVersion != 6 && SchemaVersion != 7) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (SocialTick < 0) throw new InvalidDataException("Colony save contains an invalid social simulation tick.");
         if (SchemaVersion >= 4 && (SocialNetwork is null || IncidentManager is null))
             throw new InvalidDataException("Current colony save is missing social or incident state.");
+        if (SchemaVersion >= 7 && Storyteller is null)
+            throw new InvalidDataException("Current colony save is missing storyteller state.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
@@ -274,6 +277,7 @@ internal sealed class ColonySnapshot
             var residents = workerIds.ToHashSet();
             _ = SocialRelationshipNetwork.Restore(SocialNetwork!, residents);
             _ = KorTheBlight.Simulation.IncidentManager.Restore(IncidentManager!, residents);
+            if (SchemaVersion >= 7) _ = ColonyStoryteller.Restore(Storyteller!);
         }
 
         if (SelectedWorkerId.HasValue && !workerIds.Contains(SelectedWorkerId.Value))

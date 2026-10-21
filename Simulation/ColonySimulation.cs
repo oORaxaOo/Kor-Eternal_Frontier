@@ -143,6 +143,7 @@ internal sealed class ColonySimulation
     private readonly Dictionary<int, int> _gardenJobsByObject = [];
     private SocialRelationshipNetwork _socialRelationships = new();
     private IncidentManager _incidentManager = new();
+    private ColonyStoryteller _storyteller = new();
     private long _socialTick;
     private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
@@ -160,6 +161,7 @@ internal sealed class ColonySimulation
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
+    public ColonyStoryteller Storyteller => _storyteller;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<ExcavationOrder> ExcavationOrders => _excavationOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
@@ -224,10 +226,11 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 6,
+            SchemaVersion = 7,
             SocialTick = _socialTick,
             SocialNetwork = _socialRelationships.CaptureSnapshot(),
             IncidentManager = _incidentManager.CaptureSnapshot(),
+            Storyteller = _storyteller.CaptureSnapshot(),
             ElapsedSeconds = ElapsedSeconds,
             EnvironmentAccumulatorSeconds = _environmentAccumulatorSeconds,
             Message = Message,
@@ -404,6 +407,8 @@ internal sealed class ColonySimulation
             simulation._socialRelationships = SocialRelationshipNetwork.Restore(snapshot.SocialNetwork, residentIds);
         if (snapshot.IncidentManager != null)
             simulation._incidentManager = IncidentManager.Restore(snapshot.IncidentManager, residentIds);
+        if (snapshot.Storyteller != null)
+            simulation._storyteller = ColonyStoryteller.Restore(snapshot.Storyteller);
         return simulation;
     }
 
@@ -1251,6 +1256,15 @@ internal sealed class ColonySimulation
             AdvanceWorker(worker, deltaSeconds);
         }
         StepSocialRelationships(deltaSeconds);
+        StepStoryteller();
+    }
+
+    private void StepStoryteller()
+    {
+        float averageStress = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Stress);
+        float averageHunger = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Hunger);
+        _storyteller.Step(_socialTick, new StorytellerColonyState(
+            _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger));
     }
 
 
