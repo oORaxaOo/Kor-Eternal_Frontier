@@ -47,8 +47,9 @@ internal static class MacroWorldChecks
         macro.Validate();
 
         int routeFaction = macro.FactionIds.Values.OrderBy(id => id).First();
-        int routeTargetCellId = Enumerable.Range(1, MacroWorldState.CellCount)
+        int routeTargetCellId = Enumerable.Range(1, MacroWorldState.CellCount).Reverse()
             .First(cellId => macro.Caravans.All(item => item.TargetCellId != cellId));
+        var expectedTargetCell = macro.Cells[routeTargetCellId - 1];
         macro.Caravans.Add(new MacroCaravanState
         {
             Id = macro.NextCaravanId++, FactionId = routeFaction, X = 0, Y = 0,
@@ -73,7 +74,7 @@ internal static class MacroWorldChecks
         Check(dispatchedCaravan.RouteReady && dispatchedCaravan.RouteNodes.Count > 1,
             "The world coordinator must apply completed A* routes back to the live caravan.");
         Check(dispatchedCaravan.RouteNodes[0] == new WorldRouteNode(0, 0) &&
-              dispatchedCaravan.RouteNodes[^1] == new WorldRouteNode(MacroWorldState.Columns - 1, MacroWorldState.Rows - 1),
+              dispatchedCaravan.RouteNodes[^1] == new WorldRouteNode(expectedTargetCell.X, expectedTargetCell.Y),
             "The live caravan route must preserve its correct start and target.");
         macro.Validate();
 
