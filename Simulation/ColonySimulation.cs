@@ -151,6 +151,9 @@ internal sealed class ColonySimulation
     private SocialRelationshipNetwork _socialRelationships = new();
     private IncidentManager _incidentManager = new();
     private ColonyStoryteller _storyteller = new();
+    private readonly WorkPriorityMatrix _workPriorities = new();
+    private readonly ReservationManager _reservations = new();
+    private readonly ColonyWealth _wealth = new();
     private long _socialTick;
     private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
@@ -169,6 +172,9 @@ internal sealed class ColonySimulation
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public ColonyStoryteller Storyteller => _storyteller;
+    public WorkPriorityMatrix WorkPriorities => _workPriorities;
+    public ReservationManager Reservations => _reservations;
+    public ColonyWealthSnapshot Wealth => _wealth.Current;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<ExcavationOrder> ExcavationOrders => _excavationOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
@@ -264,7 +270,8 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 7,
+            SchemaVersion = 8,
+            WorkPriorities = _workPriorities.CaptureSnapshot(),
             SocialTick = _socialTick,
             SocialNetwork = _socialRelationships.CaptureSnapshot(),
             IncidentManager = _incidentManager.CaptureSnapshot(),
@@ -433,6 +440,11 @@ internal sealed class ColonySimulation
         simulation._environmentAccumulatorSeconds = snapshot.EnvironmentAccumulatorSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
+        var workerIdsForPriorities = simulation._workers.Select(worker => worker.Id).ToHashSet();
+        var restoredPriorities = WorkPriorityMatrix.Restore(snapshot.WorkPriorities, workerIdsForPriorities);
+        foreach (var workerId in workerIdsForPriorities)
+            foreach (var category in Enum.GetValues<WorkCategory>())
+                simulation._workPriorities.SetPriority(workerId, category, restoredPriorities.GetPriority(workerId, category));
         simulation.InitializeEcosystem();
         foreach (var workerState in snapshot.Workers)
         {
@@ -1402,7 +1414,7 @@ internal sealed class ColonySimulation
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
-            if (IsDepositReserved(deposit.Id, worker.Id))
+            if (IsDepositReserved(deposit.Id, worker.Id) || _reservations.IsReservedByOther($"deposit:{deposit.Id}", worker.Id))
             {
                 Message = $"Another worker is already assigned to {deposit.Resource} at ({x}, {y}).";
                 return;
@@ -1417,6 +1429,7 @@ internal sealed class ColonySimulation
                 Message = "No route to that resource deposit.";
                 return;
             }
+            if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, 1, 1)) { Message = "Resource stack is already reserved by another colonist."; return; }
             worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
             Message = $"{worker.Name} ordered to gather {deposit.Resource}. The material will be carried back to stockpile.";
             return;
@@ -1501,6 +1514,11 @@ internal sealed class ColonySimulation
         float averageHunger = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Hunger);
         _storyteller.Step(_socialTick, new StorytellerColonyState(
             _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger));
+        var inventory = Enum.GetValues<ResourceKind>().ToDictionary(resource => resource, ResourceCount);
+        var objects = _objects.Select(item => (Kind: item.Kind, Built: item.IsBuilt));
+        var architecture = _tiles.Cast<TileCell>().Where(tile => tile.Architecture != ArchitectureKind.None)
+            .Select(tile => (Kind: tile.Architecture));
+        _wealth.Sample(_socialTick, inventory, objects, architecture);
     }
 
 
@@ -1626,13 +1644,28 @@ internal sealed class ColonySimulation
             bool assigned = false;
             // Priority is evaluated across excavation, tile builds, object blueprints and production orders.
             // Within one priority level, task-type order remains stable and existing behavior is preserved.
-            for (int priority = 5; priority >= 1 && !assigned; priority--)
-                assigned = TryAssignExcavation(worker, priority) ||
-                           TryAssignTileBuild(worker, priority) ||
-                           TryAssignObjectBuild(worker, priority) ||
-                           TryAssignProduction(worker, priority);
+            for (int pawnPriority = 4; pawnPriority >= 1 && !assigned; pawnPriority--)
+            {
+                foreach (var category in Enum.GetValues<WorkCategory>())
+                {
+                    if (_workPriorities.GetPriority(worker.Id, category) != pawnPriority) continue;
+                    for (int orderPriority = 5; orderPriority >= 1 && !assigned; orderPriority--)
+                    {
+                        assigned = category switch
+                        {
+                            WorkCategory.Mining => TryAssignExcavation(worker, orderPriority),
+                            WorkCategory.Construction => TryAssignTileBuild(worker, orderPriority) ||
+                                                        TryAssignObjectBuild(worker, orderPriority),
+                            WorkCategory.Production => TryAssignProduction(worker, orderPriority),
+                            WorkCategory.Gathering => TryAssignGatherForShortage(worker),
+                            WorkCategory.Hauling => false,
+                            _ => false
+                        };
+                    }
+                    if (assigned) break;
+                }
+            }
             if (assigned) continue;
-            TryAssignGatherForShortage(worker);
         }
     }
 
@@ -1743,9 +1776,9 @@ internal sealed class ColonySimulation
         return false;
     }
 
-    private void TryAssignGatherForShortage(ColonyWorker worker)
+    private bool TryAssignGatherForShortage(ColonyWorker worker)
     {
-        if (InventoryFreeCapacity <= 0) return;
+        if (InventoryFreeCapacity <= 0) return false;
 
         // A shortage inherits the highest priority of any pending order that needs that resource.
         // Among resources at the same priority, prefer the nearest available finite deposit.
