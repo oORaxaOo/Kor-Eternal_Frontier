@@ -41,7 +41,7 @@ internal static class ColonyEcosystemChecks
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
         Check(utilityDrivenNeeds.Grid.TryAdd(ResourceKind.Food, 2),
             "utility-driven need arbitration requires reachable stored food");
-        var utilityCitizen = utilityDrivenNeeds.AddCitizen("Utility probe", new CellPosition(1, 1));
+        var utilityCitizen = utilityDrivenNeeds.AddCitizen("Utility probe", new CellPosition(0, 1));
         utilityCitizen.Hunger = 10f;
         utilityCitizen.Fatigue = 5f;
         utilityCitizen.Personality.SetWeight(PawnNeedKind.Hunger, 3f);
