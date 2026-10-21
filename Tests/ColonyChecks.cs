@@ -396,9 +396,10 @@ internal static class ColonyChecks
             "save/load must preserve each tile construction state and work progress");
         Check(restored.Deposits.Select(d => (d.Id, d.Amount)).SequenceEqual(colony.Deposits.Select(d => (d.Id, d.Amount))),
             "save/load must preserve finite deposit quantities");
-        Check(restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))
-              .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
-            "save/load must preserve worker positions, needs, cargo, and task kinds");
+        var actualWorkerState = restored.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind)).ToArray();
+        var expectedWorkerState = colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind)).ToArray();
+        Check(actualWorkerState.SequenceEqual(expectedWorkerState),
+            $"save/load must preserve worker positions, needs, cargo, and task kinds. Expected [{string.Join("; ", expectedWorkerState.Select(w => $"#{w.Id} ({w.X:0.000},{w.Y:0.000}) hunger={w.Hunger:0.000} cargo={w.CarriedAmount} task={w.Item7}"))}], actual [{string.Join("; ", actualWorkerState.Select(w => $"#{w.Id} ({w.X:0.000},{w.Y:0.000}) hunger={w.Hunger:0.000} cargo={w.CarriedAmount} task={w.Item7}"))}]");
 
         var needsColony = new ColonySimulation();
         var needsWorker = needsColony.Workers[0];

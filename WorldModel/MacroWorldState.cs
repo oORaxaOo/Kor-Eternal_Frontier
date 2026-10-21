@@ -42,6 +42,10 @@ internal sealed class MacroCaravanState
     public int TargetCellId { get; set; }
     public float TravelSpeed { get; set; } = 0.05f;
     public Dictionary<MacroResource, float> Cargo { get; set; } = [];
+    public List<WorldRouteNode> RouteNodes { get; set; } = [];
+    public int RouteIndex { get; set; }
+    public bool RoutePending { get; set; }
+    public bool RouteReady { get; set; }
 }
 
 internal sealed record WorldNotification(long Id, long Tick, string Category, string Message, int CellId, bool Important);
@@ -53,6 +57,7 @@ internal sealed class MacroCaravanArrival
     public int TargetCellId { get; set; }
     public bool IsRefugeeWave { get; set; }
     public int Population { get; set; }
+    public int SourceCellId { get; set; }
     public int SpawnedVisitorCount { get; set; }
     public long NotificationId { get; set; }
     public Dictionary<MacroResource, float> Cargo { get; set; } = [];
@@ -69,41 +74,84 @@ internal sealed class MarketSnapshot
     public long LastUpdatedTick { get; set; }
 }
 
+internal enum MacroTurnPhase : byte { Idle, Economy, ReliefScan }
+
+/// <summary>Serializable accumulators collected as each macro cell is processed.</summary>
+internal sealed class MacroMarketAccumulator
+{
+    public double FoodDemand { get; set; }
+    public double FoodSupply { get; set; }
+    public double WoodDemand { get; set; }
+    public double WoodSupply { get; set; }
+    public double StoneDemand { get; set; }
+    public double StoneSupply { get; set; }
+    public double AlloyDemand { get; set; }
+    public double AlloySupply { get; set; }
+    public double EnergyDemand { get; set; }
+    public double EnergySupply { get; set; }
+    public double ComponentsDemand { get; set; }
+    public double ComponentsSupply { get; set; }
+
+    public void Reset()
+    {
+        FoodDemand = FoodSupply = WoodDemand = WoodSupply = 0;
+        StoneDemand = StoneSupply = AlloyDemand = AlloySupply = 0;
+        EnergyDemand = EnergySupply = ComponentsDemand = ComponentsSupply = 0;
+    }
+}
+
 /// <summary>Supply/demand pricing based on the macro ledger. Prices are bounded to prevent runaway values.</summary>
 internal static class MarketSystem
 {
+    public static void Accumulate(MacroMarketAccumulator totals, in MacroCellData cell, double multiplier = 1d)
+    {
+        ArgumentNullException.ThrowIfNull(totals);
+        if (!double.IsFinite(multiplier) || cell.OwningFactionId == 0 || cell.Population <= 0) return;
+        double population = cell.Population * multiplier;
+        totals.FoodDemand += population * 0.01d;
+        totals.FoodSupply += Math.Max(0, cell.FoodCount) * multiplier;
+        totals.WoodDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0018d : 0.0006d);
+        totals.WoodSupply += Math.Max(0, cell.WoodCount) * multiplier;
+        totals.StoneDemand += population * (cell.ProductionFocus == ProductionFocus.Mining ? 0.001d : 0.00025d);
+        totals.StoneSupply += Math.Max(0, cell.StoneCount) * multiplier;
+        totals.AlloyDemand += population * (cell.ProductionFocus == ProductionFocus.Military ? 0.001d : 0.00015d);
+        totals.AlloySupply += Math.Max(0, cell.AlloyCount) * multiplier;
+        totals.EnergyDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0012d : 0.0002d);
+        totals.EnergySupply += Math.Max(0, cell.EnergyCount) * multiplier;
+        totals.ComponentsDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0008d : 0.0001d);
+        totals.ComponentsSupply += Math.Max(0, cell.ComponentsCount) * multiplier;
+    }
+
+    public static void ReplacePopulationContribution(MacroMarketAccumulator totals, in MacroCellData currentCell, int previousPopulation)
+    {
+        ArgumentNullException.ThrowIfNull(totals);
+        if (previousPopulation <= 0 || currentCell.OwningFactionId == 0) return;
+        var previousCell = currentCell;
+        previousCell.Population = previousPopulation;
+        Accumulate(totals, previousCell, -1d);
+        Accumulate(totals, currentCell);
+    }
+
+    /// <summary>Initial-world refresh; normal macro turns use their timesliced accumulator.</summary>
     public static void UpdatePrices(MacroWorldState world, long tick)
     {
         ArgumentNullException.ThrowIfNull(world);
-        double foodDemand = 0, foodSupply = 0, woodDemand = 0, woodSupply = 0;
-        double stoneDemand = 0, stoneSupply = 0, alloyDemand = 0, alloySupply = 0;
-        double energyDemand = 0, energySupply = 0, componentsDemand = 0, componentsSupply = 0;
+        var totals = new MacroMarketAccumulator();
+        foreach (ref readonly var cell in world.Cells.AsSpan()) Accumulate(totals, cell);
+        ApplyTotals(world.Market, totals, tick);
+    }
 
-        foreach (ref readonly var cell in world.Cells.AsSpan())
-        {
-            if (cell.OwningFactionId == 0 || cell.Population <= 0) continue;
-            double population = cell.Population;
-            foodDemand += population * 0.01d;
-            foodSupply += Math.Max(0, cell.FoodCount);
-            woodDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0018d : 0.0006d);
-            woodSupply += Math.Max(0, cell.WoodCount);
-            stoneDemand += population * (cell.ProductionFocus == ProductionFocus.Mining ? 0.001d : 0.00025d);
-            stoneSupply += Math.Max(0, cell.StoneCount);
-            alloyDemand += population * (cell.ProductionFocus == ProductionFocus.Military ? 0.001d : 0.00015d);
-            alloySupply += Math.Max(0, cell.AlloyCount);
-            energyDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0012d : 0.0002d);
-            energySupply += Math.Max(0, cell.EnergyCount);
-            componentsDemand += population * (cell.ProductionFocus == ProductionFocus.Industry ? 0.0008d : 0.0001d);
-            componentsSupply += Math.Max(0, cell.ComponentsCount);
-        }
-
-        world.Market.FoodPrice = Price(foodDemand, foodSupply);
-        world.Market.WoodPrice = Price(woodDemand, woodSupply);
-        world.Market.StonePrice = Price(stoneDemand, stoneSupply);
-        world.Market.AlloyPrice = Price(alloyDemand, alloySupply);
-        world.Market.EnergyPrice = Price(energyDemand, energySupply);
-        world.Market.ComponentsPrice = Price(componentsDemand, componentsSupply);
-        world.Market.LastUpdatedTick = tick;
+    public static void ApplyTotals(MarketSnapshot market, MacroMarketAccumulator totals, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(market);
+        ArgumentNullException.ThrowIfNull(totals);
+        market.FoodPrice = Price(totals.FoodDemand, totals.FoodSupply);
+        market.WoodPrice = Price(totals.WoodDemand, totals.WoodSupply);
+        market.StonePrice = Price(totals.StoneDemand, totals.StoneSupply);
+        market.AlloyPrice = Price(totals.AlloyDemand, totals.AlloySupply);
+        market.EnergyPrice = Price(totals.EnergyDemand, totals.EnergySupply);
+        market.ComponentsPrice = Price(totals.ComponentsDemand, totals.ComponentsSupply);
+        market.LastUpdatedTick = tick;
     }
 
     private static float Price(double demand, double supply)
@@ -137,7 +185,19 @@ internal sealed class MacroWorldState
     public long NextNotificationId { get; set; } = 1;
     public long NextCaravanId { get; set; } = 1;
     public int MacroTurnsProcessed { get; set; }
+    public int MacroTurnsScheduled { get; set; }
+    public int MacroTurnCursor { get; set; }
+    public MacroTurnPhase TurnPhase { get; set; }
+    public MacroMarketAccumulator MarketTurnAccumulator { get; set; } = new();
+    public Dictionary<int, int> TurnHungryCellIds { get; set; } = [];
+    public Dictionary<int, int> TurnBestDonorCellIds { get; set; } = [];
+    public Dictionary<int, double> TurnBestDonorDistances { get; set; } = [];
     public int TickSliceCursor { get; set; }
+    private int _cachedLocalMapCellId;
+    private readonly BackgroundWorldRouteScheduler _routeScheduler = new();
+    private const int MacroCellsPerSlice = 128;
+    private const int IncidentCellsPerSlice = 128;
+    private const int MaxPendingMacroArrivals = 256;
     public int Seed { get; set; }
 
     public static MacroWorldState Generate(int seed, RegionalWorldMap regions, IReadOnlyList<WorldEntityState> entities,
@@ -236,7 +296,24 @@ internal sealed class MacroWorldState
     {
         if (cellId < 1 || cellId > Cells.Length) return false;
         Cells[cellId - 1].IsLocalMapGenerated = generated;
+        if (!generated && _cachedLocalMapCellId == cellId) _cachedLocalMapCellId = 0;
+        else if (generated && _cachedLocalMapCellId == 0) _cachedLocalMapCellId = cellId;
         return true;
+    }
+
+    private int FindLocalMapCellId()
+    {
+        if (_cachedLocalMapCellId > 0 && _cachedLocalMapCellId <= Cells.Length &&
+            Cells[_cachedLocalMapCellId - 1].IsLocalMapGenerated)
+            return _cachedLocalMapCellId;
+        _cachedLocalMapCellId = 0;
+        for (int i = 0; i < Cells.Length; i++)
+        {
+            if (!Cells[i].IsLocalMapGenerated) continue;
+            _cachedLocalMapCellId = Cells[i].CellId;
+            break;
+        }
+        return _cachedLocalMapCellId;
     }
 
     public void Advance(double deltaSeconds, ContinuousWorldState continuous)
@@ -247,112 +324,335 @@ internal sealed class MacroWorldState
         long tickDelta = (long)Math.Floor(totalTickDelta + 1e-8);
         FractionalTickRemainder = Math.Max(0d, totalTickDelta - tickDelta);
         SimulationTicks = checked(SimulationTicks + tickDelta);
+
+        long dueTurns = SimulationTicks / TicksPerMacroTurn;
+        MacroTurnsScheduled = (int)Math.Max(MacroTurnsScheduled, Math.Min(int.MaxValue, dueTurns));
+
+        ApplyCompletedRoutes();
         UpdateCaravans(deltaSeconds);
-        // Storyteller-style cell scanning is sliced into small deterministic batches every shared tick.
-        EvaluateIncidentSlice(continuous, 600);
-        while (SimulationTicks / TicksPerMacroTurn > MacroTurnsProcessed)
+        EvaluateIncidentSlice(continuous, IncidentCellsPerSlice);
+        ProcessMacroTurnSlice(continuous, MacroCellsPerSlice);
+        StartPendingCaravanRoutes();
+    }
+
+    /// <summary>
+    /// Processes at most a fixed number of regions per call. All mutations stay on the simulation
+    /// thread; no daily turn is allowed to run an unbounded 10,000-cell loop in one frame.
+    /// </summary>
+    private void ProcessMacroTurnSlice(ContinuousWorldState continuous, int cellBudget)
+    {
+        ArgumentNullException.ThrowIfNull(continuous);
+        int remaining = Math.Max(1, cellBudget);
+        while (remaining > 0)
         {
-            ProcessMacroTurn(continuous);
-            MacroTurnsProcessed++;
+            if (TurnPhase == MacroTurnPhase.Idle)
+            {
+                if (MacroTurnsProcessed >= MacroTurnsScheduled) break;
+                BeginMacroTurn();
+            }
+
+            if (TurnPhase == MacroTurnPhase.Economy)
+            {
+                int index = MacroTurnCursor;
+                ProcessMacroCell(index, continuous);
+                MarketSystem.Accumulate(MarketTurnAccumulator, Cells[index]);
+                TrackHungryCell(index);
+                MacroTurnCursor++;
+                remaining--;
+                if (MacroTurnCursor >= Cells.Length)
+                {
+                    MacroTurnCursor = 0;
+                    TurnPhase = MacroTurnPhase.ReliefScan;
+                }
+                continue;
+            }
+
+            if (TurnPhase == MacroTurnPhase.ReliefScan)
+            {
+                ConsiderReliefDonor(MacroTurnCursor);
+                MacroTurnCursor++;
+                remaining--;
+                if (MacroTurnCursor >= Cells.Length)
+                {
+                    MacroTurnCursor = 0;
+                    CompleteMacroTurn();
+                }
+                continue;
+            }
+
+            throw new InvalidDataException($"Unknown macro turn phase: {TurnPhase}.");
         }
     }
 
-    public void ProcessMacroTurn(ContinuousWorldState continuous)
+    private void BeginMacroTurn()
     {
-        ArgumentNullException.ThrowIfNull(continuous);
-        for (int i = 0; i < Cells.Length; i++)
+        MarketTurnAccumulator ??= new MacroMarketAccumulator();
+        MarketTurnAccumulator.Reset();
+        TurnHungryCellIds.Clear();
+        TurnBestDonorCellIds.Clear();
+        TurnBestDonorDistances.Clear();
+        MacroTurnCursor = 0;
+        TurnPhase = MacroTurnPhase.Economy;
+    }
+
+    private void CompleteMacroTurn()
+    {
+        DispatchReliefCaravans();
+        UpdatePricesAndEmitMarketNews((long)(MacroTurnsProcessed + 1) * TicksPerMacroTurn, MarketTurnAccumulator);
+        MarketTurnAccumulator.Reset();
+        TurnHungryCellIds.Clear();
+        TurnBestDonorCellIds.Clear();
+        TurnBestDonorDistances.Clear();
+        MacroTurnsProcessed++;
+        TurnPhase = MacroTurnPhase.Idle;
+    }
+
+    private void ProcessMacroCell(int index, ContinuousWorldState continuous)
+    {
+        ref var cell = ref Cells[index];
+        if (cell.OwningFactionId == 0) return;
+        float population = Math.Max(0, cell.Population);
+        float pressure = Math.Clamp(cell.BlightPresence, 0f, 1f);
+        float consumed = population * 0.01f;
+        cell.FoodCount = Math.Max(0f, cell.FoodCount - consumed);
+        switch (cell.ProductionFocus)
         {
-            ref var cell = ref Cells[i];
-            if (cell.OwningFactionId == 0) continue;
-            float population = Math.Max(0, cell.Population);
-            float pressure = Math.Clamp(cell.BlightPresence, 0f, 1f);
-            float consumed = population * 0.01f;
-            cell.FoodCount = Math.Max(0f, cell.FoodCount - consumed);
-            switch (cell.ProductionFocus)
-            {
-                case ProductionFocus.Agriculture:
-                    cell.FoodCount += population * 0.015f * cell.Fertility * (1f - pressure * 0.9f);
-                    break;
-                case ProductionFocus.Mining:
-                    cell.StoneCount += population * 0.0025f;
-                    cell.AlloyCount += population * 0.0003f;
-                    break;
-                case ProductionFocus.Industry:
-                    cell.ComponentsCount += population * 0.0005f;
-                    cell.AlloyCount += population * 0.0004f;
-                    cell.EnergyCount = Math.Max(0, cell.EnergyCount - population * 0.0006f);
-                    break;
-                case ProductionFocus.Military:
-                    cell.AlloyCount = Math.Max(0, cell.AlloyCount - population * 0.0005f);
-                    cell.ComponentsCount = Math.Max(0, cell.ComponentsCount - population * 0.00025f);
-                    break;
-            }
-            cell.WoodCount += population * (cell.Biome == WorldBiomeKind.Forest ? 0.0015f : 0.0003f);
-            cell.BlightPresence = Math.Clamp(pressure + (pressure > 0.15f ? 0.01f : -0.002f), 0f, 1f);
-            if (cell.FoodCount < population * 0.002f && cell.Population > 0)
-            {
-                int losses = Math.Max(1, (int)Math.Ceiling(cell.Population * 0.015f));
-                cell.Population = Math.Max(0, cell.Population - losses);
-                AddNotification(SimulationTicks, "famine", $"Famine in macro cell {cell.CellId}: population declined by {losses}.", cell.CellId, true);
-                if (cell.Population > 0 && cell.FoodCount < population * 0.0005f)
-                    TryTriggerRefugeeWave(i, continuous);
-            }
-            else if (cell.FoodCount > population * 0.03f && cell.Population > 0)
-                cell.Population = Math.Min(100_000, cell.Population + Math.Max(1, (int)(cell.Population * 0.002f)));
+            case ProductionFocus.Agriculture:
+                cell.FoodCount += population * 0.015f * cell.Fertility * (1f - pressure * 0.9f);
+                break;
+            case ProductionFocus.Mining:
+                cell.StoneCount += population * 0.0025f;
+                cell.AlloyCount += population * 0.0003f;
+                break;
+            case ProductionFocus.Industry:
+                cell.ComponentsCount += population * 0.0005f;
+                cell.AlloyCount += population * 0.0004f;
+                cell.EnergyCount = Math.Max(0, cell.EnergyCount - population * 0.0006f);
+                break;
+            case ProductionFocus.Military:
+                cell.AlloyCount = Math.Max(0, cell.AlloyCount - population * 0.0005f);
+                cell.ComponentsCount = Math.Max(0, cell.ComponentsCount - population * 0.00025f);
+                break;
+        }
+        cell.WoodCount += population * (cell.Biome == WorldBiomeKind.Forest ? 0.0015f : 0.0003f);
+        cell.BlightPresence = Math.Clamp(pressure + (pressure > 0.15f ? 0.01f : -0.002f), 0f, 1f);
+        if (cell.FoodCount < population * 0.002f && cell.Population > 0)
+        {
+            int losses = Math.Max(1, (int)Math.Ceiling(cell.Population * 0.015f));
+            cell.Population = Math.Max(0, cell.Population - losses);
+            AddNotification(SimulationTicks, "famine", $"Famine in macro cell {cell.CellId}: population declined by {losses}.", cell.CellId, true);
+            if (cell.Population > 0 && cell.FoodCount < population * 0.0005f)
+                TryTriggerRefugeeWave(index, continuous);
+        }
+        else if (cell.FoodCount > population * 0.03f && cell.Population > 0)
+            cell.Population = Math.Min(100_000, cell.Population + Math.Max(1, (int)(cell.Population * 0.002f)));
+    }
+
+    private void TrackHungryCell(int index)
+    {
+        ref readonly var cell = ref Cells[index];
+        if (cell.OwningFactionId == 0 || cell.Population <= 0 || cell.FoodCount >= cell.Population * 0.004f) return;
+        if (!TurnHungryCellIds.TryGetValue(cell.OwningFactionId, out int knownCellId))
+        {
+            TurnHungryCellIds[cell.OwningFactionId] = cell.CellId;
+            return;
         }
 
-        DispatchReliefCaravans();
-        UpdatePricesAndEmitMarketNews();
+        ref readonly var known = ref Cells[knownCellId - 1];
+        if (cell.FoodCount < known.FoodCount || (cell.FoodCount == known.FoodCount && cell.CellId < known.CellId))
+            TurnHungryCellIds[cell.OwningFactionId] = cell.CellId;
+    }
+
+    private void ConsiderReliefDonor(int index)
+    {
+        ref readonly var cell = ref Cells[index];
+        if (cell.OwningFactionId == 0 || cell.Population <= 0 ||
+            cell.FoodCount <= cell.Population * 0.02f ||
+            !TurnHungryCellIds.TryGetValue(cell.OwningFactionId, out int hungryCellId) ||
+            cell.CellId == hungryCellId)
+            return;
+
+        ref readonly var hungry = ref Cells[hungryCellId - 1];
+        double dx = cell.X - hungry.X, dy = cell.Y - hungry.Y;
+        double distanceSquared = dx * dx + dy * dy;
+        if (!TurnBestDonorDistances.TryGetValue(cell.OwningFactionId, out double knownDistance) ||
+            distanceSquared < knownDistance ||
+            (distanceSquared == knownDistance &&
+             cell.CellId < TurnBestDonorCellIds.GetValueOrDefault(cell.OwningFactionId, int.MaxValue)))
+        {
+            TurnBestDonorCellIds[cell.OwningFactionId] = cell.CellId;
+            TurnBestDonorDistances[cell.OwningFactionId] = distanceSquared;
+        }
+    }
+
+    private float[] BuildRouteCostSnapshot()
+    {
+        var costs = new float[Cells.Length];
+        for (int i = 0; i < Cells.Length; i++)
+        {
+            ref readonly var cell = ref Cells[i];
+            float terrain = cell.Biome switch
+            {
+                WorldBiomeKind.Mountain => 2.4f,
+                WorldBiomeKind.Wetland => 1.9f,
+                WorldBiomeKind.Desert => 1.45f,
+                WorldBiomeKind.Tundra => 1.4f,
+                WorldBiomeKind.Forest => 1.25f,
+                _ => 1f
+            };
+            costs[i] = terrain * (1f + Math.Clamp(cell.BlightPresence, 0f, 1f) * 5f);
+        }
+        return costs;
+    }
+
+    private void ApplyCompletedRoutes()
+    {
+        foreach (var result in _routeScheduler.DrainCompleted())
+        {
+            var caravan = Caravans.FirstOrDefault(item => item.Id == result.CaravanId);
+            if (caravan is null || caravan.TargetCellId != result.TargetCellId) continue;
+            caravan.RoutePending = false;
+            if (result.Nodes is { Count: > 0 })
+            {
+                caravan.RouteNodes = result.Nodes.ToList();
+                caravan.RouteIndex = caravan.RouteNodes.Count > 1 ? 1 : caravan.RouteNodes.Count;
+                caravan.RouteReady = true;
+                AddNotification(SimulationTicks, "route", $"Caravan {caravan.Id} completed its strategic route.", caravan.TargetCellId, false);
+            }
+            else
+            {
+                int startX = Math.Clamp((int)MathF.Round(caravan.X), 0, Columns - 1);
+                int startY = Math.Clamp((int)MathF.Round(caravan.Y), 0, Rows - 1);
+                var target = Cells[caravan.TargetCellId - 1];
+                caravan.RouteNodes =
+                [
+                    new WorldRouteNode(startX, startY),
+                    new WorldRouteNode(target.X, target.Y)
+                ];
+                caravan.RouteIndex = 1;
+                caravan.RouteReady = true;
+                AddNotification(SimulationTicks, "route", $"Caravan {caravan.Id} route planning failed ({result.Error}); direct fallback route selected.", caravan.TargetCellId, true);
+            }
+        }
+
+        // A save can capture a pending task but not the process-local Task itself. Requeue it after load.
+        foreach (var caravan in Caravans)
+            if (caravan.RoutePending && !_routeScheduler.IsInFlight(caravan.Id) && !caravan.RouteReady)
+                caravan.RoutePending = false;
+    }
+
+    private void StartPendingCaravanRoutes()
+    {
+        int available = _routeScheduler.MaxConcurrentRoutes - _routeScheduler.InFlightCount;
+        if (available <= 0) return;
+        var pending = Caravans.Where(item => !item.RouteReady && !item.RoutePending)
+            .OrderBy(item => item.Id).Take(available).ToArray();
+        if (pending.Length == 0) return;
+        float[] costSnapshot = BuildRouteCostSnapshot();
+        foreach (var caravan in pending)
+        {
+            int startX = Math.Clamp((int)MathF.Round(caravan.X), 0, Columns - 1);
+            int startY = Math.Clamp((int)MathF.Round(caravan.Y), 0, Rows - 1);
+            int startCellId = startY * Columns + startX + 1;
+            if (_routeScheduler.TrySchedule(caravan.Id, caravan.TargetCellId, Columns, startCellId, costSnapshot))
+                caravan.RoutePending = true;
+        }
     }
 
     private void DispatchReliefCaravans()
     {
-        var factionIds = FactionIds.OrderBy(pair => pair.Value).ToArray();
-        foreach (var (faction, factionId) in factionIds)
+        foreach (var faction in FactionIds.OrderBy(pair => pair.Value))
         {
-            var hungry = Cells.Where(c => c.OwningFactionId == factionId && c.Population > 0 && c.FoodCount < c.Population * 0.004f)
-                .OrderBy(c => c.FoodCount).ThenBy(c => c.CellId).FirstOrDefault();
-            if (hungry.CellId == 0) continue;
-            var donor = Cells.Where(c => c.OwningFactionId == factionId && c.CellId != hungry.CellId && c.FoodCount > c.Population * 0.02f)
-                .OrderBy(c => Distance(c.X, c.Y, hungry.X, hungry.Y)).ThenBy(c => c.CellId).FirstOrDefault();
-            if (donor.CellId == 0) continue;
-            ref var source = ref Cells[donor.CellId - 1];
+            int factionId = faction.Value;
+            if (!TurnHungryCellIds.TryGetValue(factionId, out int hungryCellId) ||
+                !TurnBestDonorCellIds.TryGetValue(factionId, out int donorCellId))
+                continue;
+
+            ref var hungry = ref Cells[hungryCellId - 1];
+            ref var source = ref Cells[donorCellId - 1];
+            if (source.OwningFactionId != factionId || hungry.OwningFactionId != factionId ||
+                source.CellId == hungry.CellId || source.Population <= 0 || hungry.Population <= 0 ||
+                source.FoodCount <= source.Population * 0.02f || hungry.FoodCount >= hungry.Population * 0.004f)
+                continue;
+
             float amount = Math.Min(100f, Math.Max(0f, source.FoodCount - source.Population * 0.01f));
             if (amount <= 0) continue;
             source.FoodCount -= amount;
+            // Market supply is accumulated during the economy slice; account for relief cargo
+            // removed from source inventories before finalizing the turn's dynamic prices.
+            MarketTurnAccumulator.FoodSupply = Math.Max(0d, MarketTurnAccumulator.FoodSupply - amount);
             Caravans.Add(new MacroCaravanState
             {
                 Id = NextCaravanId++, FactionId = factionId, X = source.X, Y = source.Y,
-                TargetCellId = hungry.CellId, TravelSpeed = 0.05f,
+                TargetCellId = hungryCellId, TravelSpeed = 0.05f,
                 Cargo = new Dictionary<MacroResource, float> { [MacroResource.Food] = amount }
             });
-            AddNotification(SimulationTicks, "trade", $"{faction} dispatched a relief caravan carrying {amount:0} food to cell {hungry.CellId}.", hungry.CellId, false);
+            AddNotification(SimulationTicks, "trade",
+                $"{faction.Key} dispatched a relief caravan carrying {amount:0} food to cell {hungryCellId}.",
+                hungryCellId, false);
         }
     }
 
     private void UpdateCaravans(double deltaSeconds)
     {
+        double remainingTravel = 0;
         for (int i = Caravans.Count - 1; i >= 0; i--)
         {
             var caravan = Caravans[i];
-            if (caravan.TargetCellId < 1 || caravan.TargetCellId > Cells.Length) { Caravans.RemoveAt(i); continue; }
-            var target = Cells[caravan.TargetCellId - 1];
-            float dx = target.X - caravan.X, dy = target.Y - caravan.Y;
-            float length = MathF.Sqrt(dx * dx + dy * dy);
-            float travel = Math.Max(0f, caravan.TravelSpeed * (float)deltaSeconds * 60f);
-            if (length > travel && length > 0.001f)
+            if (caravan.TargetCellId < 1 || caravan.TargetCellId > Cells.Length)
             {
-                caravan.X += dx / length * travel;
-                caravan.Y += dy / length * travel;
+                Caravans.RemoveAt(i);
                 continue;
             }
+            if (!caravan.RouteReady || caravan.RouteNodes.Count == 0) continue;
+
+            remainingTravel = Math.Max(0d, caravan.TravelSpeed * deltaSeconds * TickManager.TicksPerSecond);
+            bool arrived = false;
+            int safetySteps = 0;
+            while (remainingTravel > 0.0001d && safetySteps++ < Columns * Rows)
+            {
+                if (caravan.RouteIndex >= caravan.RouteNodes.Count)
+                {
+                    arrived = true;
+                    break;
+                }
+
+                var node = caravan.RouteNodes[caravan.RouteIndex];
+                float dx = node.X - caravan.X, dy = node.Y - caravan.Y;
+                float distance = MathF.Sqrt(dx * dx + dy * dy);
+                if (distance <= 0.0001f)
+                {
+                    caravan.X = node.X;
+                    caravan.Y = node.Y;
+                    caravan.RouteIndex++;
+                    continue;
+                }
+
+                if (distance <= remainingTravel)
+                {
+                    caravan.X = node.X;
+                    caravan.Y = node.Y;
+                    remainingTravel -= distance;
+                    caravan.RouteIndex++;
+                }
+                else
+                {
+                    caravan.X += dx / distance * (float)remainingTravel;
+                    caravan.Y += dy / distance * (float)remainingTravel;
+                    remainingTravel = 0;
+                }
+            }
+            if (!arrived && caravan.RouteIndex >= caravan.RouteNodes.Count) arrived = true;
+            if (!arrived) continue;
 
             ref var destination = ref Cells[caravan.TargetCellId - 1];
             long notificationId;
             if (destination.IsLocalMapGenerated)
             {
-                notificationId = AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at the Kor colony cell with {caravan.Cargo.Values.Sum():0} units of cargo.", destination.CellId, true);
-                Arrivals.Add(new MacroCaravanArrival
+                notificationId = AddNotification(SimulationTicks, "trade",
+                    $"A relief caravan arrived at the Kor colony cell with {caravan.Cargo.Values.Sum():0} units of cargo.",
+                    destination.CellId, true);
+                QueueArrival(new MacroCaravanArrival
                 {
                     Id = caravan.Id, FactionId = caravan.FactionId, TargetCellId = destination.CellId,
                     NotificationId = notificationId, Cargo = new Dictionary<MacroResource, float>(caravan.Cargo)
@@ -373,7 +673,9 @@ internal sealed class MacroWorldState
                         case MacroResource.Components: destination.ComponentsCount += cargo.Value; break;
                     }
                 }
-                AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at cell {destination.CellId}; cargo was added to its ledger.", destination.CellId, false);
+                AddNotification(SimulationTicks, "trade",
+                    $"A relief caravan arrived at cell {destination.CellId}; cargo was added to its ledger.",
+                    destination.CellId, false);
             }
             Caravans.RemoveAt(i);
         }
@@ -383,19 +685,20 @@ internal sealed class MacroWorldState
     {
         ref var source = ref Cells[sourceIndex];
         int sourceFactionId = source.OwningFactionId;
-        float sourceX = source.X, sourceY = source.Y;
-        var destination = Cells.Where(c => c.OwningFactionId != sourceFactionId && c.IsLocalMapGenerated)
-            .OrderBy(c => Distance(c.X, c.Y, sourceX, sourceY)).FirstOrDefault();
-        if (destination.CellId == 0) return;
+        int destinationCellId = FindLocalMapCellId();
+        if (destinationCellId <= 0) return;
+        ref var destination = ref Cells[destinationCellId - 1];
+        if (destination.OwningFactionId == sourceFactionId) return;
         int refugeeCount = Math.Min(12, Math.Max(2, source.Population / 1000));
         int sourceCellId = source.CellId;
         source.Population = Math.Max(0, source.Population - refugeeCount);
         long arrivalId = NextCaravanId++;
         long notificationId = AddNotification(SimulationTicks, "refugees", $"{refugeeCount} refugees fled macro cell {sourceCellId} toward the Kor colony. Decide whether to admit or dismiss them.", destination.CellId, true);
-        Arrivals.Add(new MacroCaravanArrival
+        QueueArrival(new MacroCaravanArrival
         {
             Id = arrivalId, FactionId = sourceFactionId, TargetCellId = destination.CellId,
-            IsRefugeeWave = true, Population = refugeeCount, NotificationId = notificationId
+            IsRefugeeWave = true, Population = refugeeCount, SourceCellId = sourceCellId,
+            NotificationId = notificationId
         });
     }
 
@@ -413,8 +716,11 @@ internal sealed class MacroWorldState
                 cell.BlightPresence = Math.Min(1f, pressure + 0.0005f);
                 if (cell.BlightPresence >= 0.95f && cell.Population > 0)
                 {
+                    int previousPopulation = cell.Population;
                     int lost = Math.Max(1, cell.Population / 100);
                     cell.Population -= lost;
+                    if (IsCellAlreadyIncludedInMarketTurn(i))
+                        MarketSystem.ReplacePopulationContribution(MarketTurnAccumulator, cell, previousPopulation);
                     AddNotification(SimulationTicks, "blight", $"Blight consumed cell {cell.CellId}; {lost} residents were lost or displaced.", cell.CellId, true);
                 }
             }
@@ -422,14 +728,64 @@ internal sealed class MacroWorldState
         TickSliceCursor = end >= Cells.Length ? 0 : end;
     }
 
-    private void UpdatePricesAndEmitMarketNews()
+    private bool IsCellAlreadyIncludedInMarketTurn(int cellIndex)
+        => TurnPhase == MacroTurnPhase.ReliefScan ||
+           (TurnPhase == MacroTurnPhase.Economy && cellIndex < MacroTurnCursor);
+
+    private void UpdatePricesAndEmitMarketNews(long priceSampleTick, MacroMarketAccumulator turnTotals)
     {
         float previousFood = Market.FoodPrice, previousAlloy = Market.AlloyPrice;
-        MarketSystem.UpdatePrices(this, SimulationTicks);
+        MarketSystem.ApplyTotals(Market, turnTotals, priceSampleTick);
         if (previousFood > 0 && Market.FoodPrice >= previousFood * 1.4f)
             AddNotification(SimulationTicks, "market", $"Global food price surged to {Market.FoodPrice:0.00}× as supplies tightened.", 0, true);
         if (previousAlloy > 0 && Market.AlloyPrice >= previousAlloy * 1.4f)
             AddNotification(SimulationTicks, "market", $"Alloy price surged to {Market.AlloyPrice:0.00}× amid industrial and military demand.", 0, true);
+    }
+
+    private void QueueArrival(MacroCaravanArrival arrival)
+    {
+        if (Arrivals.Count < MaxPendingMacroArrivals)
+        {
+            Arrivals.Add(arrival);
+            return;
+        }
+
+        // Do not let a blocked local map create an unbounded pending-event list.
+        // Preserve economy value in abstract cells, and return refugees to their source if the
+        // micro layer cannot accept more visitors yet.
+        if (arrival.IsRefugeeWave)
+        {
+            if (arrival.SourceCellId > 0 && arrival.SourceCellId <= Cells.Length)
+            {
+                ref var source = ref Cells[arrival.SourceCellId - 1];
+                source.Population = Math.Min(100_000, source.Population + arrival.Population);
+                AddNotification(SimulationTicks, "arrival_queue_full",
+                    $"Visitor queue is full; {arrival.Population} refugees remain abstract in macro cell {source.CellId}.",
+                    source.CellId, true);
+            }
+            return;
+        }
+
+        if (arrival.TargetCellId > 0 && arrival.TargetCellId <= Cells.Length)
+        {
+            ref var destination = ref Cells[arrival.TargetCellId - 1];
+            foreach (var item in arrival.Cargo)
+            {
+                switch (item.Key)
+                {
+                    case MacroResource.Food: destination.FoodCount += item.Value; break;
+                    case MacroResource.Wood: destination.WoodCount += item.Value; break;
+                    case MacroResource.Stone: destination.StoneCount += item.Value; break;
+                    case MacroResource.Alloy: destination.AlloyCount += item.Value; break;
+                    case MacroResource.Energy: destination.EnergyCount += item.Value; break;
+                    case MacroResource.Knowledge: destination.KnowledgeCount += item.Value; break;
+                    case MacroResource.Components: destination.ComponentsCount += item.Value; break;
+                }
+            }
+            AddNotification(SimulationTicks, "arrival_queue_full",
+                $"Visitor queue is full; caravan cargo was reconciled to abstract macro cell {destination.CellId}.",
+                destination.CellId, true);
+        }
     }
 
     private long AddNotification(long tick, string category, string message, int cellId, bool important)
@@ -442,11 +798,49 @@ internal sealed class MacroWorldState
 
     public void Validate()
     {
-        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Arrivals is null || ConsumedArrivalIds is null || Market is null || Research is null ||
-            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > SimulationTicks / TicksPerMacroTurn || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
+        // Migration for saves created before macro turns, route requests, and pending-arrival
+        // queues became slice-based. Completed arrival IDs are converted to queue removals once.
+        if (MacroTurnsScheduled < MacroTurnsProcessed) MacroTurnsScheduled = MacroTurnsProcessed;
+        Arrivals ??= [];
+        ConsumedArrivalIds ??= [];
+        if (ConsumedArrivalIds.Count > 0)
+        {
+            Arrivals.RemoveAll(arrival => ConsumedArrivalIds.Contains(arrival.Id));
+            ConsumedArrivalIds.Clear();
+        }
+        MarketTurnAccumulator ??= new MacroMarketAccumulator();
+        TurnHungryCellIds ??= [];
+        TurnBestDonorCellIds ??= [];
+        TurnBestDonorDistances ??= [];
+        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Market is null || Research is null ||
+            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 ||
+            MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn ||
+            !Enum.IsDefined(TurnPhase) || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount ||
+            (MacroTurnCursor > 0 && MacroTurnsProcessed >= MacroTurnsScheduled) ||
+            (TurnPhase != MacroTurnPhase.Idle && MacroTurnsProcessed >= MacroTurnsScheduled) ||
+            (TurnPhase == MacroTurnPhase.Idle && MacroTurnCursor != 0) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Math.Max(Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max(), Arrivals.Select(a => a.Id).DefaultIfEmpty(0).Max()))
             throw new InvalidDataException("Macro world data has invalid dimensions or counters.");
+        var aggregateValues = new[]
+        {
+            MarketTurnAccumulator.FoodDemand, MarketTurnAccumulator.FoodSupply,
+            MarketTurnAccumulator.WoodDemand, MarketTurnAccumulator.WoodSupply,
+            MarketTurnAccumulator.StoneDemand, MarketTurnAccumulator.StoneSupply,
+            MarketTurnAccumulator.AlloyDemand, MarketTurnAccumulator.AlloySupply,
+            MarketTurnAccumulator.EnergyDemand, MarketTurnAccumulator.EnergySupply,
+            MarketTurnAccumulator.ComponentsDemand, MarketTurnAccumulator.ComponentsSupply
+        };
+        if (aggregateValues.Any(value => !double.IsFinite(value) || value < 0) ||
+            TurnHungryCellIds.Any(pair => pair.Key <= 0 || pair.Value < 1 || pair.Value > CellCount ||
+                Cells[pair.Value - 1].OwningFactionId != pair.Key) ||
+            TurnBestDonorCellIds.Any(pair => pair.Key <= 0 || pair.Value < 1 || pair.Value > CellCount ||
+                Cells[pair.Value - 1].OwningFactionId != pair.Key) ||
+            TurnBestDonorDistances.Any(pair => pair.Key <= 0 || !double.IsFinite(pair.Value) || pair.Value < 0 ||
+                !TurnBestDonorCellIds.ContainsKey(pair.Key)) ||
+            TurnBestDonorCellIds.Keys.Any(key => !TurnBestDonorDistances.ContainsKey(key)))
+            throw new InvalidDataException("Macro turn aggregation state is invalid.");
+
         foreach (var cell in Cells)
         {
             if (cell.CellId < 1 || cell.CellId > CellCount || cell.X < 0 || cell.X >= Columns || cell.Y < 0 || cell.Y >= Rows ||
@@ -461,14 +855,19 @@ internal sealed class MacroWorldState
         foreach (var caravan in Caravans)
         {
             if (caravan.Id <= 0 || caravan.FactionId <= 0 || !float.IsFinite(caravan.X) || !float.IsFinite(caravan.Y) ||
+                caravan.X < 0 || caravan.X >= Columns || caravan.Y < 0 || caravan.Y >= Rows ||
                 !float.IsFinite(caravan.TravelSpeed) || caravan.TravelSpeed <= 0 || caravan.TargetCellId < 1 || caravan.TargetCellId > CellCount ||
-                caravan.Cargo is null || caravan.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
+                caravan.Cargo is null || caravan.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0) ||
+                caravan.RouteNodes is null || caravan.RouteIndex < 0 || caravan.RouteIndex > caravan.RouteNodes.Count ||
+                caravan.RouteReady && (caravan.RoutePending || caravan.RouteNodes.Count == 0) ||
+                caravan.RouteNodes.Any(node => node.X < 0 || node.X >= Columns || node.Y < 0 || node.Y >= Rows))
                 throw new InvalidDataException("Macro caravan contains invalid values.");
         }
         foreach (var arrival in Arrivals)
         {
             if (arrival.Id <= 0 || arrival.FactionId < 0 || arrival.TargetCellId < 1 || arrival.TargetCellId > CellCount ||
-                arrival.Population < 0 || arrival.SpawnedVisitorCount < 0 || arrival.SpawnedVisitorCount > arrival.Population && arrival.IsRefugeeWave ||
+                arrival.Population < 0 || arrival.SourceCellId < 0 || arrival.SourceCellId > CellCount ||
+                arrival.SpawnedVisitorCount < 0 || arrival.SpawnedVisitorCount > arrival.Population && arrival.IsRefugeeWave ||
                 arrival.NotificationId <= 0 || arrival.Cargo is null ||
                 arrival.Cargo.Any(item => !Enum.IsDefined(item.Key) || !float.IsFinite(item.Value) || item.Value < 0))
                 throw new InvalidDataException("Macro caravan arrival contains invalid values.");
