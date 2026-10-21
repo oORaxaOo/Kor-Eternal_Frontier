@@ -749,13 +749,21 @@ internal sealed class MacroWorldState
 
     public void Validate()
     {
-        // Migration for saves created before macro turns and route requests became slice-based.
+        // Migration for saves created before macro turns, route requests, and pending-arrival
+        // queues became slice-based. Completed arrival IDs are converted to queue removals once.
         if (MacroTurnsScheduled < MacroTurnsProcessed) MacroTurnsScheduled = MacroTurnsProcessed;
+        Arrivals ??= [];
+        ConsumedArrivalIds ??= [];
+        if (ConsumedArrivalIds.Count > 0)
+        {
+            Arrivals.RemoveAll(arrival => ConsumedArrivalIds.Contains(arrival.Id));
+            ConsumedArrivalIds.Clear();
+        }
         MarketTurnAccumulator ??= new MacroMarketAccumulator();
         TurnHungryCellIds ??= [];
         TurnBestDonorCellIds ??= [];
         TurnBestDonorDistances ??= [];
-        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Arrivals is null || ConsumedArrivalIds is null || Market is null || Research is null ||
+        if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Market is null || Research is null ||
             SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 ||
             MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn ||
             !Enum.IsDefined(TurnPhase) || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount ||
