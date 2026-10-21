@@ -40,6 +40,24 @@ internal static class WorldSimulationChecks
         Check(world.ElapsedSeconds >= elapsed,
             "bounded catch-up must retain backlog rather than moving the world clock backwards");
 
+        var macro = world.SpatialWorld.MacroWorld;
+        int localCellId = macro.Cells.First(cell => cell.IsLocalMapGenerated).CellId;
+        int visitorFactionId = macro.FactionIds.First(pair => pair.Key != "Kor").Value;
+        long arrivalId = macro.NextCaravanId++;
+        macro.Arrivals.Add(new MacroCaravanArrival
+        {
+            Id = arrivalId, FactionId = visitorFactionId, TargetCellId = localCellId,
+            NotificationId = macro.NextNotificationId++,
+            Cargo = new Dictionary<MacroResource, float> { [MacroResource.Food] = 4f }
+        });
+        int populationBeforeArrival = world.Colony.Workers.Count;
+        world.Step(0.1f);
+        var visitor = world.Colony.Workers.SingleOrDefault(worker => worker.IsExternalVisitor && worker.TradeCargo.ContainsKey(ResourceKind.Food));
+        Check(world.Colony.Workers.Count == populationBeforeArrival + 1 && visitor is not null &&
+              visitor.TradeCargo[ResourceKind.Food] == 4 && macro.Arrivals.All(arrival => arrival.Id != arrivalId),
+            "a strategic arrival must decompress into one local trader with matching cargo and leave the pending queue");
+        macro.Validate();
+
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
         CheckThrows(() => world.Step(float.NaN), "invalid elapsed time must be rejected");
 
@@ -59,6 +77,10 @@ internal static class WorldSimulationChecks
         Check(Math.Abs(restoredSession.ContinuousWorld.ClockSeconds - savedClock) < 0.0001 &&
               restoredSession.ContinuousWorld.Entities.Single(entity => entity.Id == home.Id).IsMoving,
             "the unified session must preserve continuous world time and in-flight movement");
+        var restoredVisitor = restoredSession.Colony.Workers.SingleOrDefault(worker => worker.Id == visitor!.Id);
+        Check(restoredVisitor is { IsExternalVisitor: true } && restoredVisitor.TradeCargo[ResourceKind.Food] == 4 &&
+              restoredSession.ContinuousWorld.MacroWorld.Arrivals.All(arrival => arrival.Id != arrivalId),
+            "session save/load must preserve a local trader's cargo without resurrecting drained macro arrivals");
         world.Restore(restoredSession);
         Check(Math.Abs(world.ElapsedSeconds - savedClock) < 0.0001 &&
               Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001,
