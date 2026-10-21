@@ -1,3 +1,4 @@
+using System.Text.Json;
 using KorTheBlight.Simulation.Research;
 using KorTheBlight.WorldModel;
 
@@ -27,6 +28,15 @@ internal static class MacroWorldChecks
             "Tick 24,000 must schedule the first macro turn without running the whole grid synchronously.");
         Check(macro.TurnPhase == MacroTurnPhase.Economy && macro.MacroTurnCursor == 128,
             "A macro update must process no more than its bounded cell slice.");
+
+        // A save taken mid-turn must preserve the cursor, the accumulated prices and the
+        // famine-relief selection state so resumed simulation neither repeats nor skips cells.
+        string partialTurnJson = JsonSerializer.Serialize(macro);
+        macro = JsonSerializer.Deserialize<MacroWorldState>(partialTurnJson)
+            ?? throw new InvalidOperationException("Macro save must deserialize.");
+        macro.Validate();
+        Check(macro.TurnPhase == MacroTurnPhase.Economy && macro.MacroTurnCursor == 128,
+            "Saving and loading must preserve the current macro slice phase and cursor.");
         for (int frame = 0; frame < 200 && macro.MacroTurnsProcessed == 0; frame++)
             macro.Advance(0.1, first);
         Check(macro.MacroTurnsProcessed == 1 && macro.MacroTurnCursor == 0,
@@ -37,7 +47,8 @@ internal static class MacroWorldChecks
         macro.Validate();
 
         int routeFaction = macro.FactionIds.Values.OrderBy(id => id).First();
-        const int routeTargetCellId = MacroWorldState.CellCount;
+        int routeTargetCellId = Enumerable.Range(1, MacroWorldState.CellCount)
+            .First(cellId => macro.Caravans.All(item => item.TargetCellId != cellId));
         macro.Caravans.Add(new MacroCaravanState
         {
             Id = macro.NextCaravanId++, FactionId = routeFaction, X = 0, Y = 0,
