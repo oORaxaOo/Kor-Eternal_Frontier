@@ -5,7 +5,7 @@ namespace KorTheBlight.Simulation;
 internal enum TerrainKind { Ground, Rock, Water }
 internal enum FluidKind { Water, Magma }
 internal enum ArchitectureKind { None, Floor, Wall, Door, Path, Conduit }
-internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden }
+internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden, DiningTable, Lamp, ComfortBench }
 internal enum ResourceKind { Wood, Stone, Food, Alloy, Components }
 internal enum ConstructionStatus { Planned, WaitingForMaterials, UnderConstruction, Complete, Blocked }
 internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce, Mine }
@@ -2052,6 +2052,9 @@ internal sealed class ColonySimulation
         PlaceableKind.StorageRack => new() { [ResourceKind.Wood] = 4, [ResourceKind.Stone] = 2 },
         PlaceableKind.Generator => new() { [ResourceKind.Alloy] = 8, [ResourceKind.Components] = 3 },
         PlaceableKind.Garden => new() { [ResourceKind.Wood] = 2, [ResourceKind.Stone] = 1 },
+        PlaceableKind.DiningTable => new() { [ResourceKind.Wood] = 4 },
+        PlaceableKind.Lamp => new() { [ResourceKind.Alloy] = 1, [ResourceKind.Components] = 1 },
+        PlaceableKind.ComfortBench => new() { [ResourceKind.Wood] = 3 },
         _ => new()
     };
 
@@ -2064,6 +2067,9 @@ internal sealed class ColonySimulation
             PlaceableKind.StorageRack => (2, 1, 4),
             PlaceableKind.Generator => (2, 2, 10),
             PlaceableKind.Garden => (3, 3, 6),
+            PlaceableKind.DiningTable => (2, 1, 4),
+            PlaceableKind.Lamp => (1, 1, 3),
+            PlaceableKind.ComfortBench => (2, 1, 3),
             _ => (0, 0, 0)
         };
         return width > 0;
