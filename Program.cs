@@ -55,6 +55,7 @@ internal static class Program
             float cameraX = 0, cameraY = 0, zoom = 1;
             float worldCameraX = (float)(ContinuousWorldState.WorldExtent / 2), worldCameraY = (float)(ContinuousWorldState.WorldExtent / 2);
             long? selectedWorldEntityId = null;
+            int? selectedMacroCellId = null;
             WorldResourceKind? selectedShipmentResource = null;
             bool factionDashboardOpen = false;
             string? selectedFactionName = "Kor";
@@ -68,7 +69,7 @@ internal static class Program
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedMacroCellId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -214,6 +215,7 @@ internal static class Program
                             worldCameraY = (cell.Y + 0.5f) * MacroWorldState.WorldCellSize;
                             zoom = 0.5f;
                             selectedWorldEntityId = null;
+                            selectedMacroCellId = latest.CellId;
                         }
                         else if (latest is not null)
                             simulation.SetMessage($"World report: {latest.Message}");
@@ -298,6 +300,17 @@ internal static class Program
                             .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))
                             .Select(item => (item.Entity, Distance: MathF.Sqrt(MathF.Pow(item.Screen.X - logicalMouse.X, 2) + MathF.Pow(item.Screen.Y - logicalMouse.Y, 2))))
                             .Where(item => item.Distance <= 20f).OrderBy(item => item.Distance).FirstOrDefault();
+                        if (hit.Entity is null)
+                        {
+                            int cellX = Math.Clamp((int)(continuousMouse.X / MacroWorldState.WorldCellSize), 0, MacroWorldState.Columns - 1);
+                            int cellY = Math.Clamp((int)(continuousMouse.Y / MacroWorldState.WorldCellSize), 0, MacroWorldState.Rows - 1);
+                            selectedMacroCellId = cellY * MacroWorldState.Columns + cellX + 1;
+                            selectedWorldEntityId = null;
+                        }
+                        else
+                        {
+                            selectedMacroCellId = null;
+                        }
                         if (hit.Entity != null && selectedShipmentResource.HasValue &&
                             selectedWorldEntityId.HasValue &&
                             world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind == WorldEntityKind.Caravan) &&
