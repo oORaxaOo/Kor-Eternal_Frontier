@@ -285,11 +285,11 @@ internal static class Program
                         else if (worldView && Hit(mx, my, 1016, 566, 1070, 588)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
                         else if (worldView && Hit(mx, my, 784, 593, 1086, 615)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
                         else if (!worldView && Hit(mx, my, 784, 566, 829, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 834, 566, 879, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 884, 566, 929, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
+                        else if (!worldView && Hit(mx, my, 834, 566, 879, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 884, 566, 929, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; demolitionMode = false; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
                         else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
                         else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
                         else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
