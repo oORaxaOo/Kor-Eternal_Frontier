@@ -480,10 +480,27 @@ internal sealed class ColonyRenderer : IDisposable
         int x = 405;
         foreach (var resource in Enum.GetValues<ResourceKind>())
         {
-            _text.Color = TextColor;
-            canvas.DrawText($"{resource.ToString().ToUpperInvariant()} {simulation.ResourceCount(resource)}", x, 27, SKTextAlign.Left, _smallFont, _text);
-            x += resource == ResourceKind.Components ? 0 : 80;
+            _fill.Color = new SKColor(24, 31, 29);
+            canvas.DrawRoundRect(new SKRect(x, 10, x + 104, 32), 3, 3, _fill);
+            _line.Color = Border;
+            canvas.DrawRoundRect(new SKRect(x, 10, x + 104, 32), 3, 3, _line);
+            _muted.Color = MutedColor;
+            canvas.DrawText(resource.ToString().ToUpperInvariant(), x + 6, 24, SKTextAlign.Left, _smallFont, _muted);
+            _text.Color = resource == ResourceKind.Components ? Gold : TextColor;
+            canvas.DrawText(simulation.ResourceCount(resource).ToString(), x + 98, 24, SKTextAlign.Right, _smallFont, _text);
+            x += 110;
         }
+
+        // The side cockpit is split into three restrained modules; all displayed values come
+        // from the live simulation/world model and all existing hit targets remain unchanged.
+        _fill.Color = new SKColor(22, 28, 28);
+        _line.Color = Border;
+        canvas.DrawRoundRect(new SKRect(780, 75, 1090, 278), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(780, 282, 1090, 485), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(780, 488, 1090, 649), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(780, 75, 1090, 278), 4, 4, _line);
+        canvas.DrawRoundRect(new SKRect(780, 282, 1090, 485), 4, 4, _line);
+        canvas.DrawRoundRect(new SKRect(780, 488, 1090, 649), 4, 4, _line);
 
         _text.Color = Gold;
         canvas.DrawText("COLONY STATUS", 790, 91, SKTextAlign.Left, _headingFont, _text);
