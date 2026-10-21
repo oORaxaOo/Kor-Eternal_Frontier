@@ -99,6 +99,19 @@ The obsolete instant campaign transfer bridge and linked-hex campaign model have
 Save / Load in the mouse menu saves or restores the current session. Run the self-test command shown above to check colony behavior, shared-ledger debits, capacity-aware storage, continuous production, the shared clock, shipment conservation, and session persistence.
 
 
+## Threading, timeslicing and frame-budget rules
+
+The colony and strategic world share consumed fixed-step time; drawing never owns simulation state. `WorldSimulation` processes at most eight 0.1-second fixed steps per call. If a frame stalls, the remaining simulation time stays in the accumulator and is consumed over later frames rather than triggering an unbounded catch-up loop or being silently discarded.
+
+- **Macro economy and macro Blight pressure:** the 100×100 value-type cell array schedules a macro turn at each 24,000-tick boundary. The turn cursor updates at most 128 cells per consumed world step. Population/food, focus-based output and cell pressure therefore advance in bounded slices; relief dispatch and global market-price/news updates run when the full turn finishes.
+- **Incident scan:** the separate strategic Blight/famine scan evaluates at most 128 cells per world step and resumes from a persisted cursor.
+- **Strategic caravan routes:** route-cost data is copied into an immutable array before work is queued. Background A* tasks only read that snapshot and publish results through a `ConcurrentQueue`; at most `min(4, max(1, processor count / 2))` route tasks are active at once. Only the simulation thread applies completed routes or mutates caravan/world state. Errors produce a visible notification and deterministic direct-route fallback.
+- **Local colony routes:** the 40×26 A* remains cached and runs synchronously on the simulation thread because its search space is small. This avoids creating background tasks for short local searches or allowing worker tasks to read mutable tile/worker objects.
+- **Thread-safety rule:** never use `Parallel.For` to mutate live pawns, tiles, inventory or UI state. Future parallel economy work must first operate on immutable snapshots or disjoint output buffers, then commit results on the simulation thread.
+
+These controls bound scheduled work; they are not a claim that 10,000 fully simulated local pawns or a specific FPS target has already been benchmarked. Macro population remains abstract outside the active colony, and detailed local tile-level Blight infection/health mechanics are still separate unfinished work.
+
+
 ## Deterministic colony simulation architecture
 
 The colony simulation uses a fixed-step `TickManager` at **60 simulation ticks per simulated second**, independent of render FPS. The existing speed control scales how much simulation time advances; 3x therefore means 180 ticks per real-world second (360 would be 6x at a 60-tick base rate). A bounded catch-up loop prevents an application stall from triggering an unbounded simulation backlog.
