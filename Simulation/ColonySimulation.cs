@@ -250,6 +250,7 @@ internal sealed class ColonySimulation
             {
                 var cell = new CellPosition(random.Next(2, Width - 2), random.Next(2, Height - 2));
                 if (usedCells.Contains(cell) || _tiles[cell.X, cell.Y].Terrain == TerrainKind.Rock ||
+                    (cell.X is >= 12 and <= 27 && cell.Y is >= 11 and <= 20) ||
                     ObjectAt(cell.X, cell.Y) != null ||
                     _workers.Any(worker => Math.Abs(worker.X - cell.X) < 3 && Math.Abs(worker.Y - cell.Y) < 3))
                     continue;
