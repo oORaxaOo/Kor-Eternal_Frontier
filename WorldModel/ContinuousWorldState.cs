@@ -62,6 +62,7 @@ internal sealed class ContinuousWorldState
     public Dictionary<long, double> InventoryCapacities { get; set; } = [];
     public List<WorldShipmentState> Shipments { get; set; } = [];
     public WorldEcologyState Ecology { get; set; } = new();
+    public RegionalWorldMap RegionalMap { get; set; } = new();
 
     [System.Text.Json.Serialization.JsonIgnore]
     private WorldSpatialIndex? _spatialIndex;
@@ -70,7 +71,7 @@ internal sealed class ContinuousWorldState
 
     public static ContinuousWorldState Generate(int seed)
     {
-        var state = new ContinuousWorldState { Seed = seed };
+        var state = new ContinuousWorldState { Seed = seed, RegionalMap = RegionalWorldMap.Generate(seed) };
         var korHome = state.AddEntity(WorldEntityKind.Settlement, "Kor Hearthhold", "Kor", 50_000, 50_000);
         var morrowstead = state.AddEntity(WorldEntityKind.Settlement, "Morrowstead", "Neutral", 54_200, 47_800);
         var vesper = state.AddEntity(WorldEntityKind.Settlement, "Vesper Crossing", "Neutral", 45_700, 53_600);
@@ -318,6 +319,12 @@ internal sealed class ContinuousWorldState
             throw new InvalidDataException($"Unsupported continuous world schema version: {SchemaVersion}.");
         Ecology ??= new WorldEcologyState();
         Ecology.Validate();
+        // Older world saves predate the regional layer; regenerate it deterministically from the world seed.
+        if (RegionalMap is null || RegionalMap.Regions is null || RegionalMap.Regions.Count == 0)
+            RegionalMap = RegionalWorldMap.Generate(Seed);
+        RegionalMap.Validate();
+        if (RegionalMap.Seed != Seed)
+            throw new InvalidDataException("Regional world map seed does not match the continuous world seed.");
         if (!double.IsFinite(ClockSeconds) || ClockSeconds < 0)
             throw new InvalidDataException("Continuous world clock is invalid.");
         if (Entities.Count > 100_000 || Entities.Select(entity => entity.Id).Distinct().Count() != Entities.Count)
