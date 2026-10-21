@@ -1518,8 +1518,8 @@ internal sealed class ColonySimulation
         var objects = _objects.Select(item => (Kind: item.Kind, Built: item.IsBuilt));
         var architecture = _tiles.Cast<TileCell>().Where(tile => tile.Architecture != ArchitectureKind.None)
             .Select(tile => (Kind: tile.Architecture));
-        var wealth = _wealth.Sample(_socialTick, inventory, objects, architecture);
-        var events = _storyteller.Step(_socialTick, new StorytellerColonyState(
+        var wealth = _wealth.Sample(_tickManager.TickCount, inventory, objects, architecture);
+        var events = _storyteller.Step(_tickManager.TickCount, new StorytellerColonyState(
             _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger,
             wealth.TotalWealth, wealth.ThreatPoints));
         var threatEvent = events.FirstOrDefault(item => item.ThreatPoints > 0);
