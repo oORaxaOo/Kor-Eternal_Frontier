@@ -42,7 +42,7 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 6;
+    public int SchemaVersion { get; set; } = 7;
     public long SocialTick { get; set; }
     public SocialNetworkSnapshot? SocialNetwork { get; set; }
     public IncidentManagerSnapshot? IncidentManager { get; set; }
