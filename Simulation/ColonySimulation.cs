@@ -86,6 +86,10 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
     public WorkerTask? Task { get; internal set; }
+    public string Faction { get; internal set; } = "Kor";
+    public bool IsExternalVisitor { get; internal set; }
+    public bool IsLeaving { get; internal set; }
+    public Dictionary<ResourceKind, int> TradeCargo { get; internal set; } = [];
 }
 
 internal sealed class WorkerTask(ColonyTaskKind kind, CellPosition target, List<CellPosition> route)
@@ -181,6 +185,72 @@ internal sealed class ColonySimulation
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
     public string Message { get; private set; } = "Colony ready. Design architecture per tile or place an object blueprint.";
     public void SetMessage(string message) => Message = message;
+
+    /// <summary>Spawns a real local pawn for a strategic caravan or refugee arrival.</summary>
+    public int SpawnExternalVisitor(string faction, IReadOnlyDictionary<ResourceKind, int>? cargo = null)
+    {
+        if (string.IsNullOrWhiteSpace(faction)) throw new ArgumentException("Visitor faction cannot be empty.", nameof(faction));
+        var targetCandidates = new[] { new CellPosition(19, 8), new CellPosition(18, 8), new CellPosition(20, 8), new CellPosition(19, 9), new CellPosition(18, 9), new CellPosition(20, 9) };
+        CellPosition? target = targetCandidates.FirstOrDefault(IsWalkable);
+        if (!target.HasValue || !IsWalkable(target.Value)) target = FindWalkableEdgeCell(1);
+        if (!target.HasValue) return 0;
+        CellPosition? entry = null;
+        for (int y = 0; y < Height && !entry.HasValue; y++)
+        {
+            var west = new CellPosition(0, y);
+            var east = new CellPosition(Width - 1, y);
+            if (IsWalkable(west)) entry = west;
+            else if (IsWalkable(east)) entry = east;
+        }
+        if (!entry.HasValue || !TryFindPath(entry.Value, target.Value, out var route)) return 0;
+        int id = _nextWorkerId++;
+        var visitor = new ColonyWorker(id, $"{faction}-Visitor-{id:0000}", entry.Value.X + 0.5f, entry.Value.Y + 0.5f, 0f)
+        {
+            Faction = faction,
+            IsExternalVisitor = true,
+            TradeCargo = cargo is null ? [] : cargo.Where(pair => pair.Value > 0).ToDictionary(pair => pair.Key, pair => pair.Value),
+            Task = new WorkerTask(ColonyTaskKind.Move, target.Value, route)
+        };
+        _workers.Add(visitor);
+        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry.Value);
+        Message = $"{faction} visitor entered the colony and is heading to the stockpile.";
+        return id;
+    }
+
+    public bool TradeWithVisitor(int workerId, ResourceKind offeredResource, int offeredAmount, MarketSnapshot market)
+    {
+        var visitor = _workers.FirstOrDefault(worker => worker.Id == workerId && worker.IsExternalVisitor && !worker.IsLeaving);
+        if (visitor is null || visitor.TradeCargo.Count == 0 || offeredAmount <= 0 || offeredAmount > ResourceCount(offeredResource)) return false;
+        ArgumentNullException.ThrowIfNull(market);
+        double offeredValue = offeredAmount * MarketPrice(offeredResource, market);
+        double cargoValue = visitor.TradeCargo.Sum(pair => pair.Value * MarketPrice(pair.Key, market));
+        int cargoUnits = visitor.TradeCargo.Values.Sum();
+        if (offeredValue + 1e-6 < cargoValue || cargoUnits > InventoryFreeCapacity) return false;
+        if (!TryTake(offeredResource, offeredAmount)) return false;
+        foreach (var item in visitor.TradeCargo.ToArray()) AddResource(item.Key, item.Value);
+        visitor.TradeCargo.Clear();
+        visitor.IsLeaving = true;
+        var edge = new CellPosition(Width - 1, Math.Clamp((int)visitor.Y, 0, Height - 1));
+        if (!TryFindPath(visitor, edge, out var route))
+        {
+            visitor.Task = null;
+            Message = $"Trade completed with {visitor.Name}; the visitor is waiting at the colony edge.";
+            return true;
+        }
+        visitor.Task = new WorkerTask(ColonyTaskKind.Move, edge, route);
+        Message = $"Trade completed with {visitor.Name}; cargo exchanged at current market values.";
+        return true;
+    }
+
+    private static float MarketPrice(ResourceKind resource, MarketSnapshot market) => resource switch
+    {
+        ResourceKind.Food => market.FoodPrice,
+        ResourceKind.Wood => market.WoodPrice,
+        ResourceKind.Stone => market.StonePrice,
+        ResourceKind.Alloy => market.AlloyPrice,
+        ResourceKind.Components => market.ComponentsPrice,
+        _ => 1f
+    };
     public int? SelectedWorkerId { get; private set; }
     public int? SelectedWorkOrderId => _selectedWorkOrderId;
     public int SelectedWorkOrderPriority => GetSelectedWorkOrderPriority() ?? 3;
@@ -854,7 +924,7 @@ internal sealed class ColonySimulation
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
             if (citizen.State == CitizenState.Idle || worker.Task != null)
                 citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
-            citizen.CanReceiveJob = worker.Task == null;
+            citizen.CanReceiveJob = worker.Task == null && !worker.IsExternalVisitor;
             citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
             citizen.Stress = worker.Stress;
         }
@@ -1649,7 +1719,7 @@ internal sealed class ColonySimulation
     {
         foreach (var worker in _workers)
         {
-            if (worker.Task != null) continue;
+            if (worker.IsExternalVisitor || worker.Task != null) continue;
             if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
             {
                 if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working or CitizenState.MentalBreak)
