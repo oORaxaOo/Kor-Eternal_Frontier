@@ -738,10 +738,10 @@ internal sealed class MacroWorldState
         if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Arrivals is null || ConsumedArrivalIds is null || Market is null || Research is null ||
             SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 ||
             MacroTurnsProcessed < 0 || MacroTurnsProcessed > MacroTurnsScheduled || MacroTurnsScheduled > SimulationTicks / TicksPerMacroTurn ||
-            !Enum.IsDefined(MacroTurnPhase) || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount ||
+            !Enum.IsDefined(TurnPhase) || MacroTurnCursor < 0 || MacroTurnCursor >= CellCount ||
             (MacroTurnCursor > 0 && MacroTurnsProcessed >= MacroTurnsScheduled) ||
             (TurnPhase != MacroTurnPhase.Idle && MacroTurnsProcessed >= MacroTurnsScheduled) ||
-            (MacroTurnPhase == MacroTurnPhase.Idle && MacroTurnCursor != 0) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
+            (TurnPhase == MacroTurnPhase.Idle && MacroTurnCursor != 0) || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Math.Max(Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max(), Arrivals.Select(a => a.Id).DefaultIfEmpty(0).Max()))
             throw new InvalidDataException("Macro world data has invalid dimensions or counters.");
