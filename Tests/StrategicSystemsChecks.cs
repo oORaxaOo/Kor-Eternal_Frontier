@@ -66,7 +66,9 @@ internal static class StrategicSystemsChecks
         raidWorld.SpatialWorld.SetInventoryCapacity(korSettlementId, 10_000);
         Check(raidWorld.SpatialWorld.TryAddInventory(korSettlementId, WorldResourceKind.Alloy, 1_000),
             "wealth incident test must be able to seed valuable stock in the shared ledger");
-        raidWorld.Step(34f);
+        // The coordinator intentionally caps catch-up to eight fixed substeps per frame.
+        // Advance through bounded frames rather than asking a single frame to simulate 34 seconds.
+        for (int frame = 0; frame < 43; frame++) raidWorld.Step(0.8f);
         Check(raidWorld.SpatialWorld.Entities.Any(entity =>
                 entity.Kind == WorldEntityKind.Army && entity.Faction == "Raiders" &&
                 entity.Name.StartsWith("Kor Wealth Raid ", StringComparison.Ordinal)),
