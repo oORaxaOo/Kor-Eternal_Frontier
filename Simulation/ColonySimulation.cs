@@ -1439,6 +1439,8 @@ internal sealed class ColonySimulation
                 Message = "The available resource stack is already fully reserved by other jobs.";
                 return;
             }
+            if (worker.Task?.Kind == ColonyTaskKind.Gather && worker.Task.DepositId != deposit.Id)
+                _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
             worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
             Message = $"{worker.Name} ordered to gather {deposit.Resource}. The material will be carried back to stockpile.";
             return;
@@ -1450,6 +1452,8 @@ internal sealed class ColonySimulation
             Message = "No walkable route to the selected tile.";
             return;
         }
+        if (worker.Task?.Kind == ColonyTaskKind.Gather)
+            _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
         worker.Task = new WorkerTask(ColonyTaskKind.Move, target, movement);
         Message = $"{worker.Name} moving to ({x}, {y}).";
     }
@@ -1662,18 +1666,24 @@ internal sealed class ColonySimulation
                 foreach (var category in Enum.GetValues<WorkCategory>())
                 {
                     if (_workPriorities.GetPriority(worker.Id, category) != pawnPriority) continue;
-                    for (int orderPriority = 5; orderPriority >= 1 && !assigned; orderPriority--)
+                    if (category == WorkCategory.Gathering)
                     {
-                        assigned = category switch
+                        assigned = TryAssignGatherForShortage(worker);
+                    }
+                    else
+                    {
+                        for (int orderPriority = 5; orderPriority >= 1 && !assigned; orderPriority--)
                         {
-                            WorkCategory.Mining => TryAssignExcavation(worker, orderPriority),
-                            WorkCategory.Construction => TryAssignTileBuild(worker, orderPriority) ||
-                                                        TryAssignObjectBuild(worker, orderPriority),
-                            WorkCategory.Production => TryAssignProduction(worker, orderPriority),
-                            WorkCategory.Gathering => TryAssignGatherForShortage(worker),
-                            WorkCategory.Hauling => false,
-                            _ => false
-                        };
+                            assigned = category switch
+                            {
+                                WorkCategory.Mining => TryAssignExcavation(worker, orderPriority),
+                                WorkCategory.Construction => TryAssignTileBuild(worker, orderPriority) ||
+                                                            TryAssignObjectBuild(worker, orderPriority),
+                                WorkCategory.Production => TryAssignProduction(worker, orderPriority),
+                                WorkCategory.Hauling => false,
+                                _ => false
+                            };
+                        }
                     }
                     if (assigned) break;
                 }
