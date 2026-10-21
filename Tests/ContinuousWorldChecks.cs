@@ -50,6 +50,33 @@ internal static class ContinuousWorldChecks
             "severe local Blight pressure must suppress settlement food production");
 
         var world = ContinuousWorldState.Generate(70241);
+        var sameSeedWorld = ContinuousWorldState.Generate(70241);
+        var otherSeedWorld = ContinuousWorldState.Generate(70242);
+        string WorldSignature(ContinuousWorldState value) => string.Join("|", value.Entities.Select(entity =>
+            $"{entity.Kind}:{entity.Name}:{entity.Faction}:{entity.X:R}:{entity.Y:R}:{entity.Resource}:{entity.ResourceAmount:R}"));
+        Check(WorldSignature(world) == WorldSignature(sameSeedWorld),
+            "the same seed must reproduce faction placement, settlements and resource sites exactly");
+        Check(WorldSignature(world) != WorldSignature(otherSeedWorld),
+            "different seeds must change overworld entity and resource placement");
+        Check(world.Entities.Count(entity => entity.Kind == WorldEntityKind.Settlement) >= 8 &&
+              world.Entities.Count(entity => entity.Kind == WorldEntityKind.ResourceSite) >= 28 &&
+              world.Entities.Any(entity => entity.Kind == WorldEntityKind.Army && entity.Faction != "Kor"),
+            "the generated world must contain multiple factions, settlements, resource sites and non-Kor forces");
+        Check(world.Entities.Where(entity => entity.Kind == WorldEntityKind.ResourceSite)
+                .All(entity => entity.Resource.HasValue && entity.ResourceAmount > 0),
+            "strategic resource sites must have a resource type and a positive finite reserve");
+        var spawnA = new WorldSimulation(1234);
+        var spawnB = new WorldSimulation(1234);
+        var spawnC = new WorldSimulation(1235);
+        string SpawnSignature(ColonySimulation colony) => string.Join("|", colony.Deposits.Select(deposit =>
+            $"{deposit.Cell.X}:{deposit.Cell.Y}:{deposit.Resource}:{deposit.Amount}")) + "/" +
+            string.Join("|", Enumerable.Range(0, ColonySimulation.Width).SelectMany(x =>
+                Enumerable.Range(0, ColonySimulation.Height).Where(y => colony.TileAt(x, y)?.Terrain == TerrainKind.Rock)
+                    .Select(y => $"{x}:{y}")));
+        Check(SpawnSignature(spawnA.Colony) == SpawnSignature(spawnB.Colony),
+            "the same seed must reproduce the local spawn map and resource deposits");
+        Check(SpawnSignature(spawnA.Colony) != SpawnSignature(spawnC.Colony),
+            "different world seeds must produce different local terrain and resource spawn maps");
         var projected = ContinuousWorldProjection.WorldToScreen(50_000, 50_000, 50_000, 50_000, .65f);
         var unprojected = ContinuousWorldProjection.ScreenToWorld(projected.X, projected.Y, 50_000, 50_000, .65f);
         Check(Math.Abs(unprojected.X - 50_000) < .01 && Math.Abs(unprojected.Y - 50_000) < .01,
