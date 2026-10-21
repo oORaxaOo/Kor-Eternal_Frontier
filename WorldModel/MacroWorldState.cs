@@ -42,6 +42,10 @@ internal sealed class MacroCaravanState
     public int TargetCellId { get; set; }
     public float TravelSpeed { get; set; } = 0.05f;
     public Dictionary<MacroResource, float> Cargo { get; set; } = [];
+    public List<WorldRouteNode> RouteNodes { get; set; } = [];
+    public int RouteIndex { get; set; }
+    public bool RoutePending { get; set; }
+    public bool RouteReady { get; set; }
 }
 
 internal sealed record WorldNotification(long Id, long Tick, string Category, string Message, int CellId, bool Important);
@@ -137,7 +141,12 @@ internal sealed class MacroWorldState
     public long NextNotificationId { get; set; } = 1;
     public long NextCaravanId { get; set; } = 1;
     public int MacroTurnsProcessed { get; set; }
+    public int MacroTurnsScheduled { get; set; }
+    public int MacroTurnCursor { get; set; }
     public int TickSliceCursor { get; set; }
+    private readonly BackgroundWorldRouteScheduler _routeScheduler = new();
+    private const int MacroCellsPerSlice = 128;
+    private const int IncidentCellsPerSlice = 128;
     public int Seed { get; set; }
 
     public static MacroWorldState Generate(int seed, RegionalWorldMap regions, IReadOnlyList<WorldEntityState> entities,
@@ -247,62 +256,157 @@ internal sealed class MacroWorldState
         long tickDelta = (long)Math.Floor(totalTickDelta + 1e-8);
         FractionalTickRemainder = Math.Max(0d, totalTickDelta - tickDelta);
         SimulationTicks = checked(SimulationTicks + tickDelta);
+
+        long dueTurns = SimulationTicks / TicksPerMacroTurn;
+        MacroTurnsScheduled = (int)Math.Max(MacroTurnsScheduled, Math.Min(int.MaxValue, dueTurns));
+
+        ApplyCompletedRoutes();
         UpdateCaravans(deltaSeconds);
-        // Storyteller-style cell scanning is sliced into small deterministic batches every shared tick.
-        EvaluateIncidentSlice(continuous, 600);
-        while (SimulationTicks / TicksPerMacroTurn > MacroTurnsProcessed)
+        EvaluateIncidentSlice(continuous, IncidentCellsPerSlice);
+        ProcessMacroTurnSlice(continuous, MacroCellsPerSlice);
+        StartPendingCaravanRoutes();
+    }
+
+    /// <summary>
+    /// Processes at most a fixed number of regions per call. All mutations stay on the simulation
+    /// thread; no daily turn is allowed to run an unbounded 10,000-cell loop in one frame.
+    /// </summary>
+    private void ProcessMacroTurnSlice(ContinuousWorldState continuous, int cellBudget)
+    {
+        ArgumentNullException.ThrowIfNull(continuous);
+        int remaining = Math.Max(1, cellBudget);
+        while (remaining > 0 && MacroTurnsProcessed < MacroTurnsScheduled)
         {
-            ProcessMacroTurn(continuous);
-            MacroTurnsProcessed++;
+            if (MacroTurnCursor < Cells.Length)
+            {
+                ProcessMacroCell(MacroTurnCursor, continuous);
+                MacroTurnCursor++;
+                remaining--;
+            }
+
+            if (MacroTurnCursor >= Cells.Length)
+            {
+                MacroTurnCursor = 0;
+                MacroTurnsProcessed++;
+                DispatchReliefCaravans();
+                UpdatePricesAndEmitMarketNews((long)MacroTurnsProcessed * TicksPerMacroTurn);
+            }
         }
     }
 
-    public void ProcessMacroTurn(ContinuousWorldState continuous)
+    private void ProcessMacroCell(int index, ContinuousWorldState continuous)
     {
-        ArgumentNullException.ThrowIfNull(continuous);
+        ref var cell = ref Cells[index];
+        if (cell.OwningFactionId == 0) return;
+        float population = Math.Max(0, cell.Population);
+        float pressure = Math.Clamp(cell.BlightPresence, 0f, 1f);
+        float consumed = population * 0.01f;
+        cell.FoodCount = Math.Max(0f, cell.FoodCount - consumed);
+        switch (cell.ProductionFocus)
+        {
+            case ProductionFocus.Agriculture:
+                cell.FoodCount += population * 0.015f * cell.Fertility * (1f - pressure * 0.9f);
+                break;
+            case ProductionFocus.Mining:
+                cell.StoneCount += population * 0.0025f;
+                cell.AlloyCount += population * 0.0003f;
+                break;
+            case ProductionFocus.Industry:
+                cell.ComponentsCount += population * 0.0005f;
+                cell.AlloyCount += population * 0.0004f;
+                cell.EnergyCount = Math.Max(0, cell.EnergyCount - population * 0.0006f);
+                break;
+            case ProductionFocus.Military:
+                cell.AlloyCount = Math.Max(0, cell.AlloyCount - population * 0.0005f);
+                cell.ComponentsCount = Math.Max(0, cell.ComponentsCount - population * 0.00025f);
+                break;
+        }
+        cell.WoodCount += population * (cell.Biome == WorldBiomeKind.Forest ? 0.0015f : 0.0003f);
+        cell.BlightPresence = Math.Clamp(pressure + (pressure > 0.15f ? 0.01f : -0.002f), 0f, 1f);
+        if (cell.FoodCount < population * 0.002f && cell.Population > 0)
+        {
+            int losses = Math.Max(1, (int)Math.Ceiling(cell.Population * 0.015f));
+            cell.Population = Math.Max(0, cell.Population - losses);
+            AddNotification(SimulationTicks, "famine", $"Famine in macro cell {cell.CellId}: population declined by {losses}.", cell.CellId, true);
+            if (cell.Population > 0 && cell.FoodCount < population * 0.0005f)
+                TryTriggerRefugeeWave(index, continuous);
+        }
+        else if (cell.FoodCount > population * 0.03f && cell.Population > 0)
+            cell.Population = Math.Min(100_000, cell.Population + Math.Max(1, (int)(cell.Population * 0.002f)));
+    }
+
+    private float[] BuildRouteCostSnapshot()
+    {
+        var costs = new float[Cells.Length];
         for (int i = 0; i < Cells.Length; i++)
         {
-            ref var cell = ref Cells[i];
-            if (cell.OwningFactionId == 0) continue;
-            float population = Math.Max(0, cell.Population);
-            float pressure = Math.Clamp(cell.BlightPresence, 0f, 1f);
-            float consumed = population * 0.01f;
-            cell.FoodCount = Math.Max(0f, cell.FoodCount - consumed);
-            switch (cell.ProductionFocus)
+            ref readonly var cell = ref Cells[i];
+            float terrain = cell.Biome switch
             {
-                case ProductionFocus.Agriculture:
-                    cell.FoodCount += population * 0.015f * cell.Fertility * (1f - pressure * 0.9f);
-                    break;
-                case ProductionFocus.Mining:
-                    cell.StoneCount += population * 0.0025f;
-                    cell.AlloyCount += population * 0.0003f;
-                    break;
-                case ProductionFocus.Industry:
-                    cell.ComponentsCount += population * 0.0005f;
-                    cell.AlloyCount += population * 0.0004f;
-                    cell.EnergyCount = Math.Max(0, cell.EnergyCount - population * 0.0006f);
-                    break;
-                case ProductionFocus.Military:
-                    cell.AlloyCount = Math.Max(0, cell.AlloyCount - population * 0.0005f);
-                    cell.ComponentsCount = Math.Max(0, cell.ComponentsCount - population * 0.00025f);
-                    break;
-            }
-            cell.WoodCount += population * (cell.Biome == WorldBiomeKind.Forest ? 0.0015f : 0.0003f);
-            cell.BlightPresence = Math.Clamp(pressure + (pressure > 0.15f ? 0.01f : -0.002f), 0f, 1f);
-            if (cell.FoodCount < population * 0.002f && cell.Population > 0)
+                WorldBiomeKind.Mountain => 2.4f,
+                WorldBiomeKind.Wetland => 1.9f,
+                WorldBiomeKind.Desert => 1.45f,
+                WorldBiomeKind.Tundra => 1.4f,
+                WorldBiomeKind.Forest => 1.25f,
+                _ => 1f
+            };
+            costs[i] = terrain * (1f + Math.Clamp(cell.BlightPresence, 0f, 1f) * 5f);
+        }
+        return costs;
+    }
+
+    private void ApplyCompletedRoutes()
+    {
+        foreach (var result in _routeScheduler.DrainCompleted())
+        {
+            var caravan = Caravans.FirstOrDefault(item => item.Id == result.CaravanId);
+            if (caravan is null || caravan.TargetCellId != result.TargetCellId) continue;
+            caravan.RoutePending = false;
+            if (result.Nodes is { Count: > 0 })
             {
-                int losses = Math.Max(1, (int)Math.Ceiling(cell.Population * 0.015f));
-                cell.Population = Math.Max(0, cell.Population - losses);
-                AddNotification(SimulationTicks, "famine", $"Famine in macro cell {cell.CellId}: population declined by {losses}.", cell.CellId, true);
-                if (cell.Population > 0 && cell.FoodCount < population * 0.0005f)
-                    TryTriggerRefugeeWave(i, continuous);
+                caravan.RouteNodes = result.Nodes.ToList();
+                caravan.RouteIndex = caravan.RouteNodes.Count > 1 ? 1 : caravan.RouteNodes.Count;
+                caravan.RouteReady = true;
+                AddNotification(SimulationTicks, "route", $"Caravan {caravan.Id} completed its strategic route.", caravan.TargetCellId, false);
             }
-            else if (cell.FoodCount > population * 0.03f && cell.Population > 0)
-                cell.Population = Math.Min(100_000, cell.Population + Math.Max(1, (int)(cell.Population * 0.002f)));
+            else
+            {
+                int startX = Math.Clamp((int)MathF.Round(caravan.X), 0, Columns - 1);
+                int startY = Math.Clamp((int)MathF.Round(caravan.Y), 0, Rows - 1);
+                var target = Cells[caravan.TargetCellId - 1];
+                caravan.RouteNodes =
+                [
+                    new WorldRouteNode(startX, startY),
+                    new WorldRouteNode(target.X, target.Y)
+                ];
+                caravan.RouteIndex = 1;
+                caravan.RouteReady = true;
+                AddNotification(SimulationTicks, "route", $"Caravan {caravan.Id} route planning failed ({result.Error}); direct fallback route selected.", caravan.TargetCellId, true);
+            }
         }
 
-        DispatchReliefCaravans();
-        UpdatePricesAndEmitMarketNews();
+        // A save can capture a pending task but not the process-local Task itself. Requeue it after load.
+        foreach (var caravan in Caravans)
+            if (caravan.RoutePending && !_routeScheduler.IsInFlight(caravan.Id) && !caravan.RouteReady)
+                caravan.RoutePending = false;
+    }
+
+    private void StartPendingCaravanRoutes()
+    {
+        int available = _routeScheduler.MaxConcurrentRoutes - _routeScheduler.InFlightCount;
+        if (available <= 0) return;
+        var pending = Caravans.Where(item => !item.RouteReady && !item.RoutePending)
+            .OrderBy(item => item.Id).Take(available).ToArray();
+        if (pending.Length == 0) return;
+        float[] costSnapshot = BuildRouteCostSnapshot();
+        foreach (var caravan in pending)
+        {
+            int startX = Math.Clamp((int)MathF.Round(caravan.X), 0, Columns - 1);
+            int startY = Math.Clamp((int)MathF.Round(caravan.Y), 0, Rows - 1);
+            int startCellId = startY * Columns + startX + 1;
+            if (_routeScheduler.TrySchedule(caravan.Id, caravan.TargetCellId, Columns, startCellId, costSnapshot))
+                caravan.RoutePending = true;
+        }
     }
 
     private void DispatchReliefCaravans()
@@ -422,10 +526,10 @@ internal sealed class MacroWorldState
         TickSliceCursor = end >= Cells.Length ? 0 : end;
     }
 
-    private void UpdatePricesAndEmitMarketNews()
+    private void UpdatePricesAndEmitMarketNews(long priceSampleTick)
     {
         float previousFood = Market.FoodPrice, previousAlloy = Market.AlloyPrice;
-        MarketSystem.UpdatePrices(this, SimulationTicks);
+        MarketSystem.UpdatePrices(this, priceSampleTick);
         if (previousFood > 0 && Market.FoodPrice >= previousFood * 1.4f)
             AddNotification(SimulationTicks, "market", $"Global food price surged to {Market.FoodPrice:0.00}× as supplies tightened.", 0, true);
         if (previousAlloy > 0 && Market.AlloyPrice >= previousAlloy * 1.4f)
