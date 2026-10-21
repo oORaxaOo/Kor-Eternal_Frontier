@@ -42,7 +42,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
         }
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -375,7 +375,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool excavationMode, bool paused, float speedMultiplier, bool worldView,
+        PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         _fill.Color = Background;
