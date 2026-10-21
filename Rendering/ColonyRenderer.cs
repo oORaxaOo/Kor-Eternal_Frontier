@@ -29,7 +29,7 @@ internal sealed class ColonyRenderer : IDisposable
     private readonly SKFont _titleFont = new(SKTypeface.FromFamilyName("sans-serif", SKFontStyle.Bold), 22);
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
-        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, bool paused, float speedMultiplier,
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         canvas.Clear(Background);
@@ -42,7 +42,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
         }
-        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -304,6 +304,9 @@ internal sealed class ColonyRenderer : IDisposable
                 PlaceableKind.StorageRack => new SKColor(82, 70, 49),
                 PlaceableKind.Generator => new SKColor(72, 48, 79),
                 PlaceableKind.Garden => new SKColor(39, 75, 48),
+                PlaceableKind.DiningTable => new SKColor(105, 75, 49),
+                PlaceableKind.Lamp => new SKColor(105, 91, 48),
+                PlaceableKind.ComfortBench => new SKColor(65, 79, 74),
                 _ => new SKColor(48, 50, 50)
             };
             canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
@@ -326,6 +329,9 @@ internal sealed class ColonyRenderer : IDisposable
                 PlaceableKind.StorageRack => "R",
                 PlaceableKind.Generator => "G",
                 PlaceableKind.Garden => "F",
+                PlaceableKind.DiningTable => "T",
+                PlaceableKind.Lamp => "L",
+                PlaceableKind.ComfortBench => "C",
                 _ => "?"
             };
             canvas.DrawText(label, rect.MidX, rect.MidY + 4f * zoom, SKTextAlign.Center, _headingFont, _text);
@@ -375,7 +381,7 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
-        PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, bool paused, float speedMultiplier, bool worldView,
+        PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
     {
         _fill.Color = Background;
@@ -525,11 +531,22 @@ internal sealed class ColonyRenderer : IDisposable
             DrawButton(canvas, "DOOR", 934, 566, 45, 22, architectureMode == ArchitectureKind.Door);
             DrawButton(canvas, "COND", 984, 566, 45, 22, architectureMode == ArchitectureKind.Conduit);
             DrawButton(canvas, "DIG", 1034, 566, 45, 22, excavationMode);
-            DrawButton(canvas, "BENCH", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Workbench);
-            DrawButton(canvas, "POD", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.SleepingPod);
-            DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
-            DrawButton(canvas, "GEN", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.Generator);
-            DrawButton(canvas, "GARDEN", 988, 593, 47, 22, placingObject && objectType == PlaceableKind.Garden);
+            if (buildMenuPage == 0)
+            {
+                DrawButton(canvas, "BENCH", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Workbench);
+                DrawButton(canvas, "POD", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.SleepingPod);
+                DrawButton(canvas, "RACK", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.StorageRack);
+                DrawButton(canvas, "GEN", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.Generator);
+                DrawButton(canvas, "MORE >", 988, 593, 47, 22, false);
+            }
+            else
+            {
+                DrawButton(canvas, "GARDEN", 784, 593, 47, 22, placingObject && objectType == PlaceableKind.Garden);
+                DrawButton(canvas, "TABLE", 835, 593, 47, 22, placingObject && objectType == PlaceableKind.DiningTable);
+                DrawButton(canvas, "LAMP", 886, 593, 47, 22, placingObject && objectType == PlaceableKind.Lamp);
+                DrawButton(canvas, "SEAT", 937, 593, 47, 22, placingObject && objectType == PlaceableKind.ComfortBench);
+                DrawButton(canvas, "< BACK", 988, 593, 47, 22, false);
+            }
             DrawButton(canvas, demolitionMode ? "DONE" : "REMOVE", 1039, 593, 47, 22, demolitionMode);
         }
 

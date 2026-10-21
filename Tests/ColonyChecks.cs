@@ -49,6 +49,10 @@ internal static class ColonyChecks
             "A* must prefer a longer low-cost route over an expensive direct cell");
 
         var environment = new ColonySimulation();
+        var furnitureChecks = new ColonySimulation();
+        Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0, "dining table should accept a blueprint");
+        Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.Lamp, 10, 6) > 0, "lamp should accept a blueprint");
+        Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.ComfortBench, 12, 6) > 0, "comfort bench should accept a blueprint");
         var builderControls = new ColonySimulation();
         Check(builderControls.DesignTileConstruction(5, 5, ArchitectureKind.Floor),
             "a clear tile should accept a construction blueprint");
