@@ -30,7 +30,7 @@ internal sealed class ColonyRenderer : IDisposable
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
-        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource,
+        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, int? selectedMacroCellId, WorldResourceKind? selectedShipmentResource,
         float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab, int workMatrixPage)
     {
         canvas.Clear(Background);
@@ -46,6 +46,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
         DrawWorldTicker(canvas, spatialWorld);
+        if (worldView && selectedMacroCellId.HasValue) DrawMacroCellInspector(canvas, spatialWorld, selectedMacroCellId.Value);
         DrawFactionButton(canvas, factionDashboardOpen);
         DrawWorkMatrixButton(canvas, workMatrixOpen);
         if (!worldView && !workMatrixOpen && simulation.SelectedWorkerId.HasValue)
@@ -98,6 +99,35 @@ internal sealed class ColonyRenderer : IDisposable
             }
         }
         canvas.Restore();
+    }
+
+    private void DrawMacroCellInspector(SKCanvas canvas, ContinuousWorldState world, int cellId)
+    {
+        if (cellId < 1 || cellId > world.MacroWorld.Cells.Length) return;
+        var cell = world.MacroWorld.Cells[cellId - 1];
+        string faction = world.MacroWorld.FactionIds.FirstOrDefault(pair => pair.Value == cell.OwningFactionId).Key ?? "Neutral wilderness";
+        var panel = new SKRect(784, 72, 1088, 366);
+        _fill.Color = Panel;
+        canvas.DrawRoundRect(panel, 8, 8, _fill);
+        _line.Color = Gold;
+        _line.StrokeWidth = 1.2f;
+        canvas.DrawRoundRect(panel, 8, 8, _line);
+        _text.Color = Gold;
+        canvas.DrawText($"WORLD CELL {cell.CellId:00000}", 800, 96, SKTextAlign.Left, _headingFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"Grid {cell.X}, {cell.Y}  ·  {cell.Biome}", 800, 116, SKTextAlign.Left, _smallFont, _muted);
+        _text.Color = TextColor;
+        canvas.DrawText($"Faction: {faction}", 800, 143, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Population: {cell.Population:N0}", 800, 166, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Focus: {cell.ProductionFocus}", 800, 189, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Fertility: {cell.Fertility:0.00}×", 800, 212, SKTextAlign.Left, _normalFont, _text);
+        _text.Color = cell.BlightPresence >= 0.5f ? new SKColor(241, 104, 124) : TextColor;
+        canvas.DrawText($"Blight pressure: {cell.BlightPresence:P0}", 800, 235, SKTextAlign.Left, _normalFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"Food {cell.FoodCount:0}  ·  Wood {cell.WoodCount:0}  ·  Stone {cell.StoneCount:0}", 800, 263, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText($"Alloy {cell.AlloyCount:0}  ·  Energy {cell.EnergyCount:0}  ·  Components {cell.ComponentsCount:0}", 800, 282, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText($"Market: Food {world.MacroWorld.Market.FoodPrice:0.00}×  Alloy {world.MacroWorld.Market.AlloyPrice:0.00}×", 800, 310, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(cell.IsLocalMapGenerated ? "LOCAL MAP: ACTIVE" : "LOCAL MAP: ABSTRACT SIMULATION", 800, 339, SKTextAlign.Left, _smallFont, cell.IsLocalMapGenerated ? _text : _muted);
     }
 
     private void DrawWorldTicker(SKCanvas canvas, ContinuousWorldState world)
@@ -184,6 +214,20 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawCircle(point.X, point.Y, 3.5f, _fill);
             _text.Color = new SKColor(220, 224, 210);
             canvas.DrawText($"H{herd.Population}", point.X + 5, point.Y - 4, SKTextAlign.Left, _smallFont, _text);
+        }
+        foreach (var caravan in world.MacroWorld.Caravans)
+        {
+            if (caravan.TargetCellId < 1 || caravan.TargetCellId > world.MacroWorld.Cells.Length) continue;
+            var targetCell = world.MacroWorld.Cells[caravan.TargetCellId - 1];
+            var point = ContinuousWorldProjection.WorldToScreen((caravan.X + 0.5d) * MacroWorldState.WorldCellSize,
+                (caravan.Y + 0.5d) * MacroWorldState.WorldCellSize, cameraX, cameraY, zoom);
+            var target = ContinuousWorldProjection.WorldToScreen((targetCell.X + 0.5d) * MacroWorldState.WorldCellSize,
+                (targetCell.Y + 0.5d) * MacroWorldState.WorldCellSize, cameraX, cameraY, zoom);
+            _line.Color = new SKColor(216, 177, 89, 140);
+            _line.StrokeWidth = 1.5f;
+            canvas.DrawLine(point.X, point.Y, target.X, target.Y, _line);
+            _fill.Color = Gold;
+            canvas.DrawCircle(point.X, point.Y, 3.5f, _fill);
         }
         foreach (var entity in world.Entities)
         {
