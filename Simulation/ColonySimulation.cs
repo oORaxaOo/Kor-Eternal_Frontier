@@ -1101,6 +1101,14 @@ internal sealed class ColonySimulation
         return true;
     }
 
+    public bool CanDesignTileConstruction(int x, int y, ArchitectureKind target)
+    {
+        if (target is ArchitectureKind.None || !InBounds(x, y)) return false;
+        var tile = _tiles[x, y];
+        return tile.Terrain == TerrainKind.Ground && tile.Architecture == ArchitectureKind.None &&
+            !tile.ConstructionOrderId.HasValue && ObjectAt(x, y) == null && DepositAt(x, y) == null;
+    }
+
     public bool DesignTileConstruction(int x, int y, ArchitectureKind target)
     {
         if (target is ArchitectureKind.None)
@@ -1115,13 +1123,12 @@ internal sealed class ColonySimulation
         }
 
         var cell = new CellPosition(x, y);
-        var tile = _tiles[x, y];
-        if (tile.Terrain != TerrainKind.Ground || tile.Architecture != ArchitectureKind.None ||
-            tile.ConstructionOrderId.HasValue || ObjectAt(x, y) != null || DepositAt(x, y) != null)
+        if (!CanDesignTileConstruction(x, y, target))
         {
             Message = "Architecture cannot be designated on an occupied tile, an active deposit, or unsuitable ground.";
             return false;
         }
+        var tile = _tiles[x, y];
 
         int work = target switch
         {
@@ -1139,6 +1146,28 @@ internal sealed class ColonySimulation
         return true;
     }
 
+    public bool TryGetPlacementFootprint(PlaceableKind kind, out int width, out int height)
+    {
+        bool supported = TryGetFootprint(kind, out width, out height, out _);
+        if (kind is PlaceableKind.Habitat or PlaceableKind.Stockpile) { width = 1; height = 1; return true; }
+        return supported;
+    }
+
+    public bool CanPlaceObjectAt(PlaceableKind kind, int x, int y)
+    {
+        if (kind is PlaceableKind.Habitat or PlaceableKind.Stockpile ||
+            !TryGetFootprint(kind, out int width, out int height, out _)) return false;
+        for (int ty = y; ty < y + height; ty++)
+        for (int tx = x; tx < x + width; tx++)
+        {
+            if (!InBounds(tx, ty) || _tiles[tx, ty].Terrain != TerrainKind.Ground ||
+                _tiles[tx, ty].Architecture is ArchitectureKind.Wall ||
+                _tiles[tx, ty].ConstructionOrderId.HasValue || ObjectAt(tx, ty) != null || DepositAt(tx, ty) != null)
+                return false;
+        }
+        return true;
+    }
+
     public int PlaceObjectBlueprint(PlaceableKind kind, int x, int y)
     {
         if (kind is PlaceableKind.Habitat or PlaceableKind.Stockpile)
@@ -1153,16 +1182,10 @@ internal sealed class ColonySimulation
         }
 
         var origin = new CellPosition(x, y);
-        for (int ty = y; ty < y + height; ty++)
-        for (int tx = x; tx < x + width; tx++)
+        if (!CanPlaceObjectAt(kind, x, y))
         {
-            if (!InBounds(tx, ty) || _tiles[tx, ty].Terrain != TerrainKind.Ground ||
-                _tiles[tx, ty].Architecture is ArchitectureKind.Wall ||
-                _tiles[tx, ty].ConstructionOrderId.HasValue || ObjectAt(tx, ty) != null || DepositAt(tx, ty) != null)
-            {
-                Message = "The full object footprint must be clear ground without active resource deposits.";
-                return 0;
-            }
+            Message = "The full object footprint must be clear ground without active resource deposits.";
+            return 0;
         }
 
         var item = new PlaceableObjectState(_nextObjectId++, kind, origin, width, height, work, ConstructionStatus.Planned);
