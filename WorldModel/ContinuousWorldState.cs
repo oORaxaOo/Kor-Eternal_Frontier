@@ -40,6 +40,8 @@ internal sealed class WorldEntityState
     public double? DestinationX { get; set; }
     public double? DestinationY { get; set; }
     public double MovementSpeed { get; set; }
+    public WorldResourceKind? Resource { get; set; }
+    public double ResourceAmount { get; set; }
     public bool IsMoving => DestinationX.HasValue && DestinationY.HasValue;
 }
 
@@ -72,27 +74,65 @@ internal sealed class ContinuousWorldState
     public static ContinuousWorldState Generate(int seed)
     {
         var state = new ContinuousWorldState { Seed = seed, RegionalMap = RegionalWorldMap.Generate(seed) };
-        var korHome = state.AddEntity(WorldEntityKind.Settlement, "Kor Hearthhold", "Kor", 50_000, 50_000);
-        var morrowstead = state.AddEntity(WorldEntityKind.Settlement, "Morrowstead", "Neutral", 54_200, 47_800);
-        var vesper = state.AddEntity(WorldEntityKind.Settlement, "Vesper Crossing", "Neutral", 45_700, 53_600);
-        var ironwood = state.AddEntity(WorldEntityKind.Settlement, "Ironwood Enclave", "Neutral", 58_600, 54_100);
+        var random = new Random(seed);
+        var korHome = state.AddEntity(WorldEntityKind.Settlement, "Kor Hearthhold", "Kor", 42_000 + random.Next(16_001), 42_000 + random.Next(16_001));
         state.Inventories[korHome.Id] = new() { [WorldResourceKind.Wood] = 20, [WorldResourceKind.Stone] = 14, [WorldResourceKind.Food] = 32, [WorldResourceKind.Alloy] = 8, [WorldResourceKind.Components] = 4 };
-        state.Inventories[morrowstead.Id] = new() { [WorldResourceKind.Food] = 90, [WorldResourceKind.Stone] = 35 };
-        state.Inventories[vesper.Id] = new() { [WorldResourceKind.Wood] = 75, [WorldResourceKind.Food] = 60 };
-        state.Inventories[ironwood.Id] = new() { [WorldResourceKind.Alloy] = 45, [WorldResourceKind.Stone] = 70 };
         state.InventoryCapacities[korHome.Id] = 120;
-        state.InventoryCapacities[morrowstead.Id] = 500;
-        state.InventoryCapacities[vesper.Id] = 500;
-        state.InventoryCapacities[ironwood.Id] = 500;
-        state.AddEntity(WorldEntityKind.ResourceSite, "Westwood Deposit", "Neutral", 48_200, 51_900);
-        state.AddEntity(WorldEntityKind.BlightFront, "Blight Expanse", "Blight", 64_000, 46_500);
-        state.AddEntity(WorldEntityKind.Army, "Kor Vanguard", "Kor", 51_200, 50_800);
-        state.AddEntity(WorldEntityKind.Caravan, "Hearthhold Caravan", "Kor", 49_100, 50_400);
+        var factions = new[] { ("Ember Compact", "Emberwatch"), ("Verdant Pact", "Greenhollow"), ("Iron Dominion", "Ironreach"), ("Freeholds", "Wayfarer Rest"), ("Dawn Assembly", "Dawnport") };
+        foreach (var (faction, settlementName) in factions)
+        {
+            int settlementCount = 1 + random.Next(2);
+            for (int i = 0; i < settlementCount; i++)
+            {
+                var (x, y) = FindOpenPosition(state, random, 8_000);
+                var settlement = state.AddEntity(WorldEntityKind.Settlement, i == 0 ? settlementName : $"{settlementName} {i + 1}", faction, x, y);
+                var inventory = new Dictionary<WorldResourceKind, double> { [WorldResourceKind.Food] = 30 + random.Next(101), [WorldResourceKind.Wood] = random.Next(10, 71) };
+                if (random.NextDouble() > 0.35) inventory[WorldResourceKind.Stone] = random.Next(10, 81);
+                if (random.NextDouble() > 0.55) inventory[WorldResourceKind.Alloy] = random.Next(5, 41);
+                state.Inventories[settlement.Id] = inventory;
+                state.InventoryCapacities[settlement.Id] = 350 + random.Next(351);
+            }
+        }
+        string[] resourceNames = ["Oldgrowth Forest", "Basalt Quarry", "Amber Fields", "Iron Vein", "Crystal Shelf", "Mosswater Basin"];
+        WorldResourceKind[] resources = [WorldResourceKind.Wood, WorldResourceKind.Stone, WorldResourceKind.Food, WorldResourceKind.Alloy, WorldResourceKind.Knowledge, WorldResourceKind.Energy];
+        int resourceSites = 28 + random.Next(17);
+        for (int i = 0; i < resourceSites; i++)
+        {
+            var (x, y) = FindOpenPosition(state, random, 1_500);
+            var resource = resources[random.Next(resources.Length)];
+            var site = state.AddEntity(WorldEntityKind.ResourceSite, $"{resourceNames[(int)resource % resourceNames.Length]} {i + 1}", "Neutral", x, y);
+            site.Resource = resource;
+            site.ResourceAmount = 80 + random.Next(921);
+        }
+        int blightCount = 2 + random.Next(3);
+        for (int i = 0; i < blightCount; i++)
+        {
+            var (x, y) = FindOpenPosition(state, random, 3_000);
+            state.AddEntity(WorldEntityKind.BlightFront, i == 0 ? "Blight Expanse" : $"Blight Front {i + 1}", "Blight", x, y);
+        }
+        state.AddEntity(WorldEntityKind.Army, "Kor Vanguard", "Kor", Math.Clamp(korHome.X + random.Next(-1_500, 1_501), 0, WorldExtent), Math.Clamp(korHome.Y + random.Next(-1_500, 1_501), 0, WorldExtent));
+        state.AddEntity(WorldEntityKind.Caravan, "Hearthhold Caravan", "Kor", Math.Clamp(korHome.X + random.Next(-2_000, 2_001), 0, WorldExtent), Math.Clamp(korHome.Y + random.Next(-2_000, 2_001), 0, WorldExtent));
+        foreach (var faction in factions.Select(item => item.Item1))
+        {
+            var settlement = state.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == faction);
+            state.AddEntity(WorldEntityKind.Army, $"{faction} Guard", faction, Math.Clamp(settlement.X + random.Next(-1_200, 1_201), 0, WorldExtent), Math.Clamp(settlement.Y + random.Next(-1_200, 1_201), 0, WorldExtent));
+            if (random.NextDouble() > 0.45) state.AddEntity(WorldEntityKind.Caravan, $"{faction} Traders", faction, Math.Clamp(settlement.X + random.Next(-2_500, 2_501), 0, WorldExtent), Math.Clamp(settlement.Y + random.Next(-2_500, 2_501), 0, WorldExtent));
+        }
         state.Ecology.Initialize(seed);
         state.Validate();
         return state;
-    }
 
+        static (double X, double Y) FindOpenPosition(ContinuousWorldState world, Random rng, double minimumDistance)
+        {
+            for (int attempt = 0; attempt < 200; attempt++)
+            {
+                double x = 2_000 + rng.NextDouble() * (WorldExtent - 4_000);
+                double y = 2_000 + rng.NextDouble() * (WorldExtent - 4_000);
+                if (world.Entities.All(entity => Distance(entity.X, entity.Y, x, y) >= minimumDistance)) return (x, y);
+            }
+            return (2_000 + rng.NextDouble() * (WorldExtent - 4_000), 2_000 + rng.NextDouble() * (WorldExtent - 4_000));
+        }
+    }
     public WorldEntityState AddEntity(WorldEntityKind kind, string name, string faction, double x, double y)
     {
         if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));

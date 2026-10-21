@@ -19,7 +19,7 @@ internal sealed class WorldSimulation
 
     public WorldSimulation(int seed)
     {
-        Colony = new ColonySimulation();
+        Colony = new ColonySimulation(seed);
         SpatialWorld = ContinuousWorldState.Generate(seed);
         Colony.BindWorldInventory(SpatialWorld, KorSettlementId(SpatialWorld));
     }

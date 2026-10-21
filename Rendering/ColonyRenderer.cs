@@ -65,6 +65,29 @@ internal sealed class ColonyRenderer : IDisposable
 
         canvas.Save();
         canvas.ClipRect(view);
+        // The strategic view shows generated terrain instead of a featureless coordinate grid.
+        foreach (var region in world.RegionalMap.Regions)
+        {
+            double leftX = region.X * RegionalWorldMap.RegionSize;
+            double topY = region.Y * RegionalWorldMap.RegionSize;
+            var topLeft = ContinuousWorldProjection.WorldToScreen(leftX, topY, cameraX, cameraY, zoom);
+            var bottomRight = ContinuousWorldProjection.WorldToScreen(leftX + RegionalWorldMap.RegionSize, topY + RegionalWorldMap.RegionSize, cameraX, cameraY, zoom);
+            _fill.Color = region.Biome switch
+            {
+                WorldBiomeKind.Plains => new SKColor(49, 66, 48, 220),
+                WorldBiomeKind.Forest => new SKColor(29, 71, 49, 225),
+                WorldBiomeKind.Desert => new SKColor(105, 85, 49, 220),
+                WorldBiomeKind.Tundra => new SKColor(100, 112, 108, 220),
+                WorldBiomeKind.Wetland => new SKColor(37, 78, 76, 225),
+                WorldBiomeKind.Mountain => new SKColor(83, 86, 83, 230),
+                _ => new SKColor(45, 55, 48, 220)
+            };
+            var regionRect = new SKRect(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
+            canvas.DrawRect(regionRect, _fill);
+            _line.Color = new SKColor(13, 24, 22, 170);
+            _line.StrokeWidth = 1;
+            canvas.DrawRect(regionRect, _line);
+        }
         // Region-sized overlays make ecological pressure legible at strategic zoom.
         foreach (var hotspot in world.Ecology.Hotspots.Where(item => item.IsActive))
         {
@@ -128,16 +151,19 @@ internal sealed class ColonyRenderer : IDisposable
                 canvas.DrawCircle(point.X, point.Y, radius + 5, _line);
             }
             _text.Color = entity.Kind == WorldEntityKind.BlightFront ? new SKColor(238, 116, 122) : TextColor;
-            canvas.DrawText(entity.Name, point.X + radius + 5, point.Y - 3, SKTextAlign.Left, _smallFont, _text);
+            string entityLabel = entity.Kind == WorldEntityKind.ResourceSite && entity.Resource.HasValue
+                ? $"{entity.Resource.Value} · {entity.ResourceAmount:0}"
+                : entity.Name;
+            canvas.DrawText(entityLabel, point.X + radius + 5, point.Y - 3, SKTextAlign.Left, _smallFont, _text);
             _muted.Color = MutedColor;
             canvas.DrawText(entity.Faction, point.X + radius + 5, point.Y + 10, SKTextAlign.Left, _smallFont, _muted);
         }
         canvas.Restore();
 
         _text.Color = Gold;
-        canvas.DrawText("CONTINUOUS WORLD SPACE", 18, 86, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText($"OVERWORLD · SEED {world.Seed}", 18, 86, SKTextAlign.Left, _headingFont, _text);
         _muted.Color = MutedColor;
-        canvas.DrawText($"World clock {world.ClockSeconds / 60:0} min  |  {world.Entities.Count} entities  |  scale {scale:0.0000} px/unit", 18, 105, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText($"World clock {world.ClockSeconds / 60:0} min  |  {world.Entities.Count} entities  |  {world.Entities.Count(e => e.Kind == WorldEntityKind.Settlement)} settlements  |  scale {scale:0.0000} px/unit", 18, 105, SKTextAlign.Left, _smallFont, _muted);
     }
 
     private void DrawMap(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom)

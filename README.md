@@ -6,7 +6,7 @@ Kor Eternal Frontier is a developing colony, civilization, and world simulation.
 
 The canonical application is the root .NET 8 project. The Unity prototype, duplicate nested project, legacy isometric artwork pipeline, duplicated art/metadata folders, and checked-in build output have been removed from the active source tree.
 
-The local map is a 40 by 26 orthogonal square grid. The current simulation foundation has:
+The local map is a 40 by 26 orthogonal square grid. A world seed now drives both the strategic overworld and its local spawn map: terrain scatter, resource-deposit positions/amounts, regional biomes, faction settlements, armies, caravans, Blight fronts and strategic resource sites are reproducible for the same seed and differ across seeds. The starter habitat and stockpile remain in a protected starting area so a new run is playable. The current simulation foundation has:
 
 - Three independently simulated colonists with movement, carrying, tasks, and hunger.
 - Finite resource deposits and real gather/carry/deliver trips that conserve resource quantities.
@@ -71,6 +71,14 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 ## Engineering direction
 
 Keep simulation logic independent of rendering and input. Extend the game through tested slices: canonical inventory and shipments, material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
+
+## Seeded overworld generation
+
+- The strategic world contains a generated biome layer across the full continuous world, with region boundaries and terrain colours visible when zoomed out.
+- Each seed generates the Kor home settlement, five other factions, their settlement locations, guards, occasional caravans, 28–44 finite strategic resource sites, and 2–4 Blight fronts.
+- Strategic resource-site entities store a resource kind and reserve amount; the map labels sites with that resource and its reserve.
+- The same seed reproduces the same overworld placements and local spawn layout. A different seed changes placements, local rock scatter, deposit positions and deposit quantities.
+- The starter settlement footprint stays readable and accessible while surrounding terrain/resources vary, so procedural generation does not bury the opening base.
 
 ## Unified real-time world
 

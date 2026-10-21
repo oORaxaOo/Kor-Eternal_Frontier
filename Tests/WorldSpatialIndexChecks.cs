@@ -30,7 +30,7 @@ internal static class WorldSpatialIndexChecks
         Check(world.SpatialIndexRebuildCount == initialRebuildCount,
             "stationary world ticks must not rebuild the spatial index");
 
-        var moving = world.Entities.Single(entity => entity.Kind == WorldEntityKind.ResourceSite);
+        var moving = world.Entities.First(entity => entity.Kind == WorldEntityKind.ResourceSite);
         double oldX = moving.X, oldY = moving.Y;
         Check(world.QueryRadius(oldX, oldY, 1).Any(entity => entity.Id == moving.Id),
             "a freshly built spatial index must include the resource site");

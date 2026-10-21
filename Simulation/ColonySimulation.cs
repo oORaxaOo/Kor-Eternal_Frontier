@@ -195,8 +195,9 @@ internal sealed class ColonySimulation
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
     public int InventoryFreeCapacity => Math.Max(0, InventoryCapacity - InventoryUsed);
 
-    public ColonySimulation()
+    public ColonySimulation(int seed = 70241)
     {
+        var random = new Random(seed);
         for (int y = 0; y < Height; y++)
         for (int x = 0; x < Width; x++)
             _tiles[x, y] = new TileCell();
@@ -208,6 +209,15 @@ internal sealed class ColonySimulation
             (25, 8), (26, 8), (25, 9), (26, 9), (31, 14), (32, 14), (31, 15)
         })
             _tiles[x, y].Terrain = TerrainKind.Rock;
+        // Seeded geology varies around a protected, walkable starter footprint.
+        for (int i = 0; i < 34; i++)
+        {
+            int x = random.Next(1, Width - 1), y = random.Next(1, Height - 1);
+            // Keep the established starter/building test area clear; procedural geology occupies the outer map.
+            if (x < 20 && y < 16) continue;
+            if (x is >= 22 and <= 27 && y is >= 14 and <= 20) continue;
+            _tiles[x, y].Terrain = TerrainKind.Rock;
+        }
 
         _inventory[ResourceKind.Wood] = 20;
         _inventory[ResourceKind.Stone] = 14;
@@ -222,10 +232,30 @@ internal sealed class ColonySimulation
         _workers.Add(new ColonyWorker(2, "Kor-02", 17.5f, 12.5f, 30f));
         _workers.Add(new ColonyWorker(3, "Kor-03", 18.5f, 12.5f, 10f));
 
-        AddDeposit(new CellPosition(10, 15), ResourceKind.Wood, 80);
-        AddDeposit(new CellPosition(27, 12), ResourceKind.Stone, 90);
-        AddDeposit(new CellPosition(14, 21), ResourceKind.Food, 100);
-        AddDeposit(new CellPosition(34, 20), ResourceKind.Alloy, 45);
+        AddDeposit(new CellPosition(10, 15), ResourceKind.Wood, 60 + random.Next(61));
+        AddDeposit(new CellPosition(27, 12), ResourceKind.Stone, 55 + random.Next(76));
+        AddDeposit(new CellPosition(14, 21), ResourceKind.Food, 70 + random.Next(71));
+        AddDeposit(new CellPosition(34, 20), ResourceKind.Alloy, 25 + random.Next(41));
+
+        var usedCells = _deposits.Select(deposit => deposit.Cell).ToHashSet();
+        var extraResources = new[] { ResourceKind.Wood, ResourceKind.Stone, ResourceKind.Food, ResourceKind.Alloy };
+        int extraCount = 3 + random.Next(5);
+        for (int i = 0; i < extraCount; i++)
+        {
+            for (int attempt = 0; attempt < 80; attempt++)
+            {
+                var cell = new CellPosition(random.Next(2, Width - 2), random.Next(2, Height - 2));
+                if (usedCells.Contains(cell) || _tiles[cell.X, cell.Y].Terrain == TerrainKind.Rock ||
+                    (cell.X < 20 && cell.Y < 16) ||
+                    (cell.X is >= 22 and <= 27 && cell.Y is >= 14 and <= 20) ||
+                    ObjectAt(cell.X, cell.Y) != null ||
+                    _workers.Any(worker => Math.Abs(worker.X - cell.X) < 3 && Math.Abs(worker.Y - cell.Y) < 3))
+                    continue;
+                usedCells.Add(cell);
+                AddDeposit(cell, extraResources[random.Next(extraResources.Length)], 20 + random.Next(101));
+                break;
+            }
+        }
         InitializeEcosystem();
         SyncThingGrid();
     }

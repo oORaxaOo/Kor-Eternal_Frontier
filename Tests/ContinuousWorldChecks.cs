@@ -39,7 +39,7 @@ internal static class ContinuousWorldChecks
 
         var pressureWorld = ContinuousWorldState.Generate(4401);
         var exposedSettlement = pressureWorld.Entities.First(entity =>
-            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction != "Kor");
         var initialHotspot = pressureWorld.Ecology.Hotspots[0];
         exposedSettlement.X = initialHotspot.X;
         exposedSettlement.Y = initialHotspot.Y;
@@ -50,6 +50,33 @@ internal static class ContinuousWorldChecks
             "severe local Blight pressure must suppress settlement food production");
 
         var world = ContinuousWorldState.Generate(70241);
+        var sameSeedWorld = ContinuousWorldState.Generate(70241);
+        var otherSeedWorld = ContinuousWorldState.Generate(70242);
+        string WorldSignature(ContinuousWorldState value) => string.Join("|", value.Entities.Select(entity =>
+            $"{entity.Kind}:{entity.Name}:{entity.Faction}:{entity.X:R}:{entity.Y:R}:{entity.Resource}:{entity.ResourceAmount:R}"));
+        Check(WorldSignature(world) == WorldSignature(sameSeedWorld),
+            "the same seed must reproduce faction placement, settlements and resource sites exactly");
+        Check(WorldSignature(world) != WorldSignature(otherSeedWorld),
+            "different seeds must change overworld entity and resource placement");
+        Check(world.Entities.Count(entity => entity.Kind == WorldEntityKind.Settlement) >= 8 &&
+              world.Entities.Count(entity => entity.Kind == WorldEntityKind.ResourceSite) >= 28 &&
+              world.Entities.Any(entity => entity.Kind == WorldEntityKind.Army && entity.Faction != "Kor"),
+            "the generated world must contain multiple factions, settlements, resource sites and non-Kor forces");
+        Check(world.Entities.Where(entity => entity.Kind == WorldEntityKind.ResourceSite)
+                .All(entity => entity.Resource.HasValue && entity.ResourceAmount > 0),
+            "strategic resource sites must have a resource type and a positive finite reserve");
+        var spawnA = new WorldSimulation(1234);
+        var spawnB = new WorldSimulation(1234);
+        var spawnC = new WorldSimulation(1235);
+        string SpawnSignature(ColonySimulation colony) => string.Join("|", colony.Deposits.Select(deposit =>
+            $"{deposit.Cell.X}:{deposit.Cell.Y}:{deposit.Resource}:{deposit.Amount}")) + "/" +
+            string.Join("|", Enumerable.Range(0, ColonySimulation.Width).SelectMany(x =>
+                Enumerable.Range(0, ColonySimulation.Height).Where(y => colony.TileAt(x, y)?.Terrain == TerrainKind.Rock)
+                    .Select(y => $"{x}:{y}")));
+        Check(SpawnSignature(spawnA.Colony) == SpawnSignature(spawnB.Colony),
+            "the same seed must reproduce the local spawn map and resource deposits");
+        Check(SpawnSignature(spawnA.Colony) != SpawnSignature(spawnC.Colony),
+            "different world seeds must produce different local terrain and resource spawn maps");
         var projected = ContinuousWorldProjection.WorldToScreen(50_000, 50_000, 50_000, 50_000, .65f);
         var unprojected = ContinuousWorldProjection.ScreenToWorld(projected.X, projected.Y, 50_000, 50_000, .65f);
         Check(Math.Abs(unprojected.X - 50_000) < .01 && Math.Abs(unprojected.Y - 50_000) < .01,
@@ -61,24 +88,29 @@ internal static class ContinuousWorldChecks
         Check(nearby.Count == 1 && nearby[0].Id == home.Id,
             "continuous spatial queries must use distance rather than hex adjacency");
 
-        Check(world.OrderMove(home.Id, home.X + 20, home.Y, 10),
+        double homeStartX = home.X;
+        double homeStartY = home.Y;
+        Check(world.OrderMove(home.Id, homeStartX + 20, homeStartY, 10),
             "world entities must accept coordinate destinations");
         world.Step(1);
-        Check(Math.Abs(home.X - 50_010) < 0.0001 && home.IsMoving,
+        Check(Math.Abs(home.X - (homeStartX + 10)) < 0.0001 && home.IsMoving,
             "entity movement must progress continuously according to speed and elapsed time");
         world.Step(1);
-        Check(Math.Abs(home.X - 50_020) < 0.0001 && !home.IsMoving,
+        Check(Math.Abs(home.X - (homeStartX + 20)) < 0.0001 && !home.IsMoving,
             "entity movement must stop exactly at its destination without overshoot");
         Check(world.ClockSeconds == 2,
             "continuous world state must maintain its own serializable simulation clock");
 
-        var destination = world.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Neutral");
-        var caravan = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan);
+        var destination = world.Entities.First(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction != "Kor");
+        var caravan = world.Entities.Single(entity => entity.Kind == WorldEntityKind.Caravan && entity.Faction == "Kor");
+        double shipmentDistance = Math.Sqrt(Math.Pow(destination.X - home.X, 2) + Math.Pow(destination.Y - home.Y, 2));
+        double shipmentTravelSeconds = shipmentDistance / 1_000d + 1d;
         double woodBefore = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
+        double destinationWoodBefore = world.InventoryAt(destination.Id, WorldResourceKind.Wood);
         Check(world.CreateShipment(caravan.Id, home.Id, destination.Id, WorldResourceKind.Wood, 10, 1_000),
             "a stocked settlement must be able to dispatch a real cargo shipment");
         Check(Math.Abs(world.InventoryAt(home.Id, WorldResourceKind.Wood) - 10) < 0.0001 &&
-              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood)) < 0.0001,
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - destinationWoodBefore) < 0.0001,
             "dispatch must reserve cargo at origin and must not teleport it to the destination");
         world.Step(1);
         Check(world.Shipments.Single().Status == WorldShipmentStatus.InTransit,
@@ -88,9 +120,9 @@ internal static class ContinuousWorldChecks
         Check(inTransitRestore.Shipments.Single().Status == WorldShipmentStatus.InTransit &&
               Math.Abs(inTransitRestore.InventoryAt(home.Id, WorldResourceKind.Wood) - 10) < 0.0001,
             "save/load must preserve in-flight cargo and the origin's already-debited inventory");
-        world.Step(10);
+        world.Step(shipmentTravelSeconds);
         Check(world.Shipments.Single().Status == WorldShipmentStatus.Delivered &&
-              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 10) < 0.0001,
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - (destinationWoodBefore + 10)) < 0.0001,
             "cargo must be delivered only after its caravan reaches the destination");
         double woodAfter = world.Inventories.Values.Sum(inventory => inventory.GetValueOrDefault(WorldResourceKind.Wood));
         Check(Math.Abs(woodBefore - woodAfter) < 0.0001,
@@ -102,12 +134,12 @@ internal static class ContinuousWorldChecks
             "a second shipment must be funded from the same canonical origin ledger");
         world.Step(10);
         Check(world.Shipments.Last().Status == WorldShipmentStatus.InTransit &&
-              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 10) < 0.0001,
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - (destinationWoodBefore + 10)) < 0.0001,
             "cargo must wait at a full destination instead of overfilling or disappearing");
-        world.SetInventoryCapacity(destination.Id, 200);
-        world.Step(0.1);
+        world.SetInventoryCapacity(destination.Id, world.InventoryTotalAt(destination.Id) + 100);
+        world.Step(shipmentTravelSeconds);
         Check(world.Shipments.Last().Status == WorldShipmentStatus.Delivered &&
-              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - 15) < 0.0001,
+              Math.Abs(world.InventoryAt(destination.Id, WorldResourceKind.Wood) - (destinationWoodBefore + 15)) < 0.0001,
             "waiting cargo must be credited once storage capacity becomes available");
 
         string json = ContinuousWorldState.Serialize(world);
