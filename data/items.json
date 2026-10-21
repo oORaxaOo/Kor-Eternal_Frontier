@@ -1,0 +1,1 @@
+[{"Id":"food_ration","Label":"Food Ration","Category":"Food","MarketValue":8,"SymbolColor":"#D8B159","RequiredResearchId":null},{"Id":"hydroponic_module","Label":"Hydroponic Module","Category":"HighTech","MarketValue":250,"SymbolColor":"#53A9D8","RequiredResearchId":"Hydroponics"}]

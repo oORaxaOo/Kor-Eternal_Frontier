@@ -22,7 +22,7 @@ The local map is a 40 by 26 orthogonal square grid. A world seed now drives both
 - An event-driven incident manager converts relationship milestones into bounded, auditable incidents with per-pair cooldowns. Relationship and incident state are included in colony save schema v4; legacy schema v2/v3 saves initialize empty social state.
 - A unified real-time coordinator (Simulation/WorldSimulation.cs) advances the colony and continuous world under one clock. The colony and strategic layer read and mutate the same settlement inventory; session saves store that inventory only in the world ledger.
 
-This is a playable foundation, not the complete game. RimWorld is used only as a reference for high-level colony-management patterns (categorised build orders, planning, demolition, and resident autonomy); KOR uses its own code, data definitions, interface, and visual assets. No RimWorld code or game assets are copied. The simulation now has a regression check for 2,000 individually represented citizen agents, and citizen ID allocation is linear-time across bulk recruitment. This is an early scalability guardrail, not a claim that thousands of complete colony workers already run at target frame rates: job allocation, UI rendering, save size, and simulation level-of-detail still need profiling and dedicated optimization. The new route cache reduces repeated identical searches; it does not yet provide shared multi-source flow fields or prove target performance at 5,000–10,000 full residents. Richer social interaction types, resident family/faction histories, incident definitions beyond social milestones, material reservations, capacity-aware stockpiles, multiple production chains, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
+This is a playable foundation, not the complete game. RimWorld is used only as a reference for high-level colony-management patterns (categorised build orders, planning, demolition, and resident autonomy); KOR uses its own code, data definitions, interface, and visual assets. No RimWorld code or game assets are copied. The simulation now has a regression check for 2,000 individually represented citizen agents, and citizen ID allocation is linear-time across bulk recruitment. This is an early scalability guardrail, not a claim that thousands of complete colony workers already run at target frame rates: job allocation, UI rendering, save size, and simulation level-of-detail still need profiling and dedicated optimization. The new route cache reduces repeated identical searches; it does not yet provide shared multi-source flow fields or prove target performance at 5,000–10,000 full residents. Richer social interaction types, resident family/faction histories, capacity-aware stockpile zoning, multiple production chains, research unlocks, a fully interactive combat resolution layer, and a deeper Blight ecosystem remain future work.
 
 ## Run on Linux
 
@@ -47,7 +47,8 @@ The primary controls are visible mouse-operated menus in the right panel:
 - **Bench / Pod / Rack / Gen / Garden** — select a placeable object, then left-click a location.
 - **Cancel** — cancel the active placement mode. Select an unfinished tile/object blueprint and use **Cancel Order** to remove it before construction starts.
 - **Remove** — toggle demolition mode and click a completed player-built structure or built tile; starter habitat/stockpile are protected.
-- **Left click** — at settlement scale, select a colonist or place a blueprint; at strategic scale, inspect entities or dispatch selected cargo to a settlement.
+- **Left click** — at settlement scale, select a colonist or place a blueprint; selecting a colonist opens the contextual inspector with status and social tabs. At strategic scale, inspect entities or dispatch selected cargo to a settlement.
+- **WORK** — open the per-colonist work-priority matrix. Each category uses priorities 0–4; 0 disables the category, and carried cargo is always delivered before unrelated work.
 - **Right click** — at settlement scale, issue a colonist command; at strategic scale, order the selected Kor army or idle caravan to move in continuous world coordinates.
 - **Strategic cargo controls** — choose Wood, Stone, Food or Alloy; select a caravan; then click a destination settlement. Cargo is deducted at dispatch and only credited on arrival.
 - **Middle-mouse drag** — pan the camera.
@@ -70,7 +71,7 @@ No keyboard shortcut is required for core gameplay. The local map remains a squa
 
 ## Engineering direction
 
-Keep simulation logic independent of rendering and input. Extend the game through tested slices: canonical inventory and shipments, material reservations and stockpiles, shared job scheduling, recipe catalogs, workplaces and needs, research unlocks, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
+Keep simulation logic independent of rendering and input. Extend the game through tested slices: canonical inventory and shipments, capacity-aware stockpile zoning, shared job scheduling, recipe catalogs, workplaces and needs, research unlocks, tactical incident resolution, and connected world-map/colony state. A successful build alone does not imply that the complete game is implemented.
 
 ## Seeded overworld generation
 
@@ -82,7 +83,16 @@ Keep simulation logic independent of rendering and input. Extend the game throug
 
 ## Unified real-time world
 
-The WorldSimulation advances the colony and continuous world under one clock. Strategic settlement food production integrates continuously from elapsed time and respects shared storage capacity. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection and cancel actions; middle-mouse drag pans the camera.
+The WorldSimulation advances the colony and continuous world under one clock. Strategic settlement food production integrates continuously from elapsed time and respects shared storage capacity. The mouse-first UI exposes pause/resume, speed, save/load, zoom, construction, object selection, the colonist inspector, the work-priority matrix and cancel actions; middle-mouse drag pans the camera.
+
+## Colony intelligence, logistics and storyteller
+
+- The colonist inspector exposes current job/toil, route length, hunger, mood, stress, fatigue, carried cargo and available affinity/trust/tension relationships.
+- The WORK matrix stores an independent 0–4 priority per colonist and work category. The scheduler respects those priorities while retaining work-order importance, needs, route checks and resource availability.
+- `ReservationManager` reserves finite stack quantities and work targets, prevents over-reservation, releases reservations when jobs transition and reconstructs active gather reservations when a colony save is restored. Construction inputs are still committed atomically when the job is accepted.
+- `WorldRoutePlanner` uses a deterministic 40×40 coarse grid with biome-weighted costs to estimate strategic route travel times separately from the local 40×26 colony A* grid.
+- Rival factions run macro decisions every 20,000 strategic ticks. Their live settlement ledgers drive trade dispatch or defensive army generation; macro decision cadence is persisted with faction intelligence.
+- The storyteller samples stored-resource and built-structure wealth every 2,000 colony ticks. Market-valued wealth produces a bounded 0–250 threat-point budget. Wealth incidents translate that budget into a deterministic number of strategic raider units that move toward Kor. This is an initial incident layer; raiders do not yet resolve tactical combat or damage local buildings.
 
 The obsolete instant campaign transfer bridge and linked-hex campaign model have been removed. Colony construction, production, worker hauling and strategic shipments read or mutate the same settlement-owned resource ledger; a session snapshot does not duplicate the colony inventory. Settlement storage capacity is shared across local and strategic views, and deliveries wait at their destination if storage is full. The session format now represents the active unified world directly; old saves are intentionally not migrated. A dynamic Blight ecosystem and population-level strategic simulation remain unfinished.
 

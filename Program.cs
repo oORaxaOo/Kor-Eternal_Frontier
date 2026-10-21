@@ -55,14 +55,21 @@ internal static class Program
             float cameraX = 0, cameraY = 0, zoom = 1;
             float worldCameraX = (float)(ContinuousWorldState.WorldExtent / 2), worldCameraY = (float)(ContinuousWorldState.WorldExtent / 2);
             long? selectedWorldEntityId = null;
+            int? selectedMacroCellId = null;
             WorldResourceKind? selectedShipmentResource = null;
+            bool factionDashboardOpen = false;
+            string? selectedFactionName = "Kor";
+            int factionTab = 0;
+            bool workMatrixOpen = false;
+            int workerInspectorTab = 0;
+            int workMatrixPage = 0;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedMacroCellId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -198,6 +205,101 @@ internal static class Program
                         else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
                         else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
                     }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 12, 38, 1088, 59))
+                    {
+                        var latest = world.SpatialWorld.MacroWorld.Notifications.LastOrDefault();
+                        if (latest is not null && latest.CellId > 0 && latest.CellId <= world.SpatialWorld.MacroWorld.Cells.Length)
+                        {
+                            var cell = world.SpatialWorld.MacroWorld.Cells[latest.CellId - 1];
+                            worldCameraX = (cell.X + 0.5f) * MacroWorldState.WorldCellSize;
+                            worldCameraY = (cell.Y + 0.5f) * MacroWorldState.WorldCellSize;
+                            zoom = 0.5f;
+                            selectedWorldEntityId = null;
+                            selectedMacroCellId = latest.CellId;
+                        }
+                        else if (latest is not null)
+                            simulation.SetMessage($"World report: {latest.Message}");
+                    }
+                    else if (workMatrixOpen)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (Hit(mx, my, 850, 584, 942, 612)) workMatrixOpen = false;
+                        else if (Hit(mx, my, 710, 584, 770, 612)) workMatrixPage = Math.Max(0, workMatrixPage - 1);
+                        else if (Hit(mx, my, 778, 584, 838, 612)) workMatrixPage = Math.Min(Math.Max(0, (simulation.Workers.Count - 1) / 9), workMatrixPage + 1);
+                        else
+                        {
+                            var categories = Enum.GetValues<WorkCategory>();
+                            int[] columnX = [420, 520, 620, 720, 820];
+                            var workers = simulation.Workers.Skip(workMatrixPage * 9).Take(9).ToArray();
+                            for (int row = 0; row < workers.Length; row++)
+                            {
+                                float rowY = 244 + row * 38;
+                                for (int col = 0; col < categories.Length; col++)
+                                {
+                                    if (!Hit(mx, my, columnX[col], rowY, columnX[col] + 64, rowY + 28)) continue;
+                                    int current = simulation.WorkPriorities.GetPriority(workers[row].Id, categories[col]);
+                                    simulation.WorkPriorities.SetPriority(workers[row].Id, categories[col], (current + 1) % 5);
+                                    simulation.SetMessage($"{workers[row].Name}: {categories[col]} priority is now {(current + 1) % 5}.");
+                                    goto WorkMatrixClickHandled;
+                                }
+                            }
+                            WorkMatrixClickHandled:;
+                        }
+                    }
+                    else if (factionDashboardOpen)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (Hit(mx, my, 970, 80, 1046, 106)) factionDashboardOpen = false;
+                        else if (Hit(mx, my, 410, 207, 518, 233)) factionTab = 0;
+                        else if (Hit(mx, my, 526, 207, 634, 233)) factionTab = 1;
+                        else if (Hit(mx, my, 642, 207, 750, 233)) factionTab = 2;
+                        else if (Hit(mx, my, 66, 173, 354, 212)) selectedFactionName = world.SpatialWorld.FactionIntelligence.OrderBy(profile => profile.Faction == "Kor" ? 0 : 1).ThenBy(profile => profile.Faction, StringComparer.Ordinal).ElementAtOrDefault(0)?.Faction;
+                        else
+                        {
+                            var roster = world.SpatialWorld.FactionIntelligence.OrderBy(profile => profile.Faction == "Kor" ? 0 : 1).ThenBy(profile => profile.Faction, StringComparer.Ordinal).Take(10).ToArray();
+                            for (int i = 0; i < roster.Length; i++)
+                            {
+                                float rowTop = 173 + i * 43;
+                                if (Hit(mx, my, 66, rowTop, 354, rowTop + 39))
+                                {
+                                    selectedFactionName = roster[i].Faction;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 1008, 8, 1085, 35))
+                    {
+                        workMatrixOpen = true;
+                        factionDashboardOpen = false;
+                    }
+                    else if (!worldView && simulation.SelectedWorkerId.HasValue && Hit(logicalMouse.X, logicalMouse.Y, 14, 476, 374, 646))
+                    {
+                        var inspectedWorker = simulation.Workers.FirstOrDefault(worker => worker.Id == simulation.SelectedWorkerId.Value);
+                        if (inspectedWorker?.IsExternalVisitor == true)
+                        {
+                            if (Hit(logicalMouse.X, logicalMouse.Y, 22, 506, 122, 528))
+                            {
+                                bool resolved = inspectedWorker.TradeCargo.Count == 0
+                                    ? simulation.ResolveExternalVisitor(inspectedWorker.Id, true)
+                                    : simulation.TradeWithVisitor(inspectedWorker.Id, world.SpatialWorld.MacroWorld.Market);
+                                if (!resolved) simulation.SetMessage("Visitor action unavailable: check cargo, market value, and colony stock.");
+                            }
+                            else if (Hit(logicalMouse.X, logicalMouse.Y, 128, 506, 228, 528))
+                                simulation.ResolveExternalVisitor(inspectedWorker.Id, false);
+                        }
+                        else
+                        {
+                            if (Hit(logicalMouse.X, logicalMouse.Y, 22, 506, 122, 528)) workerInspectorTab = 0;
+                            else if (Hit(logicalMouse.X, logicalMouse.Y, 128, 506, 228, 528)) workerInspectorTab = 1;
+                        }
+                    }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 955, 8, 1005, 35))
+                    {
+                        factionDashboardOpen = true;
+                        if (!world.SpatialWorld.FactionIntelligence.Any(profile => profile.Faction == selectedFactionName))
+                            selectedFactionName = "Kor";
+                    }
                     else if (!worldView && Hit(logicalMouse.X, logicalMouse.Y, 920, 660, 1085, 687))
                     {
                         int recruited = simulation.RecruitColonists(10);
@@ -214,6 +316,17 @@ internal static class Program
                             .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))
                             .Select(item => (item.Entity, Distance: MathF.Sqrt(MathF.Pow(item.Screen.X - logicalMouse.X, 2) + MathF.Pow(item.Screen.Y - logicalMouse.Y, 2))))
                             .Where(item => item.Distance <= 20f).OrderBy(item => item.Distance).FirstOrDefault();
+                        if (hit.Entity is null)
+                        {
+                            int cellX = Math.Clamp((int)(continuousMouse.X / MacroWorldState.WorldCellSize), 0, MacroWorldState.Columns - 1);
+                            int cellY = Math.Clamp((int)(continuousMouse.Y / MacroWorldState.WorldCellSize), 0, MacroWorldState.Rows - 1);
+                            selectedMacroCellId = cellY * MacroWorldState.Columns + cellX + 1;
+                            selectedWorldEntityId = null;
+                        }
+                        else
+                        {
+                            selectedMacroCellId = null;
+                        }
                         if (hit.Entity != null && selectedShipmentResource.HasValue &&
                             selectedWorldEntityId.HasValue &&
                             world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind == WorldEntityKind.Caravan) &&

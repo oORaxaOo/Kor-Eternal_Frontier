@@ -30,8 +30,8 @@ internal sealed class ColonyRenderer : IDisposable
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
-        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource,
-        float mouseScreenX, float mouseScreenY)
+        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, int? selectedMacroCellId, WorldResourceKind? selectedShipmentResource,
+        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab, int workMatrixPage)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -45,6 +45,104 @@ internal sealed class ColonyRenderer : IDisposable
             DrawPlacementPreview(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, mouseScreenX, mouseScreenY);
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawWorldTicker(canvas, spatialWorld);
+        if (worldView && selectedMacroCellId.HasValue) DrawMacroCellInspector(canvas, spatialWorld, selectedMacroCellId.Value);
+        DrawFactionButton(canvas, factionDashboardOpen);
+        DrawWorkMatrixButton(canvas, workMatrixOpen);
+        if (!worldView && !workMatrixOpen && simulation.SelectedWorkerId.HasValue)
+            DrawWorkerInspector(canvas, simulation, workerInspectorTab);
+        if (factionDashboardOpen) DrawFactionDashboard(canvas, spatialWorld, selectedFactionName, factionTab);
+        if (workMatrixOpen) DrawWorkMatrix(canvas, simulation, workMatrixPage);
+    }
+
+    private void DrawMacroGrid(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, float scale)
+    {
+        var macro = world.MacroWorld;
+        if (macro.Cells is null || macro.Cells.Length != MacroWorldState.CellCount) return;
+        float tilePixels = MacroWorldState.WorldCellSize * scale;
+        if (tilePixels < 2.2f) return;
+        var view = new SKRect(0, 62, 770, 650);
+        var factionNames = macro.FactionIds.ToDictionary(pair => pair.Value, pair => pair.Key);
+        canvas.Save();
+        canvas.ClipRect(view);
+        foreach (ref readonly var cell in macro.Cells.AsSpan())
+        {
+            double leftWorld = cell.X * MacroWorldState.WorldCellSize;
+            double topWorld = cell.Y * MacroWorldState.WorldCellSize;
+            var topLeft = ContinuousWorldProjection.WorldToScreen(leftWorld, topWorld, cameraX, cameraY, zoom);
+            var bottomRight = ContinuousWorldProjection.WorldToScreen(leftWorld + MacroWorldState.WorldCellSize, topWorld + MacroWorldState.WorldCellSize, cameraX, cameraY, zoom);
+            if (bottomRight.X < view.Left || topLeft.X > view.Right || bottomRight.Y < view.Top || topLeft.Y > view.Bottom) continue;
+            SKColor ownerColor = cell.OwningFactionId == 0 ? new SKColor(20, 25, 24, 45)
+                : factionNames.GetValueOrDefault(cell.OwningFactionId, string.Empty) switch
+                {
+                    "Kor" => new SKColor(192, 42, 54, 38),
+                    "Ember Compact" => new SKColor(220, 105, 53, 38),
+                    "Verdant Pact" => new SKColor(75, 156, 83, 38),
+                    "Iron Dominion" => new SKColor(130, 143, 154, 45),
+                    "Freeholds" => new SKColor(205, 183, 111, 38),
+                    "Dawn Assembly" => new SKColor(92, 143, 197, 38),
+                    _ => new SKColor(150, 150, 150, 35)
+                };
+            _fill.Color = ownerColor;
+            var rect = new SKRect(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
+            canvas.DrawRect(rect, _fill);
+            if (cell.BlightPresence > 0.2f)
+            {
+                _fill.Color = new SKColor(177, 22, 58, (byte)Math.Clamp(25 + cell.BlightPresence * 105, 0, 130));
+                canvas.DrawRect(rect, _fill);
+            }
+            if (tilePixels >= 5.5f)
+            {
+                _line.Color = new SKColor(8, 13, 13, 90);
+                _line.StrokeWidth = 0.6f;
+                canvas.DrawRect(rect, _line);
+            }
+        }
+        canvas.Restore();
+    }
+
+    private void DrawMacroCellInspector(SKCanvas canvas, ContinuousWorldState world, int cellId)
+    {
+        if (cellId < 1 || cellId > world.MacroWorld.Cells.Length) return;
+        var cell = world.MacroWorld.Cells[cellId - 1];
+        string faction = world.MacroWorld.FactionIds.FirstOrDefault(pair => pair.Value == cell.OwningFactionId).Key ?? "Neutral wilderness";
+        var panel = new SKRect(784, 72, 1088, 366);
+        _fill.Color = Panel;
+        canvas.DrawRoundRect(panel, 8, 8, _fill);
+        _line.Color = Gold;
+        _line.StrokeWidth = 1.2f;
+        canvas.DrawRoundRect(panel, 8, 8, _line);
+        _text.Color = Gold;
+        canvas.DrawText($"WORLD CELL {cell.CellId:00000}", 800, 96, SKTextAlign.Left, _headingFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"Grid {cell.X}, {cell.Y}  ·  {cell.Biome}", 800, 116, SKTextAlign.Left, _smallFont, _muted);
+        _text.Color = TextColor;
+        canvas.DrawText($"Faction: {faction}", 800, 143, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Population: {cell.Population:N0}", 800, 166, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Focus: {cell.ProductionFocus}", 800, 189, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Fertility: {cell.Fertility:0.00}×", 800, 212, SKTextAlign.Left, _normalFont, _text);
+        _text.Color = cell.BlightPresence >= 0.5f ? new SKColor(241, 104, 124) : TextColor;
+        canvas.DrawText($"Blight pressure: {cell.BlightPresence:P0}", 800, 235, SKTextAlign.Left, _normalFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"Food {cell.FoodCount:0}  ·  Wood {cell.WoodCount:0}  ·  Stone {cell.StoneCount:0}", 800, 263, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText($"Alloy {cell.AlloyCount:0}  ·  Energy {cell.EnergyCount:0}  ·  Components {cell.ComponentsCount:0}", 800, 282, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText($"Market: Food {world.MacroWorld.Market.FoodPrice:0.00}×  Alloy {world.MacroWorld.Market.AlloyPrice:0.00}×", 800, 310, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(cell.IsLocalMapGenerated ? "LOCAL MAP: ACTIVE" : "LOCAL MAP: ABSTRACT SIMULATION", 800, 339, SKTextAlign.Left, _smallFont, cell.IsLocalMapGenerated ? _text : _muted);
+    }
+
+    private void DrawWorldTicker(SKCanvas canvas, ContinuousWorldState world)
+    {
+        var latest = world.MacroWorld.Notifications.LastOrDefault();
+        _fill.Color = new SKColor(12, 17, 18, 238);
+        canvas.DrawRoundRect(new SKRect(12, 38, 1088, 59), 4, 4, _fill);
+        _line.Color = latest?.Important == true ? new SKColor(192, 42, 54, 180) : Border;
+        _line.StrokeWidth = 1;
+        canvas.DrawRoundRect(new SKRect(12, 38, 1088, 59), 4, 4, _line);
+        _text.Color = latest?.Important == true ? new SKColor(244, 151, 151) : Gold;
+        string message = latest is null
+            ? $"WORLD TICKER  ·  Food {world.MacroWorld.Market.FoodPrice:0.00}×  Alloy {world.MacroWorld.Market.AlloyPrice:0.00}×  ·  Macro turn {world.MacroWorld.MacroTurnsProcessed}"
+            : $"WORLD TICKER  ·  {latest.Category.ToUpperInvariant()}  ·  {latest.Message}";
+        canvas.DrawText(message, 22, 53, SKTextAlign.Left, _smallFont, _text);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -90,6 +188,7 @@ internal sealed class ColonyRenderer : IDisposable
             _line.StrokeWidth = 1;
             canvas.DrawRect(regionRect, _line);
         }
+        DrawMacroGrid(canvas, world, cameraX, cameraY, zoom, scale);
         // Region-sized overlays make ecological pressure legible at strategic zoom.
         foreach (var hotspot in world.Ecology.Hotspots.Where(item => item.IsActive))
         {
@@ -115,6 +214,20 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawCircle(point.X, point.Y, 3.5f, _fill);
             _text.Color = new SKColor(220, 224, 210);
             canvas.DrawText($"H{herd.Population}", point.X + 5, point.Y - 4, SKTextAlign.Left, _smallFont, _text);
+        }
+        foreach (var caravan in world.MacroWorld.Caravans)
+        {
+            if (caravan.TargetCellId < 1 || caravan.TargetCellId > world.MacroWorld.Cells.Length) continue;
+            var targetCell = world.MacroWorld.Cells[caravan.TargetCellId - 1];
+            var point = ContinuousWorldProjection.WorldToScreen((caravan.X + 0.5d) * MacroWorldState.WorldCellSize,
+                (caravan.Y + 0.5d) * MacroWorldState.WorldCellSize, cameraX, cameraY, zoom);
+            var target = ContinuousWorldProjection.WorldToScreen((targetCell.X + 0.5d) * MacroWorldState.WorldCellSize,
+                (targetCell.Y + 0.5d) * MacroWorldState.WorldCellSize, cameraX, cameraY, zoom);
+            _line.Color = new SKColor(216, 177, 89, 140);
+            _line.StrokeWidth = 1.5f;
+            canvas.DrawLine(point.X, point.Y, target.X, target.Y, _line);
+            _fill.Color = Gold;
+            canvas.DrawCircle(point.X, point.Y, 3.5f, _fill);
         }
         foreach (var entity in world.Entities)
         {
@@ -452,6 +565,245 @@ internal sealed class ColonyRenderer : IDisposable
         }
     }
 
+
+    private void DrawWorkMatrixButton(SKCanvas canvas, bool isOpen)
+    {
+        _fill.Color = isOpen ? Gold : Panel;
+        canvas.DrawRoundRect(new SKRect(1008, 8, 1085, 35), 4, 4, _fill);
+        _line.Color = Gold;
+        canvas.DrawRoundRect(new SKRect(1008, 8, 1085, 35), 4, 4, _line);
+        _text.Color = isOpen ? Background : TextColor;
+        canvas.DrawText("WORK", 1046, 26, SKTextAlign.Center, _smallFont, _text);
+    }
+
+    private void DrawWorkerInspector(SKCanvas canvas, ColonySimulation simulation, int tab)
+    {
+        var worker = simulation.Workers.FirstOrDefault(item => item.Id == simulation.SelectedWorkerId);
+        if (worker == null) return;
+        _fill.Color = new SKColor(12, 16, 17, 245);
+        canvas.DrawRoundRect(new SKRect(14, 476, 374, 646), 5, 5, _fill);
+        _line.Color = Gold;
+        canvas.DrawRoundRect(new SKRect(14, 476, 374, 646), 5, 5, _line);
+        _text.Color = Gold;
+        canvas.DrawText(worker.IsExternalVisitor
+            ? $"{worker.Name}  /  VISITOR"
+            : $"{worker.Name}  /  COLONIST INSPECTOR", 24, 497, SKTextAlign.Left, _headingFont, _text);
+        if (worker.IsExternalVisitor)
+        {
+            DrawButton(canvas, worker.TradeCargo.Count == 0 ? "ADMIT" : "TRADE", 22, 506, 100, 22);
+            DrawButton(canvas, "DISMISS", 128, 506, 100, 22);
+            _text.Color = TextColor;
+            canvas.DrawText($"Faction: {worker.Faction}", 24, 552, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Cargo: {(worker.TradeCargo.Count == 0 ? "none" : string.Join(", ", worker.TradeCargo.Select(item => $"{item.Key} {item.Value}")))}", 24, 574, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Status: {(worker.IsLeaving ? "Leaving" : worker.Task is null ? "Waiting at stockpile" : "Entering colony")}", 24, 596, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText(worker.TradeCargo.Count == 0
+                ? "Admit this visitor to grow the colony, or dismiss them."
+                : "Trade exchanges cargo at current macro market prices.", 24, 624, SKTextAlign.Left, _smallFont, _muted);
+            return;
+        }
+        DrawButton(canvas, "STATUS", 22, 506, 100, 22, tab == 0);
+        DrawButton(canvas, "SOCIAL", 128, 506, 100, 22, tab == 1);
+        _text.Color = TextColor;
+        if (tab == 0)
+        {
+            var citizen = simulation.CitizenForWorker(worker.Id);
+            string toil = worker.Task?.JobTracker.CurrentToil?.Kind.ToString() ?? "Idle";
+            canvas.DrawText($"Job: {worker.Task?.Kind.ToString() ?? "No assigned job"}", 24, 550, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 570, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Hunger {worker.Hunger:0}/100  |  Mood {citizen?.Mood ?? 100:0}  |  Stress {worker.Stress:0}", 24, 590, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0}  |  Carried {worker.CarriedAmount} {worker.CarriedResource?.ToString() ?? "—"}", 24, 610, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText(simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.", 24, 630, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            var relationships = simulation.SocialRelationships.Relationships
+                .Where(item => item.ResidentA == worker.Id || item.ResidentB == worker.Id)
+                .OrderByDescending(item => item.Affinity).ThenBy(item => item.ResidentA).Take(4).ToArray();
+            if (relationships.Length == 0)
+            {
+                _muted.Color = MutedColor;
+                canvas.DrawText("No recorded social encounters yet.", 24, 552, SKTextAlign.Left, _smallFont, _muted);
+            }
+            else
+            {
+                int row = 552;
+                foreach (var relation in relationships)
+                {
+                    int otherId = relation.ResidentA == worker.Id ? relation.ResidentB : relation.ResidentA;
+                    string otherName = simulation.Workers.FirstOrDefault(item => item.Id == otherId)?.Name ?? $"Resident {otherId}";
+                    _text.Color = relation.Affinity < -30 ? Crimson : TextColor;
+                    canvas.DrawText($"{otherName}: affinity {relation.Affinity:+#;-#;0} | trust {relation.Trust:+#;-#;0} | tension {relation.Tension}", 24, row, SKTextAlign.Left, _smallFont, _text);
+                    row += 20;
+                }
+            }
+        }
+    }
+
+    private void DrawWorkMatrix(SKCanvas canvas, ColonySimulation simulation, int page)
+    {
+        _fill.Color = new SKColor(8, 11, 12, 250);
+        canvas.DrawRoundRect(new SKRect(130, 112, 970, 624), 8, 8, _fill);
+        _line.Color = Gold;
+        canvas.DrawRoundRect(new SKRect(130, 112, 970, 624), 8, 8, _line);
+        _text.Color = Gold;
+        canvas.DrawText("COLONY WORK PRIORITIES", 155, 145, SKTextAlign.Left, _titleFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText("Click a cell to cycle 0–4. 0 = disabled, 4 = highest priority. Hauling carried cargo remains mandatory.", 155, 170, SKTextAlign.Left, _smallFont, _muted);
+        var categories = Enum.GetValues<WorkCategory>();
+        int[] columnX = [420, 520, 620, 720, 820];
+        for (int i = 0; i < categories.Length; i++)
+        {
+            _text.Color = TextColor;
+            canvas.DrawText(categories[i].ToString().ToUpperInvariant(), columnX[i] + 32, 212, SKTextAlign.Center, _smallFont, _text);
+        }
+        int rowY = 244;
+        foreach (var worker in simulation.Workers.Skip(page * 9).Take(9))
+        {
+            _text.Color = TextColor;
+            canvas.DrawText(worker.Name, 160, rowY + 17, SKTextAlign.Left, _normalFont, _text);
+            for (int i = 0; i < categories.Length; i++)
+            {
+                int priority = simulation.WorkPriorities.GetPriority(worker.Id, categories[i]);
+                DrawButton(canvas, priority.ToString(), columnX[i], rowY, 64, 28, priority == 0);
+            }
+            rowY += 38;
+        }
+        _muted.Color = MutedColor;
+        canvas.DrawText($"Page {page + 1}/{Math.Max(1, (simulation.Workers.Count + 8) / 9)} · priorities persist with the colony", 155, 598, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "PREV", 710, 584, 60, 28, page == 0);
+        DrawButton(canvas, "NEXT", 778, 584, 60, 28, (page + 1) * 9 >= simulation.Workers.Count);
+        DrawButton(canvas, "CLOSE", 850, 584, 92, 28);
+    }
+
+    private void DrawFactionButton(SKCanvas canvas, bool isOpen)
+    {
+        _fill.Color = isOpen ? new SKColor(87, 28, 35) : new SKColor(28, 35, 32);
+        canvas.DrawRoundRect(new SKRect(955, 8, 1005, 34), 3, 3, _fill);
+        _line.Color = isOpen ? Crimson : Border;
+        canvas.DrawRoundRect(new SKRect(955, 8, 1005, 34), 3, 3, _line);
+        _text.Color = isOpen ? Gold : TextColor;
+        canvas.DrawText("FACTIONS", 980, 25, SKTextAlign.Center, _smallFont, _text);
+    }
+
+    private void DrawFactionDashboard(SKCanvas canvas, ContinuousWorldState world, string? selectedFactionName, int tab)
+    {
+        _fill.Color = new SKColor(5, 8, 9, 238);
+        canvas.DrawRect(new SKRect(35, 70, 1065, 642), _fill);
+        _line.Color = new SKColor(115, 45, 51);
+        _line.StrokeWidth = 2;
+        canvas.DrawRect(new SKRect(35, 70, 1065, 642), _line);
+        _text.Color = Crimson;
+        canvas.DrawText("STRATEGIC FACTION INTELLIGENCE", 58, 101, SKTextAlign.Left, _titleFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"DIRECTOR CYCLE · WORLD T+{world.ClockSeconds / 60:0.0} MIN · {world.FactionIntelligence.Count} FACTIONS", 60, 121, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "CLOSE ×", 970, 80, 76, 26);
+
+        _fill.Color = Panel;
+        canvas.DrawRoundRect(new SKRect(55, 138, 365, 615), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(385, 138, 1045, 615), 4, 4, _fill);
+        _line.Color = Border;
+        canvas.DrawRoundRect(new SKRect(55, 138, 365, 615), 4, 4, _line);
+        canvas.DrawRoundRect(new SKRect(385, 138, 1045, 615), 4, 4, _line);
+        _text.Color = Gold;
+        canvas.DrawText("FACTION ROSTER", 70, 161, SKTextAlign.Left, _headingFont, _text);
+
+        var profiles = world.FactionIntelligence.OrderBy(profile => profile.Faction == "Kor" ? 0 : 1)
+            .ThenBy(profile => profile.Faction, StringComparer.Ordinal).ToArray();
+        int rowY = 190;
+        foreach (var profile in profiles.Take(10))
+        {
+            bool selected = profile.Faction == selectedFactionName;
+            _fill.Color = selected ? new SKColor(77, 28, 35) : new SKColor(24, 31, 30);
+            canvas.DrawRoundRect(new SKRect(66, rowY - 17, 354, rowY + 22), 3, 3, _fill);
+            _line.Color = selected ? Crimson : Border;
+            canvas.DrawRoundRect(new SKRect(66, rowY - 17, 354, rowY + 22), 3, 3, _line);
+            _text.Color = selected ? Gold : TextColor;
+            canvas.DrawText($"{(profile.Faction == "Kor" ? "◆" : "◇")} {profile.Faction}", 77, rowY, SKTextAlign.Left, _normalFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText($"{profile.TerritoryCount} sites · threat {profile.ThreatLevel}/100", 77, rowY + 15, SKTextAlign.Left, _smallFont, _muted);
+            rowY += 43;
+        }
+
+        var active = profiles.FirstOrDefault(profile => profile.Faction == selectedFactionName) ?? profiles.FirstOrDefault();
+        if (active == null)
+        {
+            _text.Color = TextColor;
+            canvas.DrawText("No faction intelligence available.", 410, 180, SKTextAlign.Left, _normalFont, _text);
+            return;
+        }
+
+        _text.Color = Gold;
+        canvas.DrawText(active.Faction.ToUpperInvariant(), 410, 170, SKTextAlign.Left, _titleFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText($"STANCE TOWARD KOR: {active.StanceToward()}   ·   STRATEGY: {active.Strategy}", 412, 191, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "OVERVIEW", 410, 207, 108, 26, tab == 0);
+        DrawButton(canvas, "DIPLOMACY", 526, 207, 108, 26, tab == 1);
+        DrawButton(canvas, "THREAT / AI", 642, 207, 108, 26, tab == 2);
+
+        if (tab == 1)
+        {
+            _text.Color = Gold;
+            canvas.DrawText("RELATIONSHIP MATRIX", 410, 260, SKTextAlign.Left, _headingFont, _text);
+            int y = 286;
+            foreach (var relation in active.Relationships.OrderByDescending(item => item.Score).Take(8))
+            {
+                _text.Color = TextColor;
+                canvas.DrawText(relation.OtherFaction, 412, y, SKTextAlign.Left, _normalFont, _text);
+                _text.Color = relation.Score >= 30 ? new SKColor(125, 220, 155) : relation.Score <= -30 ? new SKColor(255, 110, 110) : TextColor;
+                canvas.DrawText($"{relation.Score:+#;-#;0}/100", 660, y, SKTextAlign.Left, _normalFont, _text);
+                y += 24;
+                foreach (var modifier in relation.Modifiers.Take(2))
+                {
+                    _muted.Color = MutedColor;
+                    canvas.DrawText($"· {modifier.Cause}: {modifier.Value:+#;-#;0}", 430, y, SKTextAlign.Left, _smallFont, _muted);
+                    y += 16;
+                }
+                y += 5;
+                if (y > 575) break;
+            }
+        }
+        else if (tab == 2)
+        {
+            _text.Color = Gold;
+            canvas.DrawText("STRATEGIC DIRECTOR", 410, 260, SKTextAlign.Left, _headingFont, _text);
+            _text.Color = TextColor;
+            canvas.DrawText($"Current plan: {active.Strategy}", 412, 292, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Aggression: {active.Aggression}/100", 412, 320, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"War / reorientation pressure: {active.ThreatLevel}/100", 412, 348, SKTextAlign.Left, _normalFont, _text);
+            DrawThreatMeter(canvas, 412, 365, 600, active.ThreatLevel);
+            _muted.Color = MutedColor;
+            string assessment = active.ThreatLevel >= 70 ? "HIGH · strategic posture is elevated" :
+                active.ThreatLevel >= 40 ? "MODERATE · monitor border and military changes" :
+                "LOW · no elevated strategic pressure detected";
+            canvas.DrawText(assessment, 412, 405, SKTextAlign.Left, _normalFont, _muted);
+            canvas.DrawText($"Last director evaluation: T+{active.LastDecisionAt / 60:0.0} min", 412, 432, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Threat is an estimate, not a declaration of war.", 412, 459, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            _text.Color = Gold;
+            canvas.DrawText("MACROECONOMICS", 410, 260, SKTextAlign.Left, _headingFont, _text);
+            _text.Color = TextColor;
+            canvas.DrawText($"Territories / settlements: {active.TerritoryCount}", 412, 291, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Treasury estimate: {active.Treasury:N0} K-Credits", 412, 318, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Military power estimate: {active.MilitaryPower:N0}", 412, 345, SKTextAlign.Left, _normalFont, _text);
+            canvas.DrawText($"Relationship with Kor: {active.RelationshipTo("Kor"):+#;-#;0}/100", 412, 372, SKTextAlign.Left, _normalFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText("Values are generated simulation estimates and update with the world.", 412, 410, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Diplomatic actions are not enabled yet; this panel is read-only.", 412, 430, SKTextAlign.Left, _smallFont, _muted);
+        }
+    }
+
+    private void DrawThreatMeter(SKCanvas canvas, float x, float y, float width, int value)
+    {
+        _fill.Color = new SKColor(40, 47, 44);
+        canvas.DrawRoundRect(new SKRect(x, y, x + width, y + 14), 3, 3, _fill);
+        _fill.Color = value >= 70 ? Crimson : value >= 40 ? Gold : new SKColor(75, 155, 105);
+        canvas.DrawRoundRect(new SKRect(x, y, x + width * Math.Clamp(value, 0, 100) / 100f, y + 14), 3, 3, _fill);
+    }
+
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
         PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
@@ -472,6 +824,7 @@ internal sealed class ColonyRenderer : IDisposable
         _muted.Color = MutedColor;
         canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "SYMBOLIC COLONY GRID / LIVE SIMULATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
 
+        DrawFactionButton(canvas, false);
         _fill.Color = new SKColor(28, 35, 32);
         canvas.DrawRoundRect(new SKRect(1010, 10, 1084, 31), 3, 3, _fill);
         _text.Color = new SKColor(125, 220, 155);
@@ -512,7 +865,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"Time: {(int)(simulation.ElapsedSeconds / 60)}m {((int)simulation.ElapsedSeconds % 60):00}s", 790, 215, SKTextAlign.Left, _normalFont, _text);
         canvas.DrawText(paused ? "SIMULATION PAUSED" : "SIMULATION RUNNING", 790, 239, SKTextAlign.Left, _normalFont, _text);
         _text.Color = simulation.InventoryFreeCapacity == 0 ? Crimson : TextColor;
-        canvas.DrawText($"Storage: {simulation.InventoryUsed}/{simulation.InventoryCapacity}", 790, 263, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Storage {simulation.InventoryUsed}/{simulation.InventoryCapacity} | Wealth {simulation.Wealth.TotalWealth:0} | TP {simulation.Wealth.ThreatPoints}", 790, 263, SKTextAlign.Left, _smallFont, _text);
 
         _text.Color = Gold;
         canvas.DrawText(worldView ? "WORLD ENTITY INSPECTOR" : "STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
