@@ -264,6 +264,7 @@ internal sealed class ColonySimulation
         }
         InitializeEcosystem();
         SyncThingGrid();
+        RefreshWealthMetrics();
     }
 
     internal ColonySnapshot CaptureSnapshot()
@@ -529,6 +530,7 @@ internal sealed class ColonySimulation
         if (ledgerFood > gridFood && !_ecosystem.Grid.TryAdd(ResourceKind.Food, ledgerFood - gridFood))
             throw new InvalidOperationException("The ecosystem food buffer cannot mirror the settlement ledger.");
         if (gridFood > ledgerFood) _ecosystem.Grid.TryTake(ResourceKind.Food, gridFood - ledgerFood);
+        RefreshWealthMetrics();
     }
 
     private double InventoryAmount(ResourceKind resource)
@@ -1521,15 +1523,20 @@ internal sealed class ColonySimulation
         _thingGrid.Rebuild(things);
     }
 
-    private void StepStoryteller()
+    internal ColonyWealthSnapshot RefreshWealthMetrics()
     {
-        float averageStress = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Stress);
-        float averageHunger = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Hunger);
         var inventory = Enum.GetValues<ResourceKind>().ToDictionary(resource => resource, ResourceCount);
         var objects = _objects.Select(item => (Kind: item.Kind, Built: item.IsBuilt));
         var architecture = _tiles.Cast<TileCell>().Where(tile => tile.Architecture != ArchitectureKind.None)
             .Select(tile => (Kind: tile.Architecture));
-        var wealth = _wealth.Sample(_tickManager.TickCount, inventory, objects, architecture);
+        return _wealth.Sample(_tickManager.TickCount, inventory, objects, architecture);
+    }
+
+    private void StepStoryteller()
+    {
+        float averageStress = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Stress);
+        float averageHunger = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Hunger);
+        var wealth = RefreshWealthMetrics();
         var events = _storyteller.Step(_tickManager.TickCount, new StorytellerColonyState(
             _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger,
             wealth.TotalWealth, wealth.ThreatPoints));
