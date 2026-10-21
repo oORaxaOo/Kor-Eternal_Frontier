@@ -248,6 +248,34 @@ internal sealed class ColonyRenderer : IDisposable
             };
             canvas.DrawText(letter, point.X, point.Y + 4f * zoom, SKTextAlign.Center, _smallFont, _text);
         }
+
+        foreach (var deposit in simulation.MaterialDeposits.Where(d => d.Amount > 0))
+        {
+            var point = OrthogonalGridProjection.TileCenter(deposit.Cell.X, deposit.Cell.Y, cameraX, cameraY, zoom);
+            float size = 13f * zoom;
+            var rect = new SKRect(point.X - size / 2, point.Y - size / 2, point.X + size / 2, point.Y + size / 2);
+            _fill.Color = deposit.MaterialId switch
+            {
+                "ore" => new SKColor(180, 111, 79),
+                "rare_earth" => new SKColor(176, 98, 176),
+                "crystal" => new SKColor(93, 177, 201),
+                "reagents" => new SKColor(182, 151, 73),
+                "water" => new SKColor(73, 145, 206),
+                "biomass" => new SKColor(93, 163, 91),
+                "recycled_feedstock" => new SKColor(151, 159, 151),
+                _ => new SKColor(176, 116, 91)
+            };
+            canvas.DrawRect(rect, _fill);
+            _line.Color = new SKColor(12, 15, 14);
+            canvas.DrawRect(rect, _line);
+            string letter = deposit.MaterialId switch
+            {
+                "rare_earth" => "R",
+                "recycled_feedstock" => "S",
+                _ => deposit.MaterialId[..1].ToUpperInvariant()
+            };
+            canvas.DrawText(letter, point.X, point.Y + 4f * zoom, SKTextAlign.Center, _smallFont, _text);
+        }
     }
 
     private void DrawObjects(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom)

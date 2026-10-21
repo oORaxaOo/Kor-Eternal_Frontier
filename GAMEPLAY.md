@@ -13,11 +13,14 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - A 40 x 26 square tile map.
 - Three colonists with independent position, movement task, cargo state, and hunger.
 - Finite resource deposits.
-- Real gather/carry/deliver trips that transfer resource from source deposit to inventory.
+- Real gather/carry/deliver trips for both legacy resources and stable-ID raw materials, with finite source quantities and shared inventory capacity.
 - Individual per-tile architecture construction orders with costs, work progress, and completion state.
 - Footprint-based multi-tile object blueprints that remain unfinished until workers complete construction.
-- Inventory-based construction and production costs.
-- A functional production recipe: a completed workbench consumes alloy and wood and creates a component only after worker labor.
+- Inventory-based construction and production costs with shared storage capacity across legacy resources and stable-ID industry materials.
+- Live catalogue-driven recipe queues: a completed workbench reserves actual inputs, workers travel to the station, perform recipe work, and add stage-specific outputs.
+- Local research projects spend strategic Knowledge and Energy, enforce catalogue prerequisites, persist in colony schema v4, and unlock recipes only after the required technology is completed.
+- Multi-stage intermediate material IDs persist through save/load; recipes reject missing inputs instead of generating free goods.
+- The original component recipe remains available alongside the catalogue recipes.
 - Minimal orthogonal top-down rendering.
 - Versioned local colony saves with structural validation and round-trip tests.
 - A `WorldSimulation` coordinator that advances the local colony and regional world under one real-time clock, with pause/speed support and automatic regional updates.

@@ -56,14 +56,18 @@ internal sealed class ColonySnapshot
     public int NextOrderId { get; set; }
     public int NextObjectId { get; set; }
     public int NextDepositId { get; set; }
+    public int NextMaterialDepositId { get; set; } = 1;
     public int NextProductionId { get; set; }
     public List<TileSnapshot> Tiles { get; set; } = [];
     public List<TileOrderSnapshot> TileOrders { get; set; } = [];
     public List<PlaceableObjectSnapshot> Objects { get; set; } = [];
     public List<ResourceDepositSnapshot> Deposits { get; set; } = [];
+    public List<MaterialDepositSnapshot> MaterialDeposits { get; set; } = [];
     public List<ColonyWorkerSnapshot> Workers { get; set; } = [];
     public List<ResourceStackSnapshot> Inventory { get; set; } = [];
+    public List<MaterialStackSnapshot> Materials { get; set; } = [];
     public List<ProductionOrderSnapshot> ProductionOrders { get; set; } = [];
+    public List<string> ResearchedProjects { get; set; } = [];
 
     public void Validate()
     {
@@ -80,6 +84,30 @@ internal sealed class ColonySnapshot
         if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
             throw new InvalidDataException("Colony save is missing a required collection.");
+        if (Materials is null)
+        {
+            if (SchemaVersion == 1) Materials = [];
+            else throw new InvalidDataException("Colony save is missing its stable-ID material inventory.");
+        }
+        if (MaterialDeposits is null)
+        {
+            if (SchemaVersion <= 2) MaterialDeposits = [];
+            else throw new InvalidDataException("Colony save is missing its raw-material deposits.");
+        }
+        if (ResearchedProjects is null)
+        {
+            if (SchemaVersion <= 3) ResearchedProjects = [];
+            else throw new InvalidDataException("Colony save is missing its researched-project ledger.");
+        }
+        var researchById = ProgressionCatalog.Research.ToDictionary(item => item.Id, StringComparer.Ordinal);
+        if (ResearchedProjects.Any(id => string.IsNullOrWhiteSpace(id) || !researchById.ContainsKey(id)) ||
+            ResearchedProjects.Distinct(StringComparer.Ordinal).Count() != ResearchedProjects.Count)
+            throw new InvalidDataException("Colony save contains an unknown or duplicate researched-project ID.");
+        var researchedIds = ResearchedProjects.ToHashSet(StringComparer.Ordinal);
+        foreach (string projectId in ResearchedProjects)
+            if (researchById[projectId].Prerequisites.Any(prerequisite => !researchedIds.Contains(prerequisite)))
+                throw new InvalidDataException("Colony save contains research whose prerequisites are not completed.");
+
         if (Tiles.Count != Width * Height)
             throw new InvalidDataException("Colony save has an incomplete tile grid.");
 
@@ -178,6 +206,18 @@ internal sealed class ColonySnapshot
                 throw new InvalidDataException("Colony save contains an invalid resource deposit.");
         }
 
+        var materialDepositIds = new HashSet<int>();
+        var knownMaterialIdsForDeposits = ProgressionCatalog.Resources.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var deposit in MaterialDeposits)
+        {
+            CheckId(deposit.Id, materialDepositIds, "raw-material deposit");
+            CheckCell(deposit.X, deposit.Y, "raw-material deposit");
+            if (string.IsNullOrWhiteSpace(deposit.MaterialId) ||
+                !knownMaterialIdsForDeposits.Contains(deposit.MaterialId) ||
+                ColonySimulation.IsLegacyMaterialId(deposit.MaterialId) || deposit.Amount < 0)
+                throw new InvalidDataException("Colony save contains an invalid raw-material deposit.");
+        }
+
         var workerIds = new HashSet<int>();
         foreach (var worker in Workers)
         {
@@ -191,8 +231,12 @@ internal sealed class ColonySnapshot
                 !float.IsFinite(worker.Stress) || worker.Stress is < 0 or > 100 ||
                 worker.CarriedAmount < 0)
                 throw new InvalidDataException("Colony save contains an invalid colonist state.");
-            if (worker.CarriedResource.HasValue != (worker.CarriedAmount > 0) ||
-                (worker.CarriedResource.HasValue && !Enum.IsDefined(worker.CarriedResource.Value)))
+            bool hasCargo = worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId);
+            if (hasCargo != (worker.CarriedAmount > 0) ||
+                (worker.CarriedResource.HasValue && !Enum.IsDefined(worker.CarriedResource.Value)) ||
+                (worker.CarriedResource.HasValue && !string.IsNullOrWhiteSpace(worker.CarriedMaterialId)) ||
+                (!string.IsNullOrWhiteSpace(worker.CarriedMaterialId) &&
+                 (!knownMaterialIdsForDeposits.Contains(worker.CarriedMaterialId) || ColonySimulation.IsLegacyMaterialId(worker.CarriedMaterialId))))
                 throw new InvalidDataException("Colony save contains an inconsistent colonist cargo state.");
             if (worker.Task is null) continue;
             if (!Enum.IsDefined(worker.Task.Kind) || !float.IsFinite(worker.Task.WorkDone) || worker.Task.WorkDone < 0 ||
@@ -204,7 +248,9 @@ internal sealed class ColonySnapshot
                 throw new InvalidDataException("Worker task references a missing tile construction order.");
             if (worker.Task.Kind == ColonyTaskKind.BuildObject && !objectIds.Contains(worker.Task.TargetId))
                 throw new InvalidDataException("Worker task references a missing placeable object.");
-            if (worker.Task.Kind == ColonyTaskKind.Gather && !depositIds.Contains(worker.Task.DepositId))
+            if (worker.Task.Kind == ColonyTaskKind.Gather &&
+                ((worker.Task.MaterialDepositId > 0 && !materialDepositIds.Contains(worker.Task.MaterialDepositId)) ||
+                 (worker.Task.MaterialDepositId == 0 && !depositIds.Contains(worker.Task.DepositId))))
                 throw new InvalidDataException("Worker task references a missing resource deposit.");
         }
 
@@ -231,7 +277,8 @@ internal sealed class ColonySnapshot
         {
             CheckId(order.Id, productionIds, "production order");
             if (!objectIds.Contains(order.WorkstationId) || !float.IsFinite(order.WorkRequired) ||
-                !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0)
+                !float.IsFinite(order.WorkDone) || order.WorkRequired <= 0 || order.WorkDone < 0 ||
+                (order.RecipeId != null && !ProgressionCatalog.Recipes.Any(recipe => recipe.Id == order.RecipeId)))
                 throw new InvalidDataException("Colony save contains an invalid production order.");
         }
         foreach (var worker in Workers)
@@ -250,6 +297,7 @@ internal sealed class ColonySnapshot
         if (NextOrderId <= tileOrderIds.DefaultIfEmpty(0).Max() ||
             NextObjectId <= objectIds.DefaultIfEmpty(0).Max() ||
             NextDepositId <= depositIds.DefaultIfEmpty(0).Max() ||
+            NextMaterialDepositId <= materialDepositIds.DefaultIfEmpty(0).Max() ||
             NextProductionId <= productionIds.DefaultIfEmpty(0).Max())
             throw new InvalidDataException("Colony save contains an invalid next-ID counter.");
     }
@@ -309,6 +357,14 @@ internal sealed class ResourceDepositSnapshot
     public ResourceKind Resource { get; set; }
     public int Amount { get; set; }
 }
+internal sealed class MaterialDepositSnapshot
+{
+    public int Id { get; set; }
+    public int X { get; set; }
+    public int Y { get; set; }
+    public string MaterialId { get; set; } = string.Empty;
+    public int Amount { get; set; }
+}
 internal sealed class ColonyWorkerSnapshot
 {
     public int Id { get; set; }
@@ -320,6 +376,7 @@ internal sealed class ColonyWorkerSnapshot
     public float ThermalExposure { get; set; }
     public float Stress { get; set; }
     public ResourceKind? CarriedResource { get; set; }
+    public string? CarriedMaterialId { get; set; }
     public int CarriedAmount { get; set; }
     public WorkerTaskSnapshot? Task { get; set; }
 }
@@ -333,16 +390,23 @@ internal sealed class WorkerTaskSnapshot
     public int TargetId { get; set; }
     public float WorkDone { get; set; }
     public int DepositId { get; set; }
+    public int MaterialDepositId { get; set; }
 }
 internal sealed class ResourceStackSnapshot
 {
     public ResourceKind Resource { get; set; }
     public int Amount { get; set; }
 }
+internal sealed class MaterialStackSnapshot
+{
+    public string MaterialId { get; set; } = string.Empty;
+    public int Amount { get; set; }
+}
 internal sealed class ProductionOrderSnapshot
 {
     public int Id { get; set; }
     public int WorkstationId { get; set; }
+    public string? RecipeId { get; set; }
     public float WorkRequired { get; set; }
     public float WorkDone { get; set; }
     public bool Complete { get; set; }

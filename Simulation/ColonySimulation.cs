@@ -58,6 +58,13 @@ internal sealed class ResourceDeposit(int id, CellPosition cell, ResourceKind re
     public ResourceKind Resource { get; } = resource;
     public int Amount { get; internal set; } = amount;
 }
+internal sealed class MaterialDeposit(int id, CellPosition cell, string materialId, int amount)
+{
+    public int Id { get; } = id;
+    public CellPosition Cell { get; } = cell;
+    public string MaterialId { get; } = materialId;
+    public int Amount { get; internal set; } = amount;
+}
 
 internal sealed class ColonyWorker(int id, string name, float x, float y, float hunger)
 {
@@ -70,6 +77,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float Stress { get; internal set; }
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
+    public string? CarriedMaterialId { get; internal set; }
     public int CarriedAmount { get; internal set; }
     public WorkerTask? Task { get; internal set; }
 }
@@ -83,13 +91,15 @@ internal sealed class WorkerTask(ColonyTaskKind kind, CellPosition target, List<
     public int TargetId { get; set; }
     public float WorkDone { get; set; }
     public int DepositId { get; set; }
+    public int MaterialDepositId { get; set; }
 }
 
-internal sealed class ProductionOrder(int id, int workstationId, float workRequired)
+internal sealed class ProductionOrder(int id, int workstationId, float workRequired, string? recipeId = null)
 {
     public int Id { get; } = id;
     public int WorkstationId { get; } = workstationId;
     public float WorkRequired { get; } = workRequired;
+    public string? RecipeId { get; } = recipeId;
     public float WorkDone { get; internal set; }
     public bool Complete { get; internal set; }
     public bool Assigned { get; internal set; }
@@ -117,6 +127,7 @@ internal sealed class ColonySimulation
     private readonly List<TileConstructionOrder> _tileOrders = [];
     private readonly List<PlaceableObjectState> _objects = [];
     private readonly List<ResourceDeposit> _deposits = [];
+    private readonly List<MaterialDeposit> _materialDeposits = [];
     private readonly List<ColonyWorker> _workers = [];
     private readonly List<ProductionOrder> _productionOrders = [];
     private readonly Dictionary<ResourceKind, int> _inventory = Enum.GetValues<ResourceKind>().ToDictionary(k => k, _ => 0);
@@ -134,6 +145,7 @@ internal sealed class ColonySimulation
     private int _nextSpawnCellIndex = 12 * Width + 14;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
+    private int _nextMaterialDepositId = 1;
     private int _nextProductionId = 1;
     private float _environmentAccumulatorSeconds;
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
@@ -144,6 +156,9 @@ internal sealed class ColonySimulation
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
+    public IReadOnlyList<MaterialDeposit> MaterialDeposits => _materialDeposits;
+    public IReadOnlyList<ProductionOrder> ProductionOrders => _productionOrders;
+    public IReadOnlyDictionary<string, int> IndustryInventory => _industryInventory;
     public string Message { get; private set; } = "Colony ready. Design architecture per tile or place an object blueprint.";
     public void SetMessage(string message) => Message = message;
     public int? SelectedWorkerId { get; private set; }
@@ -160,6 +175,7 @@ internal sealed class ColonySimulation
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
     public int InventoryFreeCapacity => Math.Max(0, InventoryCapacity - InventoryUsed);
+    private int UnreservedInventoryFreeCapacity => Math.Max(0, InventoryFreeCapacity - PendingProductionOutputCapacity);
 
     public ColonySimulation()
     {
@@ -210,13 +226,16 @@ internal sealed class ColonySimulation
             NextOrderId = _nextOrderId,
             NextObjectId = _nextObjectId,
             NextDepositId = _nextDepositId,
+            NextMaterialDepositId = _nextMaterialDepositId,
             NextProductionId = _nextProductionId,
             Tiles = [],
             TileOrders = [],
             Objects = [],
             Deposits = [],
+            MaterialDeposits = [],
             Workers = [],
             Inventory = [],
+            Materials = [],
             ProductionOrders = []
         };
 
@@ -249,6 +268,11 @@ internal sealed class ColonySimulation
             Id = deposit.Id, X = deposit.Cell.X, Y = deposit.Cell.Y,
             Resource = deposit.Resource, Amount = deposit.Amount
         }));
+        snapshot.MaterialDeposits.AddRange(_materialDeposits.Select(deposit => new MaterialDepositSnapshot
+        {
+            Id = deposit.Id, X = deposit.Cell.X, Y = deposit.Cell.Y,
+            MaterialId = deposit.MaterialId, Amount = deposit.Amount
+        }));
         snapshot.Workers.AddRange(_workers.Select(worker => new ColonyWorkerSnapshot
         {
             Id = worker.Id, Name = worker.Name, X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
@@ -261,7 +285,8 @@ internal sealed class ColonySimulation
                 Kind = worker.Task.Kind, TargetX = worker.Task.Target.X, TargetY = worker.Task.Target.Y,
                 Route = worker.Task.Route.Select(cell => new CellSnapshot { X = cell.X, Y = cell.Y }).ToList(),
                 RouteIndex = worker.Task.RouteIndex, TargetId = worker.Task.TargetId,
-                WorkDone = worker.Task.WorkDone, DepositId = worker.Task.DepositId
+                WorkDone = worker.Task.WorkDone, DepositId = worker.Task.DepositId,
+                MaterialDepositId = worker.Task.MaterialDepositId
             }
         }));
         if (_sharedInventoryWorld == null)
@@ -273,8 +298,9 @@ internal sealed class ColonySimulation
             snapshot.InventoryOwnedByWorld = true;
         snapshot.ProductionOrders.AddRange(_productionOrders.Select(order => new ProductionOrderSnapshot
         {
-            Id = order.Id, WorkstationId = order.WorkstationId, WorkRequired = order.WorkRequired,
-            WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
+            Id = order.Id, WorkstationId = order.WorkstationId, RecipeId = order.RecipeId,
+            WorkRequired = order.WorkRequired, WorkDone = order.WorkDone,
+            Complete = order.Complete, Assigned = order.Assigned
         }));
         return snapshot;
     }
@@ -310,6 +336,9 @@ internal sealed class ColonySimulation
         simulation._deposits.Clear();
         simulation._deposits.AddRange(snapshot.Deposits.Select(deposit => new ResourceDeposit(
             deposit.Id, new CellPosition(deposit.X, deposit.Y), deposit.Resource, deposit.Amount)));
+        simulation._materialDeposits.Clear();
+        simulation._materialDeposits.AddRange(snapshot.MaterialDeposits.Select(deposit => new MaterialDeposit(
+            deposit.Id, new CellPosition(deposit.X, deposit.Y), deposit.MaterialId, deposit.Amount)));
 
         simulation._workers.Clear();
         simulation._workers.AddRange(snapshot.Workers.Select(worker =>
@@ -319,6 +348,7 @@ internal sealed class ColonySimulation
                 ThermalExposure = worker.ThermalExposure,
                 Stress = worker.Stress,
                 CarriedResource = worker.CarriedResource,
+                CarriedMaterialId = worker.CarriedMaterialId,
                 CarriedAmount = worker.CarriedAmount,
                 Task = worker.Task == null ? null : new WorkerTask(worker.Task.Kind,
                     new CellPosition(worker.Task.TargetX, worker.Task.TargetY),
@@ -327,7 +357,8 @@ internal sealed class ColonySimulation
                     RouteIndex = worker.Task.RouteIndex,
                     TargetId = worker.Task.TargetId,
                     WorkDone = worker.Task.WorkDone,
-                    DepositId = worker.Task.DepositId
+                    DepositId = worker.Task.DepositId,
+                    MaterialDepositId = worker.Task.MaterialDepositId
                 }
             };
             return restored;
@@ -341,7 +372,7 @@ internal sealed class ColonySimulation
         }
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
-            order.Id, order.WorkstationId, order.WorkRequired)
+            order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
         {
             WorkDone = order.WorkDone, Complete = order.Complete, Assigned = order.Assigned
         }));
@@ -349,6 +380,7 @@ internal sealed class ColonySimulation
         simulation._nextOrderId = snapshot.NextOrderId;
         simulation._nextObjectId = snapshot.NextObjectId;
         simulation._nextDepositId = snapshot.NextDepositId;
+        simulation._nextMaterialDepositId = snapshot.NextMaterialDepositId;
         simulation._nextProductionId = snapshot.NextProductionId;
         simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
         simulation._environmentAccumulatorSeconds = snapshot.EnvironmentAccumulatorSeconds;
@@ -768,6 +800,8 @@ internal sealed class ColonySimulation
 
     public ResourceDeposit? DepositAt(int x, int y) =>
         _deposits.FirstOrDefault(d => d.Cell.X == x && d.Cell.Y == y && d.Amount > 0);
+    public MaterialDeposit? MaterialDepositAt(int x, int y) =>
+        _materialDeposits.FirstOrDefault(d => d.Cell.X == x && d.Cell.Y == y && d.Amount > 0);
 
     public PlaceableObjectState? ObjectAt(int x, int y) =>
         _objects.FirstOrDefault(o => o.Occupies(new CellPosition(x, y)));
@@ -855,7 +889,14 @@ internal sealed class ColonySimulation
             Message = "Component production requires a completed workbench.";
             return false;
         }
-        if (!TryConsume(new Dictionary<ResourceKind, int> { [ResourceKind.Alloy] = 2, [ResourceKind.Wood] = 1 }))
+        var inputs = new Dictionary<ResourceKind, int> { [ResourceKind.Alloy] = 2, [ResourceKind.Wood] = 1 };
+        int inputTotal = inputs.Values.Sum();
+        if (InventoryFreeCapacity + inputTotal - PendingProductionOutputCapacity < 1)
+        {
+            Message = "Component production has no reserved room for its finished output.";
+            return false;
+        }
+        if (!TryConsume(inputs))
         {
             Message = "Component production needs 2 alloy and 1 wood in the inventory.";
             return false;
@@ -863,6 +904,36 @@ internal sealed class ColonySimulation
 
         _productionOrders.Add(new ProductionOrder(_nextProductionId++, workstationId, 6f));
         Message = "Component production queued; 2 alloy and 1 wood are committed to the order.";
+        return true;
+    }
+
+    public bool QueueRecipeProduction(int workstationId, string recipeId)
+    {
+        var station = _objects.FirstOrDefault(o => o.Id == workstationId && o.Kind == PlaceableKind.Workbench && o.IsBuilt);
+        if (station == null)
+        {
+            Message = "Catalog recipes require a completed workbench.";
+            return false;
+        }
+        var recipe = ProgressionCatalog.Recipes.FirstOrDefault(item => item.Id == recipeId);
+        if (recipe == null)
+        {
+            Message = "That production recipe does not exist in the catalogue.";
+            return false;
+        }
+        if (!CanQueueRecipe(recipeId, out string reason))
+        {
+            Message = reason;
+            return false;
+        }
+        if (!TryConsumeMaterials(recipe.Inputs))
+        {
+            Message = "Production inputs changed before the order could reserve them.";
+            return false;
+        }
+
+        _productionOrders.Add(new ProductionOrder(_nextProductionId++, workstationId, recipe.Work, recipe.Id));
+        Message = $"{recipe.Name} queued at Workbench #{workstationId}; inputs are reserved.";
         return true;
     }
 
@@ -903,7 +974,7 @@ internal sealed class ColonySimulation
             Message = "That destination is outside the map.";
             return;
         }
-        if (worker.CarriedResource.HasValue)
+        if (worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId))
         {
             Message = $"{worker.Name} must deliver the carried material before taking another order.";
             return;
@@ -931,7 +1002,7 @@ internal sealed class ColonySimulation
             }
             if (InventoryFreeCapacity <= 0)
             {
-                Message = "Colony storage is full. Build or complete additional storage before gathering more resources.";
+                Message = "Colony storage is full or reserved for active production. Build storage or let production finish before gathering more resources.";
                 return;
             }
             if (!TryFindPath(worker, deposit.Cell, out var route))
@@ -941,6 +1012,26 @@ internal sealed class ColonySimulation
             }
             worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
             Message = $"{worker.Name} ordered to gather {deposit.Resource}. The material will be carried back to stockpile.";
+            return;
+        }
+
+        var materialDeposit = MaterialDepositAt(x, y);
+        if (materialDeposit != null)
+        {
+            if (UnreservedInventoryFreeCapacity <= 0)
+            {
+                Message = "Colony storage is full or reserved for active production.";
+                return;
+            }
+            if (!TryFindPath(worker, materialDeposit.Cell, out var materialRoute))
+            {
+                Message = "No route to that raw-material deposit.";
+                return;
+            }
+            worker.Task = new WorkerTask(ColonyTaskKind.Gather, materialDeposit.Cell, materialRoute)
+                { MaterialDepositId = materialDeposit.Id };
+            string materialName = ProgressionCatalog.Resources.FirstOrDefault(item => item.Id == materialDeposit.MaterialId)?.Name ?? materialDeposit.MaterialId;
+            Message = $"{worker.Name} ordered to extract {materialName}. The material will be carried back to stockpile.";
             return;
         }
 
@@ -1085,7 +1176,7 @@ internal sealed class ColonySimulation
                     continue;
             }
 
-            if (worker.CarriedResource.HasValue)
+            if (worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId))
             {
                 AssignDelivery(worker);
                 // Carrying cargo is an outstanding logistics obligation. Never assign unrelated
@@ -1175,7 +1266,7 @@ internal sealed class ColonySimulation
 
     private void TryAssignGatherForShortage(ColonyWorker worker)
     {
-        if (InventoryFreeCapacity <= 0) return;
+        if (UnreservedInventoryFreeCapacity <= 0) return;
         var required = new HashSet<ResourceKind>();
         foreach (var order in _tileOrders.Where(o => o.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials))
             foreach (var need in TileCost(order.Target))
@@ -1202,7 +1293,8 @@ internal sealed class ColonySimulation
 
     private void AssignDelivery(ColonyWorker worker)
     {
-        if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0 || InventoryFreeCapacity <= 0) return;
+        if ((!worker.CarriedResource.HasValue && string.IsNullOrWhiteSpace(worker.CarriedMaterialId)) ||
+            worker.CarriedAmount <= 0 || UnreservedInventoryFreeCapacity <= 0) return;
         var drop = FindStockpileDropoff();
         if (!drop.HasValue || !TryFindPath(worker, drop.Value, out var route)) return;
         worker.Task = new WorkerTask(ColonyTaskKind.Deliver, drop.Value, route);
@@ -1259,6 +1351,26 @@ internal sealed class ColonySimulation
 
     private void CompleteGather(ColonyWorker worker, WorkerTask task)
     {
+        if (task.MaterialDepositId > 0)
+        {
+            var materialDeposit = _materialDeposits.FirstOrDefault(d => d.Id == task.MaterialDepositId);
+            if (materialDeposit == null || materialDeposit.Amount <= 0)
+            {
+                worker.Task = null;
+                Message = "The raw-material deposit is exhausted.";
+                return;
+            }
+            int materialAmount = Math.Min(CarryCapacity, materialDeposit.Amount);
+            materialDeposit.Amount -= materialAmount;
+            worker.CarriedResource = null;
+            worker.CarriedMaterialId = materialDeposit.MaterialId;
+            worker.CarriedAmount = materialAmount;
+            worker.Task = null;
+            AssignDelivery(worker);
+            Message = $"{worker.Name} extracted {materialAmount} {materialDeposit.MaterialId}; returning it to stockpile.";
+            return;
+        }
+
         var deposit = _deposits.FirstOrDefault(d => d.Id == task.DepositId);
         if (deposit == null || deposit.Amount <= 0)
         {
@@ -1270,6 +1382,7 @@ internal sealed class ColonySimulation
         int amount = Math.Min(CarryCapacity, deposit.Amount);
         deposit.Amount -= amount;
         worker.CarriedResource = deposit.Resource;
+        worker.CarriedMaterialId = null;
         worker.CarriedAmount = amount;
         worker.Task = null;
         AssignDelivery(worker);
@@ -1278,24 +1391,28 @@ internal sealed class ColonySimulation
 
     private void CompleteDelivery(ColonyWorker worker)
     {
-        if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0)
+        if ((!worker.CarriedResource.HasValue && string.IsNullOrWhiteSpace(worker.CarriedMaterialId)) ||
+            worker.CarriedAmount <= 0)
         {
             worker.Task = null;
             return;
         }
 
-        int delivered = Math.Min(worker.CarriedAmount, InventoryFreeCapacity);
+        int delivered = Math.Min(worker.CarriedAmount, UnreservedInventoryFreeCapacity);
         if (delivered > 0)
         {
-            AddResource(worker.CarriedResource.Value, delivered);
+            if (worker.CarriedResource.HasValue) AddResource(worker.CarriedResource.Value, delivered);
+            else AddMaterial(worker.CarriedMaterialId!, delivered);
             worker.CarriedAmount -= delivered;
         }
 
+        string deliveredName = worker.CarriedResource?.ToString() ??
+            (ProgressionCatalog.Resources.FirstOrDefault(item => item.Id == worker.CarriedMaterialId)?.Name ?? worker.CarriedMaterialId ?? "raw materials");
         if (worker.CarriedAmount == 0)
         {
-            ResourceKind deliveredResource = worker.CarriedResource.Value;
             worker.CarriedResource = null;
-            Message = $"{worker.Name} delivered {delivered} {deliveredResource}.";
+            worker.CarriedMaterialId = null;
+            Message = $"{worker.Name} delivered {delivered} {deliveredName}.";
         }
         else
         {
@@ -1350,18 +1467,28 @@ internal sealed class ColonySimulation
             return;
         }
         float workRate = worker.Hungry ? 0.5f : 1f;
-        if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < 1)
+        int outputCapacity = order.RecipeId == null ? 1 :
+            ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Outputs.Values.Sum() ?? 0;
+        if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < outputCapacity)
         {
-            Message = "Production is waiting for storage space before it can deliver the completed component.";
+            Message = "Production is waiting for storage space before it can deliver the finished goods.";
             return;
         }
-        order.WorkDone += deltaSeconds * workRate;
+        order.WorkDone = Math.Min(order.WorkRequired, order.WorkDone + deltaSeconds * workRate);
         if (order.WorkDone < order.WorkRequired) return;
         order.Complete = true;
         order.Assigned = false;
-        AddResource(ResourceKind.Components, 1);
+        if (order.RecipeId == null)
+            AddResource(ResourceKind.Components, 1);
+        else
+        {
+            var recipe = ProgressionCatalog.Recipes.First(item => item.Id == order.RecipeId);
+            foreach (var output in recipe.Outputs) AddMaterial(output.Key, output.Value);
+        }
         worker.Task = null;
-        Message = "Workbench production completed: 1 component produced from committed materials.";
+        Message = order.RecipeId == null
+            ? "Workbench production completed: 1 component produced from committed materials."
+            : $"Production completed: {ProgressionCatalog.Recipes.First(item => item.Id == order.RecipeId).Name}.";
     }
 
     private CellPosition? FindWorkCell(ColonyWorker worker, CellPosition origin, int width, int height)
@@ -1492,6 +1619,55 @@ internal sealed class ColonySimulation
         return true;
     }
 
+    private bool TryConsumeMaterials(IReadOnlyDictionary<string, int> costs)
+    {
+        if (costs.Any(item => item.Value <= 0 || MaterialCount(item.Key) < item.Value)) return false;
+        foreach (var (materialId, amount) in costs)
+        {
+            if (TryMapLegacyMaterial(materialId, out var legacy))
+                _inventory[legacy] -= amount;
+            else
+            {
+                int remaining = MaterialCount(materialId) - amount;
+                if (remaining == 0) _industryInventory.Remove(materialId);
+                else _industryInventory[materialId] = remaining;
+            }
+        }
+        return true;
+    }
+
+    private void AddMaterial(string materialId, int amount)
+    {
+        if (amount <= 0) return;
+        if (!ProgressionCatalog.Resources.Any(item => item.Id == materialId))
+            throw new InvalidOperationException($"Unknown catalogue material ID: {materialId}");
+        if (TryMapLegacyMaterial(materialId, out var legacy))
+            AddResource(legacy, amount);
+        else
+            _industryInventory[materialId] = checked(MaterialCount(materialId) + amount);
+    }
+
+    private int PendingProductionOutputCapacity => _productionOrders
+        .Where(order => !order.Complete)
+        .Sum(order => order.RecipeId == null ? 1 :
+            ProgressionCatalog.Recipes.FirstOrDefault(recipe => recipe.Id == order.RecipeId)?.Outputs.Values.Sum() ?? 0);
+
+    internal static bool IsLegacyMaterialId(string materialId) => TryMapLegacyMaterial(materialId, out _);
+
+    private static bool TryMapLegacyMaterial(string materialId, out ResourceKind resource)
+    {
+        resource = materialId switch
+        {
+            "wood" => ResourceKind.Wood,
+            "stone" => ResourceKind.Stone,
+            "food" => ResourceKind.Food,
+            "alloy" => ResourceKind.Alloy,
+            "components" => ResourceKind.Components,
+            _ => (ResourceKind)(-1)
+        };
+        return Enum.IsDefined(resource);
+    }
+
     private bool TryTake(ResourceKind resource, int amount)
     {
         if (amount < 0 || ResourceCount(resource) < amount) return false;
@@ -1516,6 +1692,14 @@ internal sealed class ColonySimulation
     {
         _tiles[cell.X, cell.Y].Terrain = TerrainKind.Ground;
         _deposits.Add(new ResourceDeposit(_nextDepositId++, cell, resource, amount));
+    }
+
+    private void AddMaterialDeposit(CellPosition cell, string materialId, int amount)
+    {
+        if (!ProgressionCatalog.Resources.Any(item => item.Id == materialId) || IsLegacyMaterialId(materialId))
+            throw new InvalidOperationException($"Unknown raw-material deposit ID: {materialId}");
+        _tiles[cell.X, cell.Y].Terrain = TerrainKind.Ground;
+        _materialDeposits.Add(new MaterialDeposit(_nextMaterialDepositId++, cell, materialId, amount));
     }
 
     private static Dictionary<ResourceKind, int> TileCost(ArchitectureKind target) => target switch
