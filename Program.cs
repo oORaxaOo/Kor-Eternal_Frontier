@@ -61,13 +61,14 @@ internal static class Program
             int factionTab = 0;
             bool workMatrixOpen = false;
             int workerInspectorTab = 0;
+            int workMatrixPage = 0;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -207,11 +208,13 @@ internal static class Program
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
                         if (Hit(mx, my, 850, 584, 942, 612)) workMatrixOpen = false;
+                        else if (Hit(mx, my, 710, 584, 770, 612)) workMatrixPage = Math.Max(0, workMatrixPage - 1);
+                        else if (Hit(mx, my, 778, 584, 838, 612)) workMatrixPage = Math.Min(Math.Max(0, (simulation.Workers.Count - 1) / 9), workMatrixPage + 1);
                         else
                         {
                             var categories = Enum.GetValues<WorkCategory>();
                             int[] columnX = [420, 520, 620, 720, 820];
-                            var workers = simulation.Workers.Take(9).ToArray();
+                            var workers = simulation.Workers.Skip(workMatrixPage * 9).Take(9).ToArray();
                             for (int row = 0; row < workers.Length; row++)
                             {
                                 float rowY = 244 + row * 38;
