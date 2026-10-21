@@ -410,6 +410,31 @@ internal static class Program
         }
     }
 
+    private static void DesignArchitectureLine(ColonySimulation simulation, int x0, int y0, int x1, int y1, ArchitectureKind kind)
+    {
+        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int error = dx + dy;
+        while (true)
+        {
+            simulation.DesignTileConstruction(x0, y0, kind);
+            if (x0 == x1 && y0 == y1) break;
+            int twiceError = 2 * error;
+            if (twiceError >= dy) { error += dy; x0 += sx; }
+            if (twiceError <= dx) { error += dx; y0 += sy; }
+        }
+    }
+
+    private static void DesignArchitectureRectangle(ColonySimulation simulation, int x0, int y0, int x1, int y1, ArchitectureKind kind)
+    {
+        int left = Math.Min(x0, x1), right = Math.Max(x0, x1);
+        int top = Math.Min(y0, y1), bottom = Math.Max(y0, y1);
+        for (int y = top; y <= bottom; y++)
+            for (int x = left; x <= right; x++)
+                simulation.DesignTileConstruction(x, y, kind);
+        simulation.SetMessage($"Rectangular {kind.ToString().ToLowerInvariant()} area designated: {right-left+1} × {bottom-top+1} tiles.");
+    }
+
     private static bool Hit(float x, float y, float left, float top, float right, float bottom)
         => x >= left && x <= right && y >= top && y <= bottom;
 
