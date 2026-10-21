@@ -440,7 +440,7 @@ internal sealed class ColonySimulation
         }));
         snapshot.Workers.AddRange(_workers.Select(worker => new ColonyWorkerSnapshot
         {
-            Id = worker.Id, Name = worker.Name, Faction = worker.Faction, IsExternalVisitor = worker.IsExternalVisitor, IsLeaving = worker.IsLeaving, TradeCargo = new Dictionary<ResourceKind, int>(worker.TradeCargo), X = worker.X, Y = worker.Y,
+            Id = worker.Id, Name = worker.Name, Faction = worker.Faction, IsExternalVisitor = worker.IsExternalVisitor, IsLeaving = worker.IsLeaving, TradeCargo = new Dictionary<ResourceKind, int>(worker.TradeCargo), X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
             ThermalExposure = worker.ThermalExposure,
             Stress = worker.Stress,
             CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
