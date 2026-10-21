@@ -21,9 +21,10 @@ internal static class FactionStrategicDirector
             var home = settlements[0];
             double food = settlements.Sum(item => world.InventoryAt(item.Id, WorldResourceKind.Food));
             double stock = settlements.Sum(item => world.InventoryTotalAt(item.Id));
+            bool hasCaravan = world.Entities.Any(entity => entity.Kind == WorldEntityKind.Caravan && entity.Faction == profile.Faction);
             bool activeCaravan = world.Entities.Any(entity => entity.Kind == WorldEntityKind.Caravan && entity.Faction == profile.Faction &&
                 !world.Shipments.Any(shipment => shipment.CarrierEntityId == entity.Id && shipment.Status == WorldShipmentStatus.InTransit));
-            bool hasArmy = world.Entities.Any(entity => entity.Kind == WorldEntityKind.Army && entity.Faction == profile.Faction);
+            int armyCount = world.Entities.Count(entity => entity.Kind == WorldEntityKind.Army && entity.Faction == profile.Faction);
             if ((food >= 25 && stock >= 60) && activeCaravan)
             {
                 var destination = world.Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction != profile.Faction)
@@ -45,10 +46,15 @@ internal static class FactionStrategicDirector
                     }
                 }
             }
-            else if (!hasArmy && (profile.Strategy is FactionStrategy.Defense or FactionStrategy.WarPreparation) &&
-                     world.Entities.Count(entity => entity.Kind == WorldEntityKind.Army && entity.Faction == profile.Faction) < 3)
+            else if (food >= 25 && stock >= 60 && !hasCaravan)
             {
-                var army = world.AddEntity(WorldEntityKind.Army, $"{profile.Faction} Response Guard", profile.Faction,
+                double x = Math.Clamp(home.X + 500, 0, ContinuousWorldState.WorldExtent);
+                double y = Math.Clamp(home.Y + 500, 0, ContinuousWorldState.WorldExtent);
+                world.AddEntity(WorldEntityKind.Caravan, $"{profile.Faction} Trade Caravan", profile.Faction, x, y);
+            }
+            else if ((profile.Strategy is FactionStrategy.Defense or FactionStrategy.WarPreparation) && armyCount < 3)
+            {
+                var army = world.AddEntity(WorldEntityKind.Army, $"{profile.Faction} Response Guard {armyCount + 1}", profile.Faction,
                     home.X, home.Y);
                 army.MovementSpeed = 0;
             }
