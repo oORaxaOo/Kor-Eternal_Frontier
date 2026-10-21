@@ -60,6 +60,18 @@ internal static class StrategicSystemsChecks
         Check(wealthIncident != null && wealthIncident.ThreatPoints == 160 && wealthIncident.ThreatUnits == 6,
             "high colony wealth must generate a scaled, bounded incident budget");
 
+        var raidWorld = new WorldSimulation(41022);
+        long korSettlementId = raidWorld.SpatialWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor").Id;
+        raidWorld.SpatialWorld.SetInventoryCapacity(korSettlementId, 10_000);
+        Check(raidWorld.SpatialWorld.TryAddInventory(korSettlementId, WorldResourceKind.Alloy, 1_000),
+            "wealth incident test must be able to seed valuable stock in the shared ledger");
+        raidWorld.Step(34f);
+        Check(raidWorld.SpatialWorld.Entities.Any(entity =>
+                entity.Kind == WorldEntityKind.Army && entity.Faction == "Raiders" &&
+                entity.Name.StartsWith("Kor Wealth Raid ", StringComparison.Ordinal)),
+            "a wealth-triggered storyteller budget must create a deterministic, moving raid force on the strategic map");
+
         var colony = new ColonySimulation();
         colony.WorkPriorities.SetPriority(1, WorkCategory.Construction, 0);
         var restoredColony = ColonySaveService.Deserialize(ColonySaveService.Serialize(colony));
