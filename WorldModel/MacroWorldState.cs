@@ -388,7 +388,6 @@ internal sealed class MacroWorldState
             .OrderBy(c => Distance(c.X, c.Y, sourceX, sourceY)).FirstOrDefault();
         if (destination.CellId == 0) return;
         int refugeeCount = Math.Min(12, Math.Max(2, source.Population / 1000));
-        int sourceFactionId = source.OwningFactionId;
         int sourceCellId = source.CellId;
         source.Population = Math.Max(0, source.Population - refugeeCount);
         long arrivalId = NextCaravanId++;
