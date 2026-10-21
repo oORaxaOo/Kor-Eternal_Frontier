@@ -436,26 +436,63 @@ internal sealed class MacroWorldState
 
     private void UpdateCaravans(double deltaSeconds)
     {
+        double remainingTravel = 0;
         for (int i = Caravans.Count - 1; i >= 0; i--)
         {
             var caravan = Caravans[i];
-            if (caravan.TargetCellId < 1 || caravan.TargetCellId > Cells.Length) { Caravans.RemoveAt(i); continue; }
-            var target = Cells[caravan.TargetCellId - 1];
-            float dx = target.X - caravan.X, dy = target.Y - caravan.Y;
-            float length = MathF.Sqrt(dx * dx + dy * dy);
-            float travel = Math.Max(0f, caravan.TravelSpeed * (float)deltaSeconds * 60f);
-            if (length > travel && length > 0.001f)
+            if (caravan.TargetCellId < 1 || caravan.TargetCellId > Cells.Length)
             {
-                caravan.X += dx / length * travel;
-                caravan.Y += dy / length * travel;
+                Caravans.RemoveAt(i);
                 continue;
             }
+            if (!caravan.RouteReady || caravan.RouteNodes.Count == 0) continue;
+
+            remainingTravel = Math.Max(0d, caravan.TravelSpeed * deltaSeconds * TickManager.TicksPerSecond);
+            bool arrived = false;
+            int safetySteps = 0;
+            while (remainingTravel > 0.0001d && safetySteps++ < Columns * Rows)
+            {
+                if (caravan.RouteIndex >= caravan.RouteNodes.Count)
+                {
+                    arrived = true;
+                    break;
+                }
+
+                var node = caravan.RouteNodes[caravan.RouteIndex];
+                float dx = node.X - caravan.X, dy = node.Y - caravan.Y;
+                float distance = MathF.Sqrt(dx * dx + dy * dy);
+                if (distance <= 0.0001f)
+                {
+                    caravan.X = node.X;
+                    caravan.Y = node.Y;
+                    caravan.RouteIndex++;
+                    continue;
+                }
+
+                if (distance <= remainingTravel)
+                {
+                    caravan.X = node.X;
+                    caravan.Y = node.Y;
+                    remainingTravel -= distance;
+                    caravan.RouteIndex++;
+                }
+                else
+                {
+                    caravan.X += dx / distance * (float)remainingTravel;
+                    caravan.Y += dy / distance * (float)remainingTravel;
+                    remainingTravel = 0;
+                }
+            }
+            if (!arrived && caravan.RouteIndex >= caravan.RouteNodes.Count) arrived = true;
+            if (!arrived) continue;
 
             ref var destination = ref Cells[caravan.TargetCellId - 1];
             long notificationId;
             if (destination.IsLocalMapGenerated)
             {
-                notificationId = AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at the Kor colony cell with {caravan.Cargo.Values.Sum():0} units of cargo.", destination.CellId, true);
+                notificationId = AddNotification(SimulationTicks, "trade",
+                    $"A relief caravan arrived at the Kor colony cell with {caravan.Cargo.Values.Sum():0} units of cargo.",
+                    destination.CellId, true);
                 Arrivals.Add(new MacroCaravanArrival
                 {
                     Id = caravan.Id, FactionId = caravan.FactionId, TargetCellId = destination.CellId,
@@ -477,7 +514,9 @@ internal sealed class MacroWorldState
                         case MacroResource.Components: destination.ComponentsCount += cargo.Value; break;
                     }
                 }
-                AddNotification(SimulationTicks, "trade", $"A relief caravan arrived at cell {destination.CellId}; cargo was added to its ledger.", destination.CellId, false);
+                AddNotification(SimulationTicks, "trade",
+                    $"A relief caravan arrived at cell {destination.CellId}; cargo was added to its ledger.",
+                    destination.CellId, false);
             }
             Caravans.RemoveAt(i);
         }
