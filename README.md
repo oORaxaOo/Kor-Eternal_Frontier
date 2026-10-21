@@ -22,7 +22,7 @@ The local map is a 40 by 26 orthogonal square grid. The current simulation found
 - An event-driven incident manager converts relationship milestones into bounded, auditable incidents with per-pair cooldowns. Relationship and incident state are included in colony save schema v4; legacy schema v2/v3 saves initialize empty social state.
 - A unified real-time coordinator (Simulation/WorldSimulation.cs) advances the colony and continuous world under one clock. The colony and strategic layer read and mutate the same settlement inventory; session saves store that inventory only in the world ledger.
 
-This is a playable foundation, not the complete game. The simulation now has a regression check for 2,000 individually represented citizen agents, and citizen ID allocation is linear-time across bulk recruitment. This is an early scalability guardrail, not a claim that thousands of complete colony workers already run at target frame rates: job allocation, UI rendering, save size, and simulation level-of-detail still need profiling and dedicated optimization. The new route cache reduces repeated identical searches; it does not yet provide shared multi-source flow fields or prove target performance at 5,000–10,000 full residents. Richer social interaction types, resident family/faction histories, incident definitions beyond social milestones, material reservations, capacity-aware stockpiles, multiple production chains, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
+This is a playable foundation, not the complete game. RimWorld is used only as a reference for high-level colony-management patterns (categorised build orders, planning, demolition, and resident autonomy); KOR uses its own code, data definitions, interface, and visual assets. No RimWorld code or game assets are copied. The simulation now has a regression check for 2,000 individually represented citizen agents, and citizen ID allocation is linear-time across bulk recruitment. This is an early scalability guardrail, not a claim that thousands of complete colony workers already run at target frame rates: job allocation, UI rendering, save size, and simulation level-of-detail still need profiling and dedicated optimization. The new route cache reduces repeated identical searches; it does not yet provide shared multi-source flow fields or prove target performance at 5,000–10,000 full residents. Richer social interaction types, resident family/faction histories, incident definitions beyond social milestones, material reservations, capacity-aware stockpiles, multiple production chains, research unlocks, a connected strategic map, and a deeper Blight ecosystem remain future work.
 
 ## Run on Linux
 
@@ -42,10 +42,11 @@ The primary controls are visible mouse-operated menus in the right panel:
 - **Pause / Resume** — pause or resume the shared real-time simulation.
 - **Speed − / Speed +** — slow down or speed up the world clock.
 - **Save / Load** — save or restore the current session.
-- **Zoom − / Zoom +** — continuously zoom between the local settlement and continuous strategic world view.
+- **Mouse-wheel zoom** — zoom continuously between the local settlement and continuous strategic world view; Zoom − / Zoom + remain available as buttons.
 - **Wall / Floor / Path / Door / Conduit** — select a tile-construction mode, then left-click a tile.
 - **Bench / Pod / Rack / Gen / Garden** — select a placeable object, then left-click a location.
-- **Cancel** — cancel the active placement mode.
+- **Cancel** — cancel the active placement mode. Select an unfinished tile/object blueprint and use **Cancel Order** to remove it before construction starts.
+- **Remove** — toggle demolition mode and click a completed player-built structure or built tile; starter habitat/stockpile are protected.
 - **Left click** — at settlement scale, select a colonist or place a blueprint; at strategic scale, inspect entities or dispatch selected cargo to a settlement.
 - **Right click** — at settlement scale, issue a colonist command; at strategic scale, order the selected Kor army or idle caravan to move in continuous world coordinates.
 - **Strategic cargo controls** — choose Wood, Stone, Food or Alloy; select a caravan; then click a destination settlement. Cargo is deducted at dispatch and only credited on arrival.
