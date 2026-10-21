@@ -124,8 +124,8 @@ internal static class FactionIntelligenceSystem
             int bestKorRelation = profile.RelationshipTo("Kor");
             int nearestThreat = world.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront);
             profile.TerritoryCount = settlements.Length;
-            profile.Treasury = Math.Max(0, Math.Round(totalStock * 18d + profile.Treasury * 0.985d + food * 0.05d, 0));
-            profile.MilitaryPower = Math.Max(0, Math.Round(armies * 350d + settlements.Length * 120d + profile.MilitaryPower * 0.92d, 0));
+            profile.Treasury = Math.Max(0, Math.Round(totalStock * 18d + profile.Treasury * 0.015d + food * 0.05d, 0));
+            profile.MilitaryPower = Math.Max(0, Math.Round(armies * 350d + settlements.Length * 120d, 0));
             profile.ThreatLevel = Math.Clamp((int)Math.Round(
                 profile.Aggression * 0.48d +
                 Math.Max(0, -bestKorRelation) * 0.35d +
