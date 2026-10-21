@@ -442,6 +442,13 @@ internal sealed class ColonySimulation
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
         simulation._wealth.Restore(snapshot.Wealth);
+        foreach (var worker in simulation._workers.Where(item => item.Task?.Kind == ColonyTaskKind.Gather).OrderBy(item => item.Id))
+        {
+            var deposit = simulation._deposits.FirstOrDefault(item => item.Id == worker.Task!.DepositId);
+            if (deposit == null || deposit.Amount <= 0) continue;
+            int stack = Math.Min(CarryCapacity, Math.Max(0, deposit.Amount - simulation._reservations.ReservedByOthers($"deposit:{deposit.Id}", worker.Id)));
+            if (stack > 0) simulation._reservations.Reserve($"deposit:{deposit.Id}", worker.Id, stack, deposit.Amount);
+        }
         var workerIdsForPriorities = simulation._workers.Select(worker => worker.Id).ToHashSet();
         var restoredPriorities = WorkPriorityMatrix.Restore(snapshot.WorkPriorities, workerIdsForPriorities);
         foreach (var workerId in workerIdsForPriorities)
@@ -1416,11 +1423,6 @@ internal sealed class ColonySimulation
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
-            if (IsDepositReserved(deposit.Id, worker.Id) || _reservations.IsReservedByOther($"deposit:{deposit.Id}", worker.Id))
-            {
-                Message = $"Another worker is already assigned to {deposit.Resource} at ({x}, {y}).";
-                return;
-            }
             if (InventoryFreeCapacity <= 0)
             {
                 Message = "Colony storage is full. Build or complete additional storage before gathering more resources.";
@@ -1431,7 +1433,12 @@ internal sealed class ColonySimulation
                 Message = "No route to that resource deposit.";
                 return;
             }
-            if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, 1, 1)) { Message = "Resource stack is already reserved by another colonist."; return; }
+            int reservedStack = Math.Min(CarryCapacity, deposit.Amount);
+            if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount))
+            {
+                Message = "The available resource stack is already fully reserved by other jobs.";
+                return;
+            }
             worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
             Message = $"{worker.Name} ordered to gather {deposit.Resource}. The material will be carried back to stockpile.";
             return;
@@ -1826,24 +1833,25 @@ internal sealed class ColonySimulation
 
         var deposit = _deposits
             .Where(d => d.Amount > 0 && priorityByResource.ContainsKey(d.Resource) &&
-                        !IsDepositReserved(d.Id, worker.Id))
+                        _reservations.ReservedByOthers($"deposit:{d.Id}", worker.Id) < d.Amount)
             .OrderByDescending(d => priorityByResource[d.Resource])
             .ThenBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f))
             .ThenBy(d => d.Id)
             .FirstOrDefault();
         if (deposit == null) return false;
         if (!TryFindPath(worker, deposit.Cell, out var route)) return false;
-        if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, 1, 1)) return false;
+        int reservedStack = Math.Min(CarryCapacity, deposit.Amount);
+        if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount)) return false;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
         Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} for a priority {priorityByResource[deposit.Resource]} order.";
         return true;
     }
 
-    private bool IsDepositReserved(int depositId, int exceptWorkerId) =>
-        _workers.Any(candidate => candidate.Id != exceptWorkerId &&
-            candidate.Task != null &&
-            candidate.Task.Kind == ColonyTaskKind.Gather &&
-            candidate.Task.DepositId == depositId);
+    private bool IsDepositReserved(int depositId, int exceptWorkerId)
+    {
+        var deposit = _deposits.FirstOrDefault(item => item.Id == depositId);
+        return deposit == null || _reservations.ReservedByOthers($"deposit:{depositId}", exceptWorkerId) >= deposit.Amount;
+    }
 
     private void AssignDelivery(ColonyWorker worker)
     {
