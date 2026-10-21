@@ -111,7 +111,7 @@ internal static class FactionIntelligenceSystem
     public static void Step(ContinuousWorldState world, double deltaSeconds)
     {
         if (deltaSeconds <= 0) return;
-        Initialize(world);
+        if (world.FactionIntelligence.Count == 0) Initialize(world);
         foreach (var profile in world.FactionIntelligence)
         {
             if (world.ClockSeconds - profile.LastDecisionAt < 10d) continue;
