@@ -447,7 +447,7 @@ internal sealed class ColonySimulation
         {
             var deposit = simulation._deposits.FirstOrDefault(item => item.Id == worker.Task!.DepositId);
             if (deposit == null || deposit.Amount <= 0) continue;
-            int stack = Math.Min(CarryCapacity, Math.Max(0, deposit.Amount - simulation._reservations.ReservedByOthers($"deposit:{deposit.Id}", worker.Id)));
+            int stack = Math.Max(0, deposit.Amount - simulation._reservations.ReservedByOthers($"deposit:{deposit.Id}", worker.Id));
             if (stack > 0) simulation._reservations.Reserve($"deposit:{deposit.Id}", worker.Id, stack, deposit.Amount);
         }
         var workerIdsForPriorities = simulation._workers.Select(worker => worker.Id).ToHashSet();
@@ -1436,7 +1436,7 @@ internal sealed class ColonySimulation
                 Message = "No route to that resource deposit.";
                 return;
             }
-            int reservedStack = Math.Min(CarryCapacity, deposit.Amount);
+            int reservedStack = deposit.Amount;
             if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount))
             {
                 Message = "The available resource stack is already fully reserved by other jobs.";
@@ -1854,7 +1854,7 @@ internal sealed class ColonySimulation
             .FirstOrDefault();
         if (deposit == null) return false;
         if (!TryFindPath(worker, deposit.Cell, out var route)) return false;
-        int reservedStack = Math.Min(CarryCapacity, deposit.Amount);
+        int reservedStack = deposit.Amount;
         if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount)) return false;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
         Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} for a priority {priorityByResource[deposit.Resource]} order.";
