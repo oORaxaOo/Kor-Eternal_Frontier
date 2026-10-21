@@ -87,6 +87,10 @@ internal sealed class ColonyStoryteller
             snapshot.ActiveRules is null || snapshot.ActiveRules.Count > 1024)
             throw new InvalidDataException("Storyteller save contains invalid collection sizes.");
         var storyteller = new ColonyStoryteller(snapshot.Rules ?? throw new InvalidDataException("Storyteller save is missing rule definitions.")) { _nextId = snapshot.NextId };
+        if (!storyteller._rules.Any(rule => rule.Code == "wealth_attracts_attention"))
+            storyteller._rules.Add(new StorytellerRule("wealth_attracts_attention", StorytellerMetric.ColonyWealth,
+                StorytellerComparison.Above, 5_000f, 1, 2_000, 2,
+                "The colony's growing wealth attracts outside attention; an incident budget has been allocated."));
         foreach (var item in snapshot.Events)
         {
             if (item.Id <= 0 || item.Tick < 0 || item.Severity is < 1 or > 3 || item.ThreatPoints is < 0 or > 250 ||
