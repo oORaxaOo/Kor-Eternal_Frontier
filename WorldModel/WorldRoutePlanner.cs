@@ -75,6 +75,7 @@ internal static class WorldRoutePlanner
         var closed = new bool[total];
         costs[start] = 0f;
         open.Enqueue(start, (Heuristic(start, goal, gridSize), start));
+        Span<int> neighbours = stackalloc int[4];
 
         while (open.TryDequeue(out int current, out _))
         {
@@ -82,7 +83,6 @@ internal static class WorldRoutePlanner
             if (current == goal) break;
             closed[current] = true;
             int x = current % gridSize, y = current / gridSize;
-            Span<int> neighbours = stackalloc int[4];
             int count = 0;
             if (x > 0) neighbours[count++] = current - 1;
             if (x + 1 < gridSize) neighbours[count++] = current + 1;
