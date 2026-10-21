@@ -7,6 +7,47 @@ internal static class ColonyChecks
 {
     public static void Run()
     {
+        var tickClock = new TickManager();
+        int tickCallbacks = 0;
+        tickClock.Advance(1f, _ => tickCallbacks++);
+        Check(tickCallbacks == 60 && tickClock.TickCount == 60,
+            "the fixed simulation clock must emit exactly 60 ticks per simulated second");
+        tickClock.SetSpeed(3f);
+        int tripleSpeedTicks = tickClock.Advance(1f, _ => { });
+        Check(tripleSpeedTicks == 180 && tickClock.TickCount == 240,
+            "3x speed must advance three times as many 60 Hz ticks (180 ticks per real second)");
+        Check(new SimulationTick(250, 1f / 60f).IsRare &&
+              new SimulationTick(2_000, 1f / 60f).IsGlobal,
+            "rare and global simulation schedules must use 250- and 2000-tick intervals");
+
+        var toilTracker = new PawnJobTracker(ColonyTaskKind.BuildTile, new CellPosition(4, 7));
+        Check(toilTracker.CurrentToil?.Kind == PawnToilKind.MoveTo &&
+              toilTracker.Toils.Any(toil => toil.Kind == PawnToilKind.Work),
+            "a pawn job must expose ordered movement and work toils");
+        toilTracker.AdvanceToNextToil();
+        Check(toilTracker.CurrentToil?.Kind == PawnToilKind.Work,
+            "a pawn job must advance from movement into its work toil");
+        toilTracker.Finish();
+        Check(toilTracker.IsComplete, "a pawn job tracker must support deterministic completion");
+
+        var thingGrid = new ThingGrid();
+        Check(thingGrid.Register(new PawnThing(1, new CellPosition(1, 1))) &&
+              thingGrid.Register(new ResourceThing(4, ResourceKind.Food, 5, new CellPosition(3, 1))),
+            "the shared thing grid must register pawns and physical resources");
+        Check(thingGrid.At(new CellPosition(1, 1)).Single().Kind == ThingKind.Pawn &&
+              thingGrid.FindNearest(new CellPosition(0, 1), thing => thing.IsEdible)?.Id == "resource:4",
+            "the thing grid must query a cell and find the nearest edible thing");
+        Check(thingGrid.Move("pawn:1", new CellPosition(2, 1)) &&
+              thingGrid.At(new CellPosition(2, 1)).Single().Id == "pawn:1" &&
+              thingGrid.Remove("resource:4") && thingGrid.Count == 1,
+            "the thing grid must keep its spatial index consistent after movement and removal");
+
+        var weightedPath = AStarPathfinder.TryFindPath(5, 5, new CellPosition(0, 2),
+            new CellPosition(4, 2), _ => true,
+            cell => cell == new CellPosition(1, 2) ? 20 : 1, out var weightedRoute);
+        Check(weightedPath && weightedRoute.Count > 4 && !weightedRoute.Contains(new CellPosition(1, 2)),
+            "A* must prefer a longer low-cost route over an expensive direct cell");
+
         var environment = new ColonySimulation();
         var builderControls = new ColonySimulation();
         Check(builderControls.DesignTileConstruction(5, 5, ArchitectureKind.Floor),
