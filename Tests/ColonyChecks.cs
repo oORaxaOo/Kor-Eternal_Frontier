@@ -295,7 +295,7 @@ internal static class ColonyChecks
 
 
 
-        var woodDeposit = colony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
+        var woodDeposit = colony.Deposits.Single(d => d.Cell == new CellPosition(10, 15));
         int woodBefore = colony.ResourceCount(ResourceKind.Wood);
         int depositBefore = woodDeposit.Amount;
         var worker = colony.Workers[0];
@@ -308,7 +308,7 @@ internal static class ColonyChecks
         Check(!worker.CarriedResource.HasValue, "a successful round trip must leave no ghost cargo");
 
         var reservationColony = new ColonySimulation();
-        var reservationDeposit = reservationColony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
+        var reservationDeposit = reservationColony.Deposits.Single(d => d.Cell == new CellPosition(10, 15));
         var firstGatherer = reservationColony.Workers[0];
         var secondGatherer = reservationColony.Workers[1];
         Check(reservationColony.SelectWorkerAt(firstGatherer.X, firstGatherer.Y),
@@ -470,7 +470,7 @@ internal static class ColonyChecks
         var fullColony = ColonySimulation.RestoreSnapshot(fullSnapshot);
         Check(fullColony.InventoryUsed == fullColony.InventoryCapacity && fullColony.InventoryFreeCapacity == 0,
             "a colony save may contain inventory exactly up to its available storage capacity");
-        var fullWoodDeposit = fullColony.Deposits.Single(deposit => deposit.Resource == ResourceKind.Wood);
+        var fullWoodDeposit = fullColony.Deposits.Single(deposit => deposit.Cell == new CellPosition(10, 15));
         int fullDepositBefore = fullWoodDeposit.Amount;
         var fullWorker = fullColony.Workers[0];
         Check(fullColony.SelectWorkerAt(fullWorker.X, fullWorker.Y),
