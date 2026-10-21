@@ -48,14 +48,26 @@ internal static class ColonyChecks
         Check(weightedPath && weightedRoute.Count > 4 && !weightedRoute.Contains(new CellPosition(1, 2)),
             "A* must prefer a longer low-cost route over an expensive direct cell");
 
+        var previewValidation = new ColonySimulation();
+        Check(previewValidation.TryGetPlacementFootprint(PlaceableKind.Garden, out int gardenWidth, out int gardenHeight) &&
+              gardenWidth == 3 && gardenHeight == 3,
+            "the placement preview must expose the actual garden footprint dimensions");
+        bool diningTablePreviewValid = previewValidation.CanPlaceObjectAt(PlaceableKind.DiningTable, 6, 6);
+        Check((previewValidation.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0) == diningTablePreviewValid,
+            "placement preview validity must use the same footprint rules as actual blueprint placement");
+
         var environment = new ColonySimulation();
         var furnitureChecks = new ColonySimulation();
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0, "dining table should accept a blueprint");
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.Lamp, 10, 6) > 0, "lamp should accept a blueprint");
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.ComfortBench, 12, 6) > 0, "comfort bench should accept a blueprint");
         var builderControls = new ColonySimulation();
+        Check(builderControls.CanDesignTileConstruction(5, 5, ArchitectureKind.Floor),
+            "the tile placement preview should recognize a clear tile as valid");
         Check(builderControls.DesignTileConstruction(5, 5, ArchitectureKind.Floor),
             "a clear tile should accept a construction blueprint");
+        Check(!builderControls.CanDesignTileConstruction(5, 5, ArchitectureKind.Floor),
+            "the tile placement preview should turn invalid after the tile is reserved");
         Check(builderControls.SelectWorkOrderAt(5.5f, 5.5f) && builderControls.CancelSelectedWorkOrder(),
             "a selected planned tile blueprint should be cancellable");
         Check(builderControls.TileOrderAt(5, 5) == null,

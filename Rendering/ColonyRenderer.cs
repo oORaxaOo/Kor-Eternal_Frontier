@@ -30,7 +30,8 @@ internal sealed class ColonyRenderer : IDisposable
 
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
-        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
+        ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource,
+        float mouseScreenX, float mouseScreenY)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -41,6 +42,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawDeposits(canvas, simulation, cameraX, cameraY, zoom);
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
+            DrawPlacementPreview(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, mouseScreenX, mouseScreenY);
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
     }
@@ -406,6 +408,50 @@ internal sealed class ColonyRenderer : IDisposable
         }
     }
 
+    private void DrawPlacementPreview(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode,
+        float mouseScreenX, float mouseScreenY)
+    {
+        if (mouseScreenX < 0 || mouseScreenX >= 770 || mouseScreenY < 62 || mouseScreenY >= 650) return;
+        var world = OrthogonalGridProjection.ScreenToWorld(mouseScreenX, mouseScreenY, cameraX, cameraY, zoom);
+        int x = (int)MathF.Floor(world.X), y = (int)MathF.Floor(world.Y);
+        if (placingObject && simulation.TryGetPlacementFootprint(objectType, out int width, out int height))
+        {
+            bool valid = simulation.CanPlaceObjectAt(objectType, x, y);
+            var topLeft = OrthogonalGridProjection.WorldToScreen(x, y, cameraX, cameraY, zoom);
+            var bottomRight = OrthogonalGridProjection.WorldToScreen(x + width, y + height, cameraX, cameraY, zoom);
+            var footprint = new SKRect(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
+            _fill.Color = valid ? new SKColor(70, 180, 115, 62) : new SKColor(218, 42, 54, 76);
+            canvas.DrawRect(footprint, _fill);
+            _line.Color = valid ? new SKColor(110, 235, 157) : new SKColor(255, 85, 94);
+            _line.StrokeWidth = 2;
+            canvas.DrawRect(Inset(footprint, 1), _line);
+            _text.Color = valid ? new SKColor(150, 255, 184) : new SKColor(255, 132, 139);
+            canvas.DrawText($"{objectType} · {width}×{height}", Math.Clamp(footprint.Left + 3, 4, 680), Math.Clamp(footprint.Top - 5, 76, 638), SKTextAlign.Left, _smallFont, _text);
+            return;
+        }
+
+        if (architectureMode != ArchitectureKind.None || excavationMode || demolitionMode)
+        {
+            var center = OrthogonalGridProjection.TileCenter(x, y, cameraX, cameraY, zoom);
+            float size = OrthogonalGridProjection.TileSize * zoom;
+            var tileRect = new SKRect(center.X - size / 2, center.Y - size / 2, center.X + size / 2, center.Y + size / 2);
+            bool valid = architectureMode != ArchitectureKind.None
+                ? simulation.CanDesignTileConstruction(x, y, architectureMode)
+                : simulation.TileAt(x, y) != null;
+            _fill.Color = valid ? new SKColor(216, 177, 89, 45) : new SKColor(218, 42, 54, 55);
+            canvas.DrawRect(tileRect, _fill);
+            _line.Color = valid ? Gold : new SKColor(255, 85, 94);
+            _line.StrokeWidth = 1.5f;
+            canvas.DrawRect(Inset(tileRect, 1), _line);
+            if (architectureMode != ArchitectureKind.None)
+            {
+                _text.Color = Gold;
+                canvas.DrawText(architectureMode.ToString().ToUpperInvariant(), Math.Clamp(tileRect.Left + 2, 4, 700), Math.Clamp(tileRect.Top - 4, 76, 638), SKTextAlign.Left, _smallFont, _text);
+            }
+        }
+    }
+
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
         PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
@@ -426,13 +472,35 @@ internal sealed class ColonyRenderer : IDisposable
         _muted.Color = MutedColor;
         canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "SYMBOLIC COLONY GRID / LIVE SIMULATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
 
+        _fill.Color = new SKColor(28, 35, 32);
+        canvas.DrawRoundRect(new SKRect(1010, 10, 1084, 31), 3, 3, _fill);
+        _text.Color = new SKColor(125, 220, 155);
+        canvas.DrawText(paused ? "PAUSED" : "LIVE", 1047, 25, SKTextAlign.Center, _smallFont, _text);
+
         int x = 405;
         foreach (var resource in Enum.GetValues<ResourceKind>())
         {
-            _text.Color = TextColor;
-            canvas.DrawText($"{resource.ToString().ToUpperInvariant()} {simulation.ResourceCount(resource)}", x, 27, SKTextAlign.Left, _smallFont, _text);
-            x += resource == ResourceKind.Components ? 0 : 80;
+            _fill.Color = new SKColor(24, 31, 29);
+            canvas.DrawRoundRect(new SKRect(x, 10, x + 104, 32), 3, 3, _fill);
+            _line.Color = Border;
+            canvas.DrawRoundRect(new SKRect(x, 10, x + 104, 32), 3, 3, _line);
+            _muted.Color = MutedColor;
+            canvas.DrawText(resource.ToString().ToUpperInvariant(), x + 6, 24, SKTextAlign.Left, _smallFont, _muted);
+            _text.Color = resource == ResourceKind.Components ? Gold : TextColor;
+            canvas.DrawText(simulation.ResourceCount(resource).ToString(), x + 98, 24, SKTextAlign.Right, _smallFont, _text);
+            x += 110;
         }
+
+        // The side cockpit is split into three restrained modules; all displayed values come
+        // from the live simulation/world model and all existing hit targets remain unchanged.
+        _fill.Color = new SKColor(22, 28, 28);
+        _line.Color = Border;
+        canvas.DrawRoundRect(new SKRect(780, 75, 1090, 278), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(780, 282, 1090, 485), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(780, 488, 1090, 649), 4, 4, _fill);
+        canvas.DrawRoundRect(new SKRect(780, 75, 1090, 278), 4, 4, _line);
+        canvas.DrawRoundRect(new SKRect(780, 282, 1090, 485), 4, 4, _line);
+        canvas.DrawRoundRect(new SKRect(780, 488, 1090, 649), 4, 4, _line);
 
         _text.Color = Gold;
         canvas.DrawText("COLONY STATUS", 790, 91, SKTextAlign.Left, _headingFont, _text);

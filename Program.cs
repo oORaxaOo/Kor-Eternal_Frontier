@@ -46,6 +46,7 @@ internal static class Program
             painter = new ColonyRenderer();
             menuPainter = new MainMenuRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
+            float previewMouseX = 385, previewMouseY = 350;
             using var scene = new Scene();
             host.Bind(scene, false);
             host.ViewManager.ConfigureSingleFullView();
@@ -61,7 +62,7 @@ internal static class Program
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -101,6 +102,8 @@ internal static class Program
 
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
+                previewMouseX = logicalMouse.X;
+                previewMouseY = logicalMouse.Y;
                 if (pendingWheelY != 0 && gameStarted)
                 {
                     float oldZoom = zoom;
@@ -500,7 +503,7 @@ internal static class Sdl
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206, EventMouseWheel = 0x403;
     public const uint ButtonLeftMask = 1, ButtonMiddleMask = 2, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; [FieldOffset(40)] public float WheelY; }
+    [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; [FieldOffset(28)] public float WheelY; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_CreateWindow([MarshalAs(UnmanagedType.LPUTF8Str)] string title, int w, int h, uint flags);
