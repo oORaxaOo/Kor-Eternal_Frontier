@@ -35,6 +35,31 @@ internal static class MacroWorldChecks
         Check(macro.Notifications.All(item => item.Id > 0 && !string.IsNullOrWhiteSpace(item.Message)), "World notifications must be valid.");
         macro.Validate();
 
+        int routeFaction = macro.FactionIds.Values.OrderBy(id => id).First();
+        const int routeTargetCellId = MacroWorldState.CellCount;
+        macro.Caravans.Add(new MacroCaravanState
+        {
+            Id = macro.NextCaravanId++, FactionId = routeFaction, X = 0, Y = 0,
+            TargetCellId = routeTargetCellId, TravelSpeed = 0.05f,
+            Cargo = new Dictionary<MacroResource, float> { [MacroResource.Food] = 10f }
+        });
+        macro.Advance(0.1, first);
+        var dispatchedCaravan = macro.Caravans.Single(item => item.TargetCellId == routeTargetCellId);
+        Check(dispatchedCaravan.RoutePending || dispatchedCaravan.RouteReady,
+            "A real macro caravan must enter the asynchronous route scheduler.");
+        var routeTimeout = System.Diagnostics.Stopwatch.StartNew();
+        while (!dispatchedCaravan.RouteReady && routeTimeout.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            Thread.Sleep(1);
+            macro.Advance(0.1, first);
+        }
+        Check(dispatchedCaravan.RouteReady && dispatchedCaravan.RouteNodes.Count > 1,
+            "The world coordinator must apply completed A* routes back to the live caravan.");
+        Check(dispatchedCaravan.RouteNodes[0] == new WorldRouteNode(0, 0) &&
+              dispatchedCaravan.RouteNodes[^1] == new WorldRouteNode(MacroWorldState.Columns - 1, MacroWorldState.Rows - 1),
+            "The live caravan route must preserve its correct start and target.");
+        macro.Validate();
+
         // The async route scheduler must bound background concurrency, return deterministic A* paths,
         // and never expose mutable live-world state to worker threads.
         var routeScheduler = new BackgroundWorldRouteScheduler();
