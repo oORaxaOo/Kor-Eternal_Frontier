@@ -314,23 +314,68 @@ internal sealed class MacroWorldState
     {
         ArgumentNullException.ThrowIfNull(continuous);
         int remaining = Math.Max(1, cellBudget);
-        while (remaining > 0 && MacroTurnsProcessed < MacroTurnsScheduled)
+        while (remaining > 0)
         {
-            if (MacroTurnCursor < Cells.Length)
+            if (MacroTurnPhase == MacroTurnPhase.Idle)
             {
-                ProcessMacroCell(MacroTurnCursor, continuous);
-                MacroTurnCursor++;
-                remaining--;
+                if (MacroTurnsProcessed >= MacroTurnsScheduled) break;
+                BeginMacroTurn();
             }
 
-            if (MacroTurnCursor >= Cells.Length)
+            if (MacroTurnPhase == MacroTurnPhase.Economy)
             {
-                MacroTurnCursor = 0;
-                MacroTurnsProcessed++;
-                DispatchReliefCaravans();
-                UpdatePricesAndEmitMarketNews((long)MacroTurnsProcessed * TicksPerMacroTurn);
+                int index = MacroTurnCursor;
+                ProcessMacroCell(index, continuous);
+                MarketSystem.Accumulate(MarketTurnAccumulator, Cells[index]);
+                TrackHungryCell(index);
+                MacroTurnCursor++;
+                remaining--;
+                if (MacroTurnCursor >= Cells.Length)
+                {
+                    MacroTurnCursor = 0;
+                    MacroTurnPhase = MacroTurnPhase.ReliefScan;
+                }
+                continue;
             }
+
+            if (MacroTurnPhase == MacroTurnPhase.ReliefScan)
+            {
+                ConsiderReliefDonor(MacroTurnCursor);
+                MacroTurnCursor++;
+                remaining--;
+                if (MacroTurnCursor >= Cells.Length)
+                {
+                    MacroTurnCursor = 0;
+                    CompleteMacroTurn();
+                }
+                continue;
+            }
+
+            throw new InvalidDataException($"Unknown macro turn phase: {MacroTurnPhase}.");
         }
+    }
+
+    private void BeginMacroTurn()
+    {
+        MarketTurnAccumulator ??= new MacroMarketAccumulator();
+        MarketTurnAccumulator.Reset();
+        TurnHungryCellIds.Clear();
+        TurnBestDonorCellIds.Clear();
+        TurnBestDonorDistances.Clear();
+        MacroTurnCursor = 0;
+        MacroTurnPhase = MacroTurnPhase.Economy;
+    }
+
+    private void CompleteMacroTurn()
+    {
+        DispatchReliefCaravans();
+        UpdatePricesAndEmitMarketNews((long)(MacroTurnsProcessed + 1) * TicksPerMacroTurn, MarketTurnAccumulator);
+        MarketTurnAccumulator.Reset();
+        TurnHungryCellIds.Clear();
+        TurnBestDonorCellIds.Clear();
+        TurnBestDonorDistances.Clear();
+        MacroTurnsProcessed++;
+        MacroTurnPhase = MacroTurnPhase.Idle;
     }
 
     private void ProcessMacroCell(int index, ContinuousWorldState continuous)
@@ -372,6 +417,43 @@ internal sealed class MacroWorldState
         }
         else if (cell.FoodCount > population * 0.03f && cell.Population > 0)
             cell.Population = Math.Min(100_000, cell.Population + Math.Max(1, (int)(cell.Population * 0.002f)));
+    }
+
+    private void TrackHungryCell(int index)
+    {
+        ref readonly var cell = ref Cells[index];
+        if (cell.OwningFactionId == 0 || cell.Population <= 0 || cell.FoodCount >= cell.Population * 0.004f) return;
+        if (!TurnHungryCellIds.TryGetValue(cell.OwningFactionId, out int knownCellId))
+        {
+            TurnHungryCellIds[cell.OwningFactionId] = cell.CellId;
+            return;
+        }
+
+        ref readonly var known = ref Cells[knownCellId - 1];
+        if (cell.FoodCount < known.FoodCount || (cell.FoodCount == known.FoodCount && cell.CellId < known.CellId))
+            TurnHungryCellIds[cell.OwningFactionId] = cell.CellId;
+    }
+
+    private void ConsiderReliefDonor(int index)
+    {
+        ref readonly var cell = ref Cells[index];
+        if (cell.OwningFactionId == 0 || cell.Population <= 0 ||
+            cell.FoodCount <= cell.Population * 0.02f ||
+            !TurnHungryCellIds.TryGetValue(cell.OwningFactionId, out int hungryCellId) ||
+            cell.CellId == hungryCellId)
+            return;
+
+        ref readonly var hungry = ref Cells[hungryCellId - 1];
+        double dx = cell.X - hungry.X, dy = cell.Y - hungry.Y;
+        double distanceSquared = dx * dx + dy * dy;
+        if (!TurnBestDonorDistances.TryGetValue(cell.OwningFactionId, out double knownDistance) ||
+            distanceSquared < knownDistance ||
+            (distanceSquared == knownDistance &&
+             cell.CellId < TurnBestDonorCellIds.GetValueOrDefault(cell.OwningFactionId, int.MaxValue)))
+        {
+            TurnBestDonorCellIds[cell.OwningFactionId] = cell.CellId;
+            TurnBestDonorDistances[cell.OwningFactionId] = distanceSquared;
+        }
     }
 
     private float[] BuildRouteCostSnapshot()
