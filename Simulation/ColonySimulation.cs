@@ -1439,7 +1439,7 @@ internal sealed class ColonySimulation
             int reservedStack = deposit.Amount;
             if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount))
             {
-                Message = "The available resource stack is already fully reserved by other jobs.";
+                Message = "Another worker is already assigned to this resource deposit; its stack is reserved.";
                 return;
             }
             if (worker.Task?.Kind == ColonyTaskKind.Gather && worker.Task.DepositId != deposit.Id)
