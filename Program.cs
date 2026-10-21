@@ -346,6 +346,32 @@ internal static class Program
                         }
                     }
                 }
+                // While dragging, walls are connected as straight grid segments. Floors are
+                // filled as a rectangle on release, avoiding a dotted trail of individual tiles.
+                if (gameStarted && architectureDragActive && left && wasLeft && !worldView && inWorldView)
+                {
+                    int tileX = (int)MathF.Floor(worldMouse.X);
+                    int tileY = (int)MathF.Floor(worldMouse.Y);
+                    if (architectureDragKind == ArchitectureKind.Wall &&
+                        (tileX != architectureDragLastX || tileY != architectureDragLastY))
+                    {
+                        DesignArchitectureLine(simulation, architectureDragLastX, architectureDragLastY, tileX, tileY, ArchitectureKind.Wall);
+                        architectureDragLastX = tileX;
+                        architectureDragLastY = tileY;
+                    }
+                }
+                if (gameStarted && architectureDragActive && !left)
+                {
+                    if (architectureDragKind == ArchitectureKind.Floor && !worldView && inWorldView)
+                    {
+                        int endX = (int)MathF.Floor(worldMouse.X);
+                        int endY = (int)MathF.Floor(worldMouse.Y);
+                        DesignArchitectureRectangle(simulation, architectureDragStartX, architectureDragStartY, endX, endY, ArchitectureKind.Floor);
+                    }
+                    architectureDragActive = false;
+                    architectureDragKind = ArchitectureKind.None;
+                }
+
                 if (gameStarted && inWorldView && right && !wasRight)
                 {
                     if (worldView && selectedWorldEntityId.HasValue && !world.SpatialWorld.Shipments.Any(shipment => shipment.CarrierEntityId == selectedWorldEntityId.Value && shipment.Status == WorldShipmentStatus.InTransit) && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
