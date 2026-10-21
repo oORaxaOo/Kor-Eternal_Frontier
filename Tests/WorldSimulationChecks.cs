@@ -55,7 +55,7 @@ internal static class WorldSimulationChecks
         var visitor = world.Colony.Workers.SingleOrDefault(worker => worker.IsExternalVisitor && worker.TradeCargo.ContainsKey(ResourceKind.Food));
         Check(world.Colony.Workers.Count == populationBeforeArrival + 1 && visitor is not null &&
               visitor.TradeCargo[ResourceKind.Food] == 4 && macro.Arrivals.All(arrival => arrival.Id != arrivalId),
-            "a strategic arrival must decompress into one local trader with matching cargo and leave the pending queue");
+            $"a strategic arrival must decompress into one local trader with matching cargo and leave the pending queue (before={populationBeforeArrival}, after={world.Colony.Workers.Count}, visitorFound={visitor is not null}, cargo={visitor?.TradeCargo.GetValueOrDefault(ResourceKind.Food)}, pending={macro.Arrivals.Count}, message='{world.Colony.Message}')");
         macro.Validate();
 
         CheckThrows(() => world.SetSpeed(10f), "invalid simulation speeds must be rejected");
