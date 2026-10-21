@@ -46,6 +46,81 @@ internal static class WorldRoutePlanner
         return new WorldRouteResult(nodes, distance, distance / speed);
     }
 
+    /// <summary>
+    /// Deterministic A* over an immutable, precomputed macro-cell cost snapshot.
+    /// Safe to run on a worker thread: this overload never consults the live world model.
+    /// IDs are 1-based row-major cell identifiers.
+    /// </summary>
+    public static IReadOnlyList<WorldRouteNode> FindMacroRoute(float[] movementCosts, int gridSize,
+        int startCellId, int targetCellId)
+    {
+        ArgumentNullException.ThrowIfNull(movementCosts);
+        if (gridSize <= 0 || movementCosts.Length != checked(gridSize * gridSize))
+            throw new ArgumentException("Macro route cost snapshot must be a square grid.", nameof(movementCosts));
+        int total = movementCosts.Length;
+        if (startCellId < 1 || startCellId > total) throw new ArgumentOutOfRangeException(nameof(startCellId));
+        if (targetCellId < 1 || targetCellId > total) throw new ArgumentOutOfRangeException(nameof(targetCellId));
+        if (movementCosts.Any(cost => !float.IsFinite(cost) || cost <= 0))
+            throw new ArgumentException("Macro route costs must be finite and positive.", nameof(movementCosts));
+
+        int start = startCellId - 1, goal = targetCellId - 1;
+        if (start == goal)
+            return [new WorldRouteNode(start % gridSize, start / gridSize)];
+
+        var open = new PriorityQueue<int, (float Score, int Index)>();
+        var cameFrom = new int[total];
+        Array.Fill(cameFrom, -1);
+        var costs = new float[total];
+        Array.Fill(costs, float.PositiveInfinity);
+        var closed = new bool[total];
+        costs[start] = 0f;
+        open.Enqueue(start, (Heuristic(start, goal, gridSize), start));
+
+        while (open.TryDequeue(out int current, out _))
+        {
+            if (closed[current]) continue;
+            if (current == goal) break;
+            closed[current] = true;
+            int x = current % gridSize, y = current / gridSize;
+            Span<int> neighbours = stackalloc int[4];
+            int count = 0;
+            if (x > 0) neighbours[count++] = current - 1;
+            if (x + 1 < gridSize) neighbours[count++] = current + 1;
+            if (y > 0) neighbours[count++] = current - gridSize;
+            if (y + 1 < gridSize) neighbours[count++] = current + gridSize;
+
+            for (int i = 0; i < count; i++)
+            {
+                int next = neighbours[i];
+                if (closed[next]) continue;
+                float candidate = costs[current] + movementCosts[next];
+                if (candidate >= costs[next]) continue;
+                costs[next] = candidate;
+                cameFrom[next] = current;
+                open.Enqueue(next, (candidate + Heuristic(next, goal, gridSize), next));
+            }
+        }
+
+        if (cameFrom[goal] < 0)
+            throw new InvalidOperationException($"No macro route exists between cells {startCellId} and {targetCellId}.");
+
+        var reversed = new List<WorldRouteNode>();
+        int cursor = goal;
+        reversed.Add(new WorldRouteNode(cursor % gridSize, cursor / gridSize));
+        while (cursor != start)
+        {
+            cursor = cameFrom[cursor];
+            if (cursor < 0) throw new InvalidOperationException("Macro route predecessor chain is incomplete.");
+            reversed.Add(new WorldRouteNode(cursor % gridSize, cursor / gridSize));
+            if (reversed.Count > total) throw new InvalidOperationException("Macro route contains a cycle.");
+        }
+        reversed.Reverse();
+        return reversed;
+    }
+
+    private static float Heuristic(int from, int to, int gridSize)
+        => Math.Abs(from % gridSize - to % gridSize) + Math.Abs(from / gridSize - to / gridSize);
+
     private static WorldRouteNode ToNode(double x, double y) => new(
         Math.Clamp((int)(Math.Clamp(x, 0, ContinuousWorldState.WorldExtent - 1) / CellSize), 0, GridSize - 1),
         Math.Clamp((int)(Math.Clamp(y, 0, ContinuousWorldState.WorldExtent - 1) / CellSize), 0, GridSize - 1));
