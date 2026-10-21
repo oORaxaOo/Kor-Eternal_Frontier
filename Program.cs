@@ -37,7 +37,8 @@ internal static class Program
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
 
-            var world = new WorldSimulation(70241);
+            // New sessions receive a fresh seed; the generated seed is displayed on the overworld for reproducibility.
+            var world = new WorldSimulation(Random.Shared.Next(1, int.MaxValue));
             var simulation = world.Colony;
             bool gameStarted = false, settingsMenu = false, startPaused = false;
             string menuMessage = string.Empty;
