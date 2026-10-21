@@ -13,6 +13,14 @@ internal sealed class TickManager
     public float SpeedMultiplier { get; private set; } = 1f;
     public int LastAdvanceTickCount { get; private set; }
 
+    public void RestoreTickCount(long tickCount)
+    {
+        if (tickCount < 0) throw new ArgumentOutOfRangeException(nameof(tickCount));
+        TickCount = tickCount;
+        _accumulator = 0d;
+        LastAdvanceTickCount = 0;
+    }
+
     public void SetSpeed(float multiplier)
     {
         if (!float.IsFinite(multiplier) || multiplier is < 0.1f or > 6f)
