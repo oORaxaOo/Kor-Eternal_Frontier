@@ -45,12 +45,74 @@ internal sealed class ColonyRenderer : IDisposable
             DrawPlacementPreview(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, mouseScreenX, mouseScreenY);
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
+        DrawWorldTicker(canvas, spatialWorld);
         DrawFactionButton(canvas, factionDashboardOpen);
         DrawWorkMatrixButton(canvas, workMatrixOpen);
         if (!worldView && !workMatrixOpen && simulation.SelectedWorkerId.HasValue)
             DrawWorkerInspector(canvas, simulation, workerInspectorTab);
         if (factionDashboardOpen) DrawFactionDashboard(canvas, spatialWorld, selectedFactionName, factionTab);
         if (workMatrixOpen) DrawWorkMatrix(canvas, simulation, workMatrixPage);
+    }
+
+    private void DrawMacroGrid(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, float scale)
+    {
+        var macro = world.MacroWorld;
+        if (macro.Cells is null || macro.Cells.Length != MacroWorldState.CellCount) return;
+        float tilePixels = MacroWorldState.WorldCellSize * scale;
+        if (tilePixels < 2.2f) return;
+        var view = new SKRect(0, 62, 770, 650);
+        var factionNames = macro.FactionIds.ToDictionary(pair => pair.Value, pair => pair.Key);
+        canvas.Save();
+        canvas.ClipRect(view);
+        foreach (ref readonly var cell in macro.Cells.AsSpan())
+        {
+            double leftWorld = cell.X * MacroWorldState.WorldCellSize;
+            double topWorld = cell.Y * MacroWorldState.WorldCellSize;
+            var topLeft = ContinuousWorldProjection.WorldToScreen(leftWorld, topWorld, cameraX, cameraY, zoom);
+            var bottomRight = ContinuousWorldProjection.WorldToScreen(leftWorld + MacroWorldState.WorldCellSize, topWorld + MacroWorldState.WorldCellSize, cameraX, cameraY, zoom);
+            if (bottomRight.X < view.Left || topLeft.X > view.Right || bottomRight.Y < view.Top || topLeft.Y > view.Bottom) continue;
+            SKColor ownerColor = cell.OwningFactionId == 0 ? new SKColor(20, 25, 24, 45)
+                : factionNames.GetValueOrDefault(cell.OwningFactionId, string.Empty) switch
+                {
+                    "Kor" => new SKColor(192, 42, 54, 38),
+                    "Ember Compact" => new SKColor(220, 105, 53, 38),
+                    "Verdant Pact" => new SKColor(75, 156, 83, 38),
+                    "Iron Dominion" => new SKColor(130, 143, 154, 45),
+                    "Freeholds" => new SKColor(205, 183, 111, 38),
+                    "Dawn Assembly" => new SKColor(92, 143, 197, 38),
+                    _ => new SKColor(150, 150, 150, 35)
+                };
+            _fill.Color = ownerColor;
+            var rect = new SKRect(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
+            canvas.DrawRect(rect, _fill);
+            if (cell.BlightPresence > 0.2f)
+            {
+                _fill.Color = new SKColor(177, 22, 58, (byte)Math.Clamp(25 + cell.BlightPresence * 105, 0, 130));
+                canvas.DrawRect(rect, _fill);
+            }
+            if (tilePixels >= 5.5f)
+            {
+                _line.Color = new SKColor(8, 13, 13, 90);
+                _line.StrokeWidth = 0.6f;
+                canvas.DrawRect(rect, _line);
+            }
+        }
+        canvas.Restore();
+    }
+
+    private void DrawWorldTicker(SKCanvas canvas, ContinuousWorldState world)
+    {
+        var latest = world.MacroWorld.Notifications.LastOrDefault();
+        _fill.Color = new SKColor(12, 17, 18, 238);
+        canvas.DrawRoundRect(new SKRect(12, 38, 1088, 59), 4, 4, _fill);
+        _line.Color = latest?.Important == true ? new SKColor(192, 42, 54, 180) : Border;
+        _line.StrokeWidth = 1;
+        canvas.DrawRoundRect(new SKRect(12, 38, 1088, 59), 4, 4, _line);
+        _text.Color = latest?.Important == true ? new SKColor(244, 151, 151) : Gold;
+        string message = latest is null
+            ? $"WORLD TICKER  ·  Food {world.MacroWorld.Market.FoodPrice:0.00}×  Alloy {world.MacroWorld.Market.AlloyPrice:0.00}×  ·  Macro turn {world.MacroWorld.MacroTurnsProcessed}"
+            : $"WORLD TICKER  ·  {latest.Category.ToUpperInvariant()}  ·  {latest.Message}";
+        canvas.DrawText(message, 22, 53, SKTextAlign.Left, _smallFont, _text);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -96,6 +158,7 @@ internal sealed class ColonyRenderer : IDisposable
             _line.StrokeWidth = 1;
             canvas.DrawRect(regionRect, _line);
         }
+        DrawMacroGrid(canvas, world, cameraX, cameraY, zoom, scale);
         // Region-sized overlays make ecological pressure legible at strategic zoom.
         foreach (var hotspot in world.Ecology.Hotspots.Where(item => item.IsActive))
         {
