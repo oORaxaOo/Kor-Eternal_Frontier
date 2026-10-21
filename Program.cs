@@ -57,9 +57,10 @@ internal static class Program
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
+            int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -313,11 +314,16 @@ internal static class Program
                         else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; demolitionMode = false; }
                         else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; demolitionMode = false; }
                         else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; demolitionMode = false; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
-                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615)) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615)) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; }
+                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615) && buildMenuPage == 0) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615) && buildMenuPage == 0) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615) && buildMenuPage == 0) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615) && buildMenuPage == 0) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615) && buildMenuPage == 0) { buildMenuPage = 1; architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = false; demolitionMode = false; simulation.SetMessage("Build menu: comfort and recreation."); }
+                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615) && buildMenuPage == 1) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615) && buildMenuPage == 1) { objectType = PlaceableKind.DiningTable; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615) && buildMenuPage == 1) { objectType = PlaceableKind.Lamp; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615) && buildMenuPage == 1) { objectType = PlaceableKind.ComfortBench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
+                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615) && buildMenuPage == 1) { buildMenuPage = 0; architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = false; demolitionMode = false; simulation.SetMessage("Build menu: work and infrastructure."); }
                         else if (!worldView && Hit(mx, my, 1039, 593, 1086, 615))
                         {
                             architectureMode = ArchitectureKind.None;
