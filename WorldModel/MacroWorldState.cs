@@ -284,7 +284,24 @@ internal sealed class MacroWorldState
     {
         if (cellId < 1 || cellId > Cells.Length) return false;
         Cells[cellId - 1].IsLocalMapGenerated = generated;
+        if (!generated && _cachedLocalMapCellId == cellId) _cachedLocalMapCellId = 0;
+        else if (generated && _cachedLocalMapCellId == 0) _cachedLocalMapCellId = cellId;
         return true;
+    }
+
+    private int FindLocalMapCellId()
+    {
+        if (_cachedLocalMapCellId > 0 && _cachedLocalMapCellId <= Cells.Length &&
+            Cells[_cachedLocalMapCellId - 1].IsLocalMapGenerated)
+            return _cachedLocalMapCellId;
+        _cachedLocalMapCellId = 0;
+        for (int i = 0; i < Cells.Length; i++)
+        {
+            if (!Cells[i].IsLocalMapGenerated) continue;
+            _cachedLocalMapCellId = Cells[i].CellId;
+            break;
+        }
+        return _cachedLocalMapCellId;
     }
 
     public void Advance(double deltaSeconds, ContinuousWorldState continuous)
@@ -653,10 +670,10 @@ internal sealed class MacroWorldState
     {
         ref var source = ref Cells[sourceIndex];
         int sourceFactionId = source.OwningFactionId;
-        float sourceX = source.X, sourceY = source.Y;
-        var destination = Cells.Where(c => c.OwningFactionId != sourceFactionId && c.IsLocalMapGenerated)
-            .OrderBy(c => Distance(c.X, c.Y, sourceX, sourceY)).FirstOrDefault();
-        if (destination.CellId == 0) return;
+        int destinationCellId = FindLocalMapCellId();
+        if (destinationCellId <= 0) return;
+        ref var destination = ref Cells[destinationCellId - 1];
+        if (destination.OwningFactionId == sourceFactionId) return;
         int refugeeCount = Math.Min(12, Math.Max(2, source.Population / 1000));
         int sourceCellId = source.CellId;
         source.Population = Math.Max(0, source.Population - refugeeCount);
