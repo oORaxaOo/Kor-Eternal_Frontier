@@ -72,6 +72,9 @@ internal static class Program
             bool running = true, wasLeft = false, wasRight = false, wasMiddle = false;
             float pendingWheelY = 0;
             float previousMouseX = 0, previousMouseY = 0;
+            bool architectureDragActive = false;
+            int architectureDragStartX = 0, architectureDragStartY = 0, architectureDragLastX = 0, architectureDragLastY = 0;
+            ArchitectureKind architectureDragKind = ArchitectureKind.None;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -235,7 +238,22 @@ internal static class Program
                         if (demolitionMode) simulation.DemolishAt(tileX, tileY);
                         else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                         else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
-                        else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
+                        else if (architectureMode != ArchitectureKind.None)
+                        {
+                            architectureDragActive = architectureMode is ArchitectureKind.Wall or ArchitectureKind.Floor;
+                            architectureDragKind = architectureMode;
+                            architectureDragStartX = architectureDragLastX = tileX;
+                            architectureDragStartY = architectureDragLastY = tileY;
+                            if (architectureMode == ArchitectureKind.Wall)
+                                DesignArchitectureLine(simulation, tileX, tileY, tileX, tileY, ArchitectureKind.Wall);
+                            else if (architectureMode != ArchitectureKind.Floor)
+                                simulation.DesignTileConstruction(tileX, tileY, architectureMode);
+                            simulation.SetMessage(architectureMode == ArchitectureKind.Wall
+                                ? "Wall tool: hold the left mouse button and drag to draw a straight wall."
+                                : architectureMode == ArchitectureKind.Floor
+                                    ? "Floor tool: hold the left mouse button and drag to fill a rectangular area."
+                                    : $"Construction order: {architectureMode}.");
+                        }
                         else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                     }
                     else if (logicalMouse.X >= 770 && logicalMouse.Y >= 423 && logicalMouse.Y < 650)
@@ -328,6 +346,32 @@ internal static class Program
                         }
                     }
                 }
+                // While dragging, walls are connected as straight grid segments. Floors are
+                // filled as a rectangle on release, avoiding a dotted trail of individual tiles.
+                if (gameStarted && architectureDragActive && left && wasLeft && !worldView && inWorldView)
+                {
+                    int tileX = (int)MathF.Floor(worldMouse.X);
+                    int tileY = (int)MathF.Floor(worldMouse.Y);
+                    if (architectureDragKind == ArchitectureKind.Wall &&
+                        (tileX != architectureDragLastX || tileY != architectureDragLastY))
+                    {
+                        DesignArchitectureLine(simulation, architectureDragLastX, architectureDragLastY, tileX, tileY, ArchitectureKind.Wall);
+                        architectureDragLastX = tileX;
+                        architectureDragLastY = tileY;
+                    }
+                }
+                if (gameStarted && architectureDragActive && !left)
+                {
+                    if (architectureDragKind == ArchitectureKind.Floor && !worldView && inWorldView)
+                    {
+                        int endX = (int)MathF.Floor(worldMouse.X);
+                        int endY = (int)MathF.Floor(worldMouse.Y);
+                        DesignArchitectureRectangle(simulation, architectureDragStartX, architectureDragStartY, endX, endY, ArchitectureKind.Floor);
+                    }
+                    architectureDragActive = false;
+                    architectureDragKind = ArchitectureKind.None;
+                }
+
                 if (gameStarted && inWorldView && right && !wasRight)
                 {
                     if (worldView && selectedWorldEntityId.HasValue && !world.SpatialWorld.Shipments.Any(shipment => shipment.CarrierEntityId == selectedWorldEntityId.Value && shipment.Status == WorldShipmentStatus.InTransit) && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
@@ -364,6 +408,31 @@ internal static class Program
             if (window != IntPtr.Zero) Sdl.SDL_DestroyWindow(window);
             if (sdlInitialized) Sdl.SDL_Quit();
         }
+    }
+
+    private static void DesignArchitectureLine(ColonySimulation simulation, int x0, int y0, int x1, int y1, ArchitectureKind kind)
+    {
+        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int error = dx + dy;
+        while (true)
+        {
+            simulation.DesignTileConstruction(x0, y0, kind);
+            if (x0 == x1 && y0 == y1) break;
+            int twiceError = 2 * error;
+            if (twiceError >= dy) { error += dy; x0 += sx; }
+            if (twiceError <= dx) { error += dx; y0 += sy; }
+        }
+    }
+
+    private static void DesignArchitectureRectangle(ColonySimulation simulation, int x0, int y0, int x1, int y1, ArchitectureKind kind)
+    {
+        int left = Math.Min(x0, x1), right = Math.Max(x0, x1);
+        int top = Math.Min(y0, y1), bottom = Math.Max(y0, y1);
+        for (int y = top; y <= bottom; y++)
+            for (int x = left; x <= right; x++)
+                simulation.DesignTileConstruction(x, y, kind);
+        simulation.SetMessage($"Rectangular {kind.ToString().ToLowerInvariant()} area designated: {right-left+1} × {bottom-top+1} tiles.");
     }
 
     private static bool Hit(float x, float y, float left, float top, float right, float bottom)
