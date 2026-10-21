@@ -192,15 +192,15 @@ internal sealed class ColonySimulation
         if (string.IsNullOrWhiteSpace(faction)) throw new ArgumentException("Visitor faction cannot be empty.", nameof(faction));
         if (!TryFindVisitorEntryAndTarget(out var entry, out var target, out var route)) return 0;
         int id = _nextWorkerId++;
-        var visitor = new ColonyWorker(id, $"{faction}-Visitor-{id:0000}", entry.Value.X + 0.5f, entry.Value.Y + 0.5f, 0f)
+        var visitor = new ColonyWorker(id, $"{faction}-Visitor-{id:0000}", entry.X + 0.5f, entry.Y + 0.5f, 0f)
         {
             Faction = faction,
             IsExternalVisitor = true,
             TradeCargo = cargo is null ? [] : cargo.Where(pair => pair.Value > 0).ToDictionary(pair => pair.Key, pair => pair.Value),
-            Task = new WorkerTask(ColonyTaskKind.Move, target.Value, route)
+            Task = new WorkerTask(ColonyTaskKind.Move, target, route)
         };
         _workers.Add(visitor);
-        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry.Value);
+        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry);
         Message = $"{faction} visitor entered the colony and is heading to the stockpile.";
         return id;
     }
@@ -295,7 +295,10 @@ internal sealed class ColonySimulation
                 int x = index % Width, y = index / Width;
                 bool edge = x == 0 || y == 0 || x == Width - 1 || y == Height - 1;
                 int score = Math.Abs(x - 19) + Math.Abs(y - 8) + (edge ? 100 : 0);
-                if (score < bestScore || (score == bestScore && distance[index] < distance[targetIndex < 0 ? index : targetIndex]))
+                if (score < bestScore ||
+                    (score == bestScore && (targetIndex < 0 ||
+                     distance[index] < distance[targetIndex] ||
+                     (distance[index] == distance[targetIndex] && index < targetIndex))))
                 {
                     bestScore = score;
                     targetIndex = index;
