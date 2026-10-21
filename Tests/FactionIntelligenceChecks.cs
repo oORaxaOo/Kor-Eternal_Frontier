@@ -29,13 +29,15 @@ internal static class FactionIntelligenceChecks
             "faction strategic baselines and diplomatic modifiers must be reproducible from the world seed");
 
         double treasuryBefore = kor.Treasury;
+        double militaryBefore = kor.MilitaryPower;
         world.Step(11d);
         Check(kor.LastDecisionAt >= 10d && kor.TerritoryCount > 0,
             "the faction director should evaluate its strategy on the world simulation clock");
         Check(kor.Treasury >= 0 && kor.MilitaryPower >= 0 && kor.ThreatLevel is >= 0 and <= 100,
             "director metrics must remain within valid bounds");
-        Check(world.FactionIntelligence.Any(profile => profile.Treasury != treasuryBefore) || kor.LastDecisionAt >= 10d,
-            "the strategic metrics should be refreshed during director evaluation");
+        Check(Math.Abs(kor.Treasury - treasuryBefore) > 0.001d ||
+              Math.Abs(kor.MilitaryPower - militaryBefore) > 0.001d,
+            "the director should refresh treasury or military estimates from the live world");
 
         var restored = ContinuousWorldState.Deserialize(ContinuousWorldState.Serialize(world));
         Check(restored.FactionIntelligence.Count == world.FactionIntelligence.Count &&
