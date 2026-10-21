@@ -1,9 +1,9 @@
 using System.Text.Json;
-using KorTheBlight.Simulation;
+using KorTheBlight.WorldModel;
 
-namespace KorTheBlight.Campaign;
+namespace KorTheBlight.Simulation;
 
-/// <summary>Atomic, versioned save for the linked strategic campaign and local colony.</summary>
+/// <summary>Atomic save envelope for the complete, canonical real-time world session.</summary>
 internal static class GameSessionService
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -18,16 +18,21 @@ internal static class GameSessionService
         }
     }
 
-    public static string Serialize(ColonySimulation colony, CampaignSimulation campaign)
+    public static string Serialize(WorldSimulation world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        return Serialize(world.Colony, world.SpatialWorld);
+    }
+
+    public static string Serialize(ColonySimulation colony, ContinuousWorldState continuousWorld)
     {
         ArgumentNullException.ThrowIfNull(colony);
-        ArgumentNullException.ThrowIfNull(campaign);
-        // Each subsystem validates its own schema before it is included in the session envelope.
+        ArgumentNullException.ThrowIfNull(continuousWorld);
         return JsonSerializer.Serialize(new SessionEnvelope
         {
             SchemaVersion = 1,
             ColonyJson = ColonySaveService.Serialize(colony),
-            CampaignJson = CampaignSaveService.Serialize(campaign.State)
+            ContinuousWorldJson = ContinuousWorldState.Serialize(continuousWorld)
         }, JsonOptions);
     }
 
@@ -47,15 +52,24 @@ internal static class GameSessionService
 
         if (envelope.SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported game session schema version: {envelope.SchemaVersion}.");
-        if (string.IsNullOrWhiteSpace(envelope.ColonyJson) || string.IsNullOrWhiteSpace(envelope.CampaignJson))
-            throw new InvalidDataException("Game session is missing its colony or campaign state.");
+        if (string.IsNullOrWhiteSpace(envelope.ColonyJson) || string.IsNullOrWhiteSpace(envelope.ContinuousWorldJson))
+            throw new InvalidDataException("Game session is missing its colony or continuous world state.");
 
         var colony = ColonySaveService.Deserialize(envelope.ColonyJson);
-        var campaign = new CampaignSimulation(CampaignSaveService.Deserialize(envelope.CampaignJson));
-        return new LoadedGameSession(colony, campaign);
+        var continuousWorld = ContinuousWorldState.Deserialize(envelope.ContinuousWorldJson);
+        var home = continuousWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        colony.BindWorldInventory(continuousWorld, home.Id);
+        return new LoadedGameSession(colony, continuousWorld);
     }
 
-    public static void Save(ColonySimulation colony, CampaignSimulation campaign, string? path = null)
+    public static void Save(WorldSimulation world, string? path = null)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        SaveJson(Serialize(world), path);
+    }
+
+    private static void SaveJson(string json, string? path)
     {
         string target = path ?? SavePath;
         string directory = Path.GetDirectoryName(Path.GetFullPath(target))
@@ -64,7 +78,7 @@ internal static class GameSessionService
         string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temporary, Serialize(colony, campaign));
+            File.WriteAllText(temporary, json);
             File.Move(temporary, target, true);
         }
         finally
@@ -84,8 +98,10 @@ internal static class GameSessionService
     {
         public int SchemaVersion { get; set; } = 1;
         public string ColonyJson { get; set; } = string.Empty;
-        public string CampaignJson { get; set; } = string.Empty;
+        public string ContinuousWorldJson { get; set; } = string.Empty;
     }
 }
 
-internal sealed record LoadedGameSession(ColonySimulation Colony, CampaignSimulation Campaign);
+internal sealed record LoadedGameSession(
+    ColonySimulation Colony,
+    ContinuousWorldState ContinuousWorld);

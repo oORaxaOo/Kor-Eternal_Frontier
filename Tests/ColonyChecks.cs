@@ -9,6 +9,72 @@ internal static class ColonyChecks
 {
     public static void Run()
     {
+        var environment = new ColonySimulation();
+        Check(environment.AddFluid(10, 10, FluidKind.Water, 7) == 7,
+            "open tiles must accept fluid up to the seven-unit level cap");
+        Check(environment.AddFluid(22, 6, FluidKind.Water, 1) == 0,
+            "rock tiles must block fluid placement");
+        Check(environment.AddFluid(10, 10, FluidKind.Magma, 1) == 0,
+            "water and magma must not coexist in one tile in this first simulation slice");
+        environment.Step(1f);
+        Check(environment.TotalFluid(FluidKind.Water) == 7 &&
+              environment.FluidLevelAt(10, 10, FluidKind.Water) < 7,
+            "the deterministic fluid tick must redistribute water without creating or losing units");
+        Check(environment.AddFluid(25, 7, FluidKind.Magma, 7) == 7,
+            "magma must be placeable on open terrain with bounded levels");
+        environment.Step(1f);
+        Check(environment.TemperatureAt(25, 7) > 20f,
+            "magma must heat its tile through the thermal simulation");
+
+        static float NeighbourHeating(ArchitectureKind barrier)
+        {
+            var world = new ColonySimulation();
+            world.TileAt(5, 5)!.TemperatureCelsius = 200f;
+            world.TileAt(5, 5)!.Architecture = barrier;
+            world.TileAt(6, 5)!.TemperatureCelsius = 20f;
+            world.Step(1f);
+            return world.TemperatureAt(6, 5);
+        }
+
+        float openHeating = NeighbourHeating(ArchitectureKind.None);
+        float doorHeating = NeighbourHeating(ArchitectureKind.Door);
+        float wallHeating = NeighbourHeating(ArchitectureKind.Wall);
+        Check(openHeating > doorHeating && doorHeating > wallHeating && wallHeating > 20f,
+            "open tiles must exchange heat fastest, doors partially insulate, and walls strongly reduce but do not eliminate heat transfer");
+
+        var thermalHazard = new ColonySimulation();
+        var thermalControl = new ColonySimulation();
+        thermalHazard.TileAt(16, 12)!.TemperatureCelsius = 5_000f;
+        for (int i = 0; i < 20; i++)
+        {
+            thermalHazard.Step(0.25f);
+            thermalControl.Step(0.25f);
+        }
+        var exposedWorker = thermalHazard.Workers.Single(worker => worker.Id == 1);
+        var exposedCitizen = thermalHazard.CitizenForWorker(1)!;
+        Check(exposedWorker.ThermalExposure >= 15f,
+            "sustained extreme tile temperature must accumulate resident thermal exposure");
+        Check(exposedCitizen.Fatigue < thermalControl.CitizenForWorker(1)!.Fatigue,
+            "thermal exposure must reduce rest satisfaction beyond ordinary fatigue drain");
+        var hazardEvents = thermalHazard.DrainSimulationEvents();
+        Check(hazardEvents.Any(item => item.Kind == SimulationEventKind.HazardChanged &&
+              item.SubjectId == exposedCitizen.Id &&
+              item.RelatedId == (long)SimulationHazardKind.ThermalExposure && item.Value > 0),
+            "crossing the thermal danger threshold must emit a stable-ID hazard event");
+        exposedWorker.Stress = 37f;
+        var restoredHazard = ColonySaveService.Deserialize(ColonySaveService.Serialize(thermalHazard));
+        Check(Math.Abs(restoredHazard.Workers.Single(worker => worker.Id == 1).ThermalExposure -
+              exposedWorker.ThermalExposure) < 0.001f,
+            "thermal exposure must survive a save/load round trip");
+        Check(Math.Abs(restoredHazard.Workers.Single(worker => worker.Id == 1).Stress - 37f) < 0.001f,
+            "resident stress must survive a save/load round trip");
+        string environmentSave = ColonySaveService.Serialize(environment);
+        var restoredEnvironment = ColonySaveService.Deserialize(environmentSave);
+        Check(restoredEnvironment.TotalFluid(FluidKind.Water) == environment.TotalFluid(FluidKind.Water) &&
+              restoredEnvironment.TotalFluid(FluidKind.Magma) == environment.TotalFluid(FluidKind.Magma) &&
+              Math.Abs(restoredEnvironment.TemperatureAt(25, 7) - environment.TemperatureAt(25, 7)) < 0.001f,
+            "fluid levels and tile temperatures must survive save/load");
+
         var center = OrthogonalGridProjection.TileCenter(5, 3);
         var world = OrthogonalGridProjection.ScreenToWorld(center.X, center.Y);
         Check(MathF.Abs(world.X - 5.5f) < 0.001f && MathF.Abs(world.Y - 3.5f) < 0.001f,
@@ -36,6 +102,22 @@ internal static class ColonyChecks
             "a gathered resource stack must be delivered to inventory rather than appear at the deposit");
         Check(woodDeposit.Amount == depositBefore - 5, "gathering must subtract the same quantity from the source");
         Check(!worker.CarriedResource.HasValue, "a successful round trip must leave no ghost cargo");
+
+        var reservationColony = new ColonySimulation();
+        var reservationDeposit = reservationColony.Deposits.Single(d => d.Resource == ResourceKind.Wood);
+        var firstGatherer = reservationColony.Workers[0];
+        var secondGatherer = reservationColony.Workers[1];
+        Check(reservationColony.SelectWorkerAt(firstGatherer.X, firstGatherer.Y),
+            "the first worker should be selectable for a deposit reservation check");
+        reservationColony.CommandSelectedTo(reservationDeposit.Cell.X + 0.5f, reservationDeposit.Cell.Y + 0.5f);
+        Check(firstGatherer.Task?.Kind == ColonyTaskKind.Gather,
+            "the first worker should claim the unreserved resource deposit");
+        Check(reservationColony.SelectWorkerAt(secondGatherer.X, secondGatherer.Y),
+            "the second worker should be selectable for a duplicate deposit order");
+        reservationColony.CommandSelectedTo(reservationDeposit.Cell.X + 0.5f, reservationDeposit.Cell.Y + 0.5f);
+        Check(secondGatherer.Task == null &&
+              reservationColony.Message.Contains("already assigned", StringComparison.OrdinalIgnoreCase),
+            "a finite resource deposit must not accept duplicate simultaneous gather assignments");
 
         Check(colony.DesignTileConstruction(16, 10, ArchitectureKind.Wall),
             "a wall should create an individual tile construction order");
@@ -197,19 +279,47 @@ internal static class ColonyChecks
               .SequenceEqual(colony.Workers.Select(w => (w.Id, w.X, w.Y, w.Hunger, w.CarriedResource, w.CarriedAmount, w.Task?.Kind))),
             "save/load must preserve worker positions, needs, cargo, and task kinds");
 
-        string directory = Path.Combine(Path.GetTempPath(), "kor-save-check-" + Guid.NewGuid().ToString("N"));
-        string path = Path.Combine(directory, "colony.json");
-        try
-        {
-            ColonySaveService.Save(colony, path);
-            var loadedFromDisk = ColonySaveService.Load(path);
-            Check(loadedFromDisk.ResourceCount(ResourceKind.Food) == colony.ResourceCount(ResourceKind.Food),
-                "disk save/load must preserve inventory state");
-        }
-        finally
-        {
-            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
-        }
+        var needsColony = new ColonySimulation();
+        var needsWorker = needsColony.Workers[0];
+        var liveCitizen = needsColony.CitizenForWorker(needsWorker.Id);
+        Check(liveCitizen != null, "each visible colonist must have a live citizen-needs agent");
+        needsWorker.Hunger = 79f;
+        int foodBeforeNeeds = needsColony.ResourceCount(ResourceKind.Food);
+        for (int i = 0; i < 400; i++) needsColony.Step(0.1f);
+        Check(needsColony.ResourceCount(ResourceKind.Food) < foodBeforeNeeds &&
+              needsWorker.Hunger < 79f,
+            "the live citizen system must move toward stockpiled food, consume it, and synchronize hunger back to the visible colonist");
+        Check(liveCitizen!.Happiness >= 0 && liveCitizen.Happiness <= 100,
+            "the live colony HUD must receive bounded citizen mood from the ecosystem");
+
+        liveCitizen.Fatigue = 37.5f;
+        string fatigueSave = ColonySaveService.Serialize(needsColony);
+        var restoredNeedsColony = ColonySaveService.Deserialize(fatigueSave);
+        var restoredCitizen = restoredNeedsColony.CitizenForWorker(needsWorker.Id);
+        Check(restoredCitizen != null && MathF.Abs(restoredCitizen.Fatigue - 37.5f) < 0.001f,
+            "save/load must preserve citizen fatigue instead of resetting population needs");
+
+        var gardenColony = new ColonySimulation();
+        int gardenFoodBefore = gardenColony.ResourceCount(ResourceKind.Food);
+        int liveGardenId = gardenColony.PlaceObjectBlueprint(PlaceableKind.Garden, 24, 17);
+        Check(liveGardenId > 0, "the live ecosystem integration fixture should accept a garden blueprint");
+        for (int i = 0; i < 2500; i++) gardenColony.Step(0.1f);
+        Check(gardenColony.Objects.Single(item => item.Id == liveGardenId).IsBuilt,
+            "a garden must still use the existing construction scheduler before becoming operational");
+        Check(gardenColony.ResourceCount(ResourceKind.Food) > gardenFoodBefore,
+            "a completed garden must register with the live job broker and deliver reserved food output into colony inventory");
+
+        var expandedStorageColony = new ColonySimulation();
+        int expandedRackId = expandedStorageColony.PlaceObjectBlueprint(PlaceableKind.StorageRack, 23, 15);
+        Check(expandedRackId > 0, "expanded-storage fixture should accept a rack blueprint");
+        for (int i = 0; i < 1200; i++) expandedStorageColony.Step(0.1f);
+        Check(expandedStorageColony.Objects.Single(item => item.Id == expandedRackId).IsBuilt,
+            "the storage rack must finish construction before its grid capacity is enabled");
+        Check(expandedStorageColony.InventoryCapacity ==
+              ColonySimulation.BaseStockpileCapacity + ColonySimulation.StorageRackCapacity,
+            "a completed storage rack must expand the colony's bounded inventory capacity");
+        Check(expandedStorageColony.InventoryUsed <= expandedStorageColony.InventoryCapacity,
+            "completed storage capacity must never leave the colony inventory over capacity");
 
         var validationColony = new ColonySimulation();
         Check(validationColony.DesignTileConstruction(5, 5, ArchitectureKind.Wall),

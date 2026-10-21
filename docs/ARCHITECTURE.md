@@ -2,7 +2,7 @@
 
 ## Active application
 
-One canonical application exists at the root, targeting .NET 8. Gondwana is the game host; SDL3 supplies window/input and SkiaSharp draws presentation. Simulation and persistence checks run without a game window.
+One canonical application exists at the repository root, targeting .NET 8. Gondwana is the game host; SDL3 supplies window/input and SkiaSharp draws presentation. Simulation and persistence checks run without a game window.
 
 ## Dependency direction
 
@@ -12,63 +12,81 @@ One canonical application exists at the root, targeting .NET 8. Gondwana is the 
     OrthogonalGridProjection ---> ColonyRenderer
              |                        ^
              v                        |
-    ColonySimulation (logical state and fixed-step rules)
+    ColonySimulation (local settlement state and rules)
              |
-             +-- tiles, construction, objects, colonists, deposits,
-                 hauling, inventory, production, needs and persistence
+             +-- ColonyEcosystem (individual citizens, needs, workplaces)
+             +-- GridManager (compact tile data, storage zones, reservations)
+             +-- SimulationEventQueue (tick-indexed deterministic notifications)
 
-    CampaignSimulation / CampaignState
-             |                 ^
-             v                 |
-    CampaignColonyBridge ------+
-             |
-             +-- explicit Supplies↔Food and Alloy↔Alloy transfers
-                 with local capacity checks and exact debits
-
+    WorldSimulation
+       |
+       v
+    ContinuousWorldState
     GameSessionService
              |
-             +-- validated atomic session envelope containing both save schemas
+             +-- schema-v1 session envelope: colony state and canonical continuous world ledger
 
 The projection layer owns screen/world mapping. Gameplay APIs receive logical world coordinates. Rendering reads state but does not decide simulation rules.
 
 ## Implemented mechanics
 
-- 40 by 26 orthogonal square-tile grid.
-- Three colonists with movement, task state, carrying, and hunger.
+- 40 by 26 orthogonal square-tile colony grid.
+- Individually identified colonists with movement, task state, carrying, hunger and fatigue.
 - Finite deposits and resource-conserving gather/carry/deliver transfers.
-- Aggregate inventory capacity supplied by completed stockpiles (120 units each) and storage racks (80 units each).
+- Compact tile-array storage grid with bounded resource stacks, connected stockpile zones and storage reservations.
 - Capacity-aware gathering, partial delivery, retained cargo while storage is full, and production output that waits for room.
 - Independent per-tile architecture orders with material costs and work progress.
 - Separate multi-tile placeable objects with validated footprints and construction work.
 - A workstation recipe that consumes real inventory and yields a component after labor.
+- A deterministic workplace broker using a tile-indexed job registry and Manhattan rings to select the nearest available job with stable-ID tie-breaking; it tracks free capacity to skip searches when every job is full. The high-throughput citizen grid reuses bounded target-oriented flow fields when multiple residents navigate toward the same destination; walkability changes invalidate the fields.
 - Versioned, validated colony save/load for tiles, jobs/routes, workers, deposits, inventory, construction, production and clock.
-- Minimal symbol-based top-down rendering.
+- Continuous world-space settlements, resource sites, armies, caravans and Blight fronts with coordinate-based movement and a uniform spatial-bucket index for radius queries.
+- Shared settlement inventories, travel-time shipments and storage-capacity checks.
+- One active real-time clock shared by local colony and continuous world simulation.
+- Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
+- Bounded, deterministic tile fluid redistribution and thermal exchange with temperature persistence; walls and doors now attenuate heat transfer according to material/edge conductance, so rooms can insulate without perfect heat isolation. Residents accumulate persistent thermal exposure on dangerous tiles; sustained exposure reduces rest satisfaction and emits threshold-crossing hazard events through the deterministic queue. Unmet hunger/fatigue also accumulates persistent stress; high stress releases job/output reservations, pauses work in a mental-break state, and emits deterministic start/recovery events.
+- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger/fatigue threshold crossings, stock additions/withdrawals and workplace availability changes emit data-only notifications; stockpile planning, hazard propagation and incidents are not yet event-wired.
+- A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 
-## Remaining integration work
+## Combined design target: DF depth + Songs of Syx scale + RimWorld storytelling
 
-- Extract worker scheduling into a reusable central job board and durable task ownership.
-- Explicit material reservations and physically distinct stockpile locations.
-- General recipe catalogs, workplace queues and multiple production chains.
-- Broader needs, housing, work eligibility, skills and social relationships.
-- Research unlocks wired to local buildings, production and systems.
-- Campaign screen connected to the colony state and real regional resource/population flows.
-- Large world generation and settlement transitions.
-- Dynamic multi-stage Blight ecosystem.
+These games are design references, not evidence that their proprietary internal implementations match every mechanism in a reverse-engineering description. Kor will combine their useful *design outcomes* while using an architecture suited to this codebase:
 
-## Design constraints
+1. **World and materials (DF-inspired):** retain the compact local tile grid and make terrain/material, fluid, temperature and occupancy explicit simulation data. Tiles now persist separate water/magma levels and temperature, with bounded deterministic lateral redistribution and material-dependent heat exchange. Add vertical gravity, pressure-driven pipes and ignition only when vertical construction and item materials exist; do not introduce a full 3D voxel allocation before gameplay requires it.
+2. **Mass simulation (Songs of Syx-inspired):** retain individual resident IDs and consequential state, but simulate distant/off-screen residents in deterministic cohorts and less frequent time slices. Continuous-world spatial buckets and target-oriented flow fields are implemented for nearby entity queries and repeated local citizen destinations; broader use should be driven by end-to-end benchmarks. A flow field is an optimization for many agents sharing a destination, not a replacement for obstacle-aware routes in every task.
+3. **Personal stories (RimWorld-inspired):** model needs, traits, memories, relationships and health effects as data; process threshold crossings and world incidents through the deterministic event queue. Update expensive systems on staggered tick intervals. Avoid copying RimWorld-specific class names or assuming its exact tick rates are universal.
+4. **Jobs and logistics:** use explicit job states and reservations, verify reachability before assigning a job, and reserve both source quantity and destination capacity. Resource movement must conserve stock. Need/stock/job events should eventually wake only relevant planners instead of polling all agents.
+5. **Incidents and ecology:** a director may schedule seeded incidents using colony state, security, shortages and environmental pressure. Keep event intensity bounded and testable; avoid an opaque random difficulty jump.
+6. **Presentation:** symbolic tile rendering, zoom-dependent detail and inspectable individual records. Camera zoom must never change authoritative simulation outcomes.
+
+## Current implementation gaps — do not mistake these for completed systems
+
+- The local settlement remains 2D, not a full 3D voxel world. Tiles now persist water/magma levels (0–7) and temperature; bounded lateral fluid redistribution and material-dependent thermal exchange are implemented. Vertical gravity, pressure-driven pipes, ignition/melting and organ/tissue damage remain future work.
+- The strategic/local-worker route cache remains grid-based breadth-first search keyed by start and target, not A*. The high-throughput citizen grid now uses shared target-oriented flow fields for repeated destinations; this is not yet a global flow-field solution for every colony job or world route.
+- Individual citizen needs and workplace jobs exist, but full personality-driven mental breaks, long-lived memories, social graphs, body-part health and schedules are not integrated.
+- Population cohorts are a separate aggregate model; transitions between cohorts and individually simulated residents still need explicit conservation rules and persistence.
+- The new event queue is currently infrastructure with regression tests, not yet wired to every need, job, stock or hazard subsystem.
+- The continuous-world radius-query spatial index is implemented and tested against a full-scan oracle; local-agent spatial indexing, route/target invalidation metrics and reproducible 1k/5k/10k end-to-end benchmarks remain planned.
+- The world map is continuous 2D space; tactical formations and per-soldier combat are not implemented.
+
+## Persistence and deterministic behavior
 
 - Logical state belongs to simulation; screen transforms and drawing belong to presentation.
 - Tile coordinates and object footprints use consistent zero-based grid positions.
-- Resources must be conserved across transfer, construction, production, consumption, and persistence.
+- Resources must be conserved across transfer, construction, production, consumption and persistence.
 - Saved data must have explicit schema version and validated references.
+- Event ordering must be deterministic; do not use wall-clock timestamps as simulation order.
 - Deterministic tests must cover actual mechanics, not only application startup.
 - Graphics remain minimal until integrated mechanics are legible.
 
+## Implementation sequence
 
-## Alpha integration contract
+1. Add and test deterministic event scheduling. **Foundation added.**
+2. Emit events for need thresholds, stock changes and workplace availability. **These notifications are integrated; planner wake-ups and hazard/incident handlers remain future work.**
+3. Add a spatial bucket index for continuous-world queries and local agent lookups, with mutation/invalidation tests. **Continuous-world radius queries now update bucket membership incrementally.**
+4. Extend shared-destination flow fields to the main colony task planner and retain exact path checks for work reservations. **First implementation exists in the high-throughput citizen grid.**
+5. Expand individual needs, traits, memories, relationships and body-part health in small save-compatible slices.
+6. Add tile material definitions, temperature exchange and fluid movement with strict per-tick work budgets.
+7. Add seeded incident scheduling and bounded population/industry benchmarks.
 
-- Campaign Supplies map to local Food; strategic Alloy maps to local Alloy. Energy and Knowledge stay strategic-only until corresponding local resources and consumers exist.
-- Imports are capped per order and limited by local free storage. Strategic balances are reduced only by accepted local deliveries.
-- Exports are capped per order and limited by real local inventory. Local balances are reduced before the strategic balances are credited.
-- F5/F9 use `GameSessionService`, which validates both existing subsystem save formats and writes a single temporary file before atomic replacement.
-- IntegrationChecks exercise resource conservation, full-storage rejection, and save/load of both systems.
+Mouse-first is a product requirement. Visible menus must expose pause/resume, speed, save/load, zoom, build/object selection and cancellation. Mouse interaction is primary; keyboard shortcuts are optional only.

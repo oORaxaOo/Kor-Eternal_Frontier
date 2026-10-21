@@ -23,96 +23,38 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - The original component recipe remains available alongside the catalogue recipes.
 - Minimal orthogonal top-down rendering.
 - Versioned local colony saves with structural validation and round-trip tests.
-- A separate deterministic strategic campaign model with regional development, research, turns, battle reconciliation, and save/load tests.
+- A `WorldSimulation` coordinator that advances the local colony and regional world under one real-time clock, with pause/speed support and automatic regional updates.
 
 ## Known gaps
 
-The strategic campaign and local colony are connected through explicit logistics orders and a unified session save. Strategic Supplies transfer to local Food; Alloy transfers directly. Imports obey colony storage capacity and debit campaign stock only for accepted deliveries. Exports remove actual local Food/Alloy and credit strategic Supplies/Alloy. Strategic Energy and Knowledge remain campaign resources used by the local research system. The colony supports stable-ID industry materials alongside its five legacy resources; both share storage capacity, and catalogue recipe orders consume real inputs and persist recipe identity. Seven finite raw-material sites now provide ore, rare earth, conductive crystal, chemical reagents, water, biomass and recycled feedstock. Colonists can be selected and ordered to extract these materials, carry up to five units per trip, and deliver them to shared stockpiles. Local research now spends campaign Knowledge and Energy, checks prerequisites, persists completed technology IDs in colony schema v4, and gates catalogue recipes until their required technology is researched. Remaining gaps include broader resource coverage, power/workstation throughput, automatic supply balancing, advanced building/unit deployment and fuller needs/workplace simulation. The world map remains a separate strategic layer rather than a fully connected civilization simulation, and The Blight is still a simplified spread-and-cleanse model.
+The local colony and temporary legacy regional model currently advance through one `WorldSimulation` clock. The gameplay interface is mouse-first: visible controls expose pause/resume, speed, save/load, zoom, construction, object placement and cancellation; middle-mouse drag pans the camera. This is not completion of the world redesign. The nine-region linked-hex model is explicitly legacy scaffolding and must not be expanded into the new world. Regional stock remains separate, the old transfer bridge remains in code but is not exposed as a gameplay key, and a continuous world-space model, canonical resources, travel-time shipments, population continuity and one complete world save are still required.
 
 ## Implementation priority
 
-1. Extract central job assignment and resource reservations without changing verified gameplay behavior.
-2. Expand raw-material extraction coverage and make production throughput depend on workstation and energy capacity.
-3. Extend research-backed unlocks from recipes to advanced buildings and units, with deployable systems and production effects.
-4. Connect strategic regions to real local settlement state and resource/person flows.
+1. Migrate the new GridManager/CitizenAgent/JobBroker core into the active colony scheduler through an adapter, preserving verified gather/carry/build behavior and save compatibility.
+2. Generalize production definitions, workplace queues, stockpile capacity and delivery rules.
+3. Add research projects that unlock actual buildings and recipes.
+4. Replace the legacy nine-region linked-hex campaign with continuous world-space entities and spatial queries; unify settlement/population state, resources, movement and shipments.
 5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
 
 
-## Integrated alpha controls
+## Live colony ecosystem integration (migration slice)
 
-- **T** — advance one strategic campaign turn. Regional production, army orders, upkeep, research effects, and Blight spread are resolved by the campaign model.
-- **I** — import up to 20 strategic Supplies as local Food and up to 10 strategic Alloy, limited by available local storage. Only accepted deliveries are charged to the campaign.
-- **E** — export up to 20 local Food as strategic Supplies and up to 10 local Alloy. Only resources actually present in local inventory are transferred.
-- **F5 / F9** — save/load one session containing both colony and campaign state at `~/.local/share/kor-eternal-frontier/session.json` (or under `$XDG_DATA_HOME`). Legacy colony-only and campaign-only saves are not overwritten by these controls.
+`Simulation/ColonyEcosystem.cs` is now stepped by the active `ColonySimulation`. Every visible colonist has a corresponding citizen agent; citizen hunger is synchronized with the existing save-compatible worker model, food is consumed from bounded grid storage, and citizen mood/state are shown in the HUD. Completed Garden objects register capacity-limited food-production jobs with the live job broker. Garden output reserves grid storage before work begins and is reconciled with the colony's existing pooled inventory capacity.
 
-The deterministic self-test checks import/export conservation, full-storage rejection, and unified disk save/load in addition to the existing colony and campaign checks.
+This is an incremental migration, not a wholesale replacement of the established construction/gathering scheduler: non-food materials and construction/recipe jobs still use the legacy inventory and task pipeline. The food grid maps the starter stockpile and completed storage-rack footprints to bounded storage slots while respecting the existing pooled inventory cap; all-resource grid ownership remains follow-up work. Existing save schemas are unchanged; the runtime ecosystem is rebuilt from restored worker and inventory state. See `docs/colony-systems.md` for core contracts and migration boundaries.
 
+## Mouse-first controls
 
-## Strategic world map and diplomacy (new vertical slice)
+- **Pause / Resume** — pause or resume the shared simulation clock.
+- **Speed − / Speed +** — change the world speed between 0.25x and 4x.
+- **Save / Load** — persist or restore the current session.
+- **Zoom − / Zoom +** — change camera zoom.
+- **Wall / Floor / Path / Door / Conduit** — select a tile architecture mode.
+- **Bench / Pod / Rack / Gen / Garden** — select a placeable object.
+- **Cancel** — exit the active placement mode.
+- **Left click** — select colonists or place blueprints; **right click** issues a colonist command; **middle-mouse drag** pans the camera.
 
-Press **M** to move between the colony and a separate continental strategy view. The world layer contains 468 persistent territories with faction ownership, settlements/capitals, local development and supplies, explored state, and Blight pressure. Six active powers plus unclaimed frontier land are generated from a fixed seed: the Kor, Ashen Compact, Free Marches, Helion League, Verdant Covenant, and the Blight. The empire has its own Supplies/Alloy treasury; Kor-controlled territories generate strategic income each world turn. Territory ownership is visualized directly on the map; the side panel provides selected-territory intelligence and a faction legend.
+The old keyboard-only import/export shortcuts are no longer part of the player-facing interface. The transfer bridge remains legacy implementation and must be replaced with real world shipments before the redesign is complete.
 
-- Click a territory to inspect it; **Left/Right Arrow** cycles territory selection.
-- **C** claims an adjacent unclaimed territory as a Kor outpost for 40 Supplies and 25 Alloy; Kor territories generate treasury income on world turns.
-- **R** sends a diplomatic mission to improve Kor relations.
-- **Y** proposes a non-aggression pact when relations are sufficient.
-- **G** proposes a trade pact after relations improve enough.
-- **T** advances the strategic campaign turn and, while the world map is open, advances the world layer too.
-- World state is saved to `~/.local/share/kor-eternal-frontier/world-map.json` (or under `$XDG_DATA_HOME`) after diplomacy and world-turn actions.
-
-The Blight spreads across eligible neighboring territories on world turns, gradually raising pressure before consuming a territory. The current implementation is a foundation slice: territory-level diplomacy, local development and faction AI are deliberately simpler than the intended final simulation. Full treaties between every faction, wars/alliances, trade-route logistics, regional armies, settlement-to-colony transitions, and synchronized world-map saves inside the unified F5/F9 session remain follow-up work.
-
-
-## Mouse-first menus and submenus
-
-The command UI now provides mouse-accessible menus and nested submenus; keyboard shortcuts remain optional conveniences rather than requirements for the core command set.
-
-- **Colony**: switch between colony and strategic world map, pause/resume, and open camera controls.
-- **Colony → Camera controls**: pan the view and zoom in/out using clickable menu items.
-- **Build → Architecture**: choose Wall, Floor, Path, Door, or Conduit, then left-click a tile to place the construction order.
-- **Build → Buildings & objects**: choose Workbench, Sleeping Pod, Storage Rack, Generator, or Garden, then left-click a tile to place the blueprint.
-- **Empire**: advance the strategic turn, open logistics, or claim a selected frontier territory while on the world map.
-- **Empire → Logistics**: import strategic supplies or export colony resources.
-- **Diplomacy**: improve relations, offer a non-aggression pact, or propose trade while on the strategic world map.
-- **Orders**: select a colonist, open Orders → Move / gather order mode, then left-click the destination, a legacy resource deposit, or a marked stable-ID raw-material site. Workers collect up to five units per trip and deliver them to shared stockpiles. Right-click remains an optional shortcut.
-- **Game**: save or load the combined colony/campaign session.
-- **Mouse interaction**: left-click to select a colonist, inspect a territory, or place a selected construction/blueprint; right-click a colony tile to issue a movement/gather order to the selected colonist.
-
-All core management actions have visible menu paths. Context-specific actions that require the world map explain when they are unavailable from the colony view. Closing the game remains available through the operating system's window controls.
-
-
-## Industrial progression catalogue (foundation slice)
-
-The mouse-first **Industry & Tech** page introduces a data-first content catalogue intended to grow into the main long-term gameplay loop. The catalogue currently validates **1,104 definitions**: 200 resource/material types, 480 research nodes, 128 building variants, 128 unit variants, and 168 production recipes. Research spans eight eras and twelve disciplines: logistics, materials science, energy, food systems, industry, computing, medicine, defence, exploration, ecology, colony systems, and Blight studies.
-
-Production content is organised as twenty-one multi-stage industries, including timber, stoneworks, metallurgy, chemistry, electronics, power equipment, food processing, pharmaceuticals, construction components, vehicles, defence manufacturing, research instruments, water treatment, technical textiles, glassworks, optics, aerospace, biochemistry, waste recovery, robotics, and Blight containment. Each stage has its own stable material ID, so intermediate goods form real catalog-level chains instead of repeatedly producing the same generic output. Resource definitions carry groups, baseline values, and renewability; recipes define inputs, outputs, work requirements and an unlock; buildings define footprint, construction work, material requirements and upkeep; units define recruitment costs and recurring upkeep. Research prerequisites form cross-linked era ladders so higher tiers become progressively more expensive and require both discipline progress and logistics infrastructure.
-
-**Implementation boundary:** the stable-ID material ledger, shared storage accounting, live catalogue recipe queue, worker-driven production, finite raw-material extraction, and schema-v3 save/load persistence are now connected to the colony. Older save schemas remain supported. However, this is still an incremental runtime slice: not every catalogue resource has a local extraction source, research prerequisites do not yet gate recipes, and the catalogue's hundreds of buildings and units are not yet deployable systems. Each of those still needs simulation rules, action controls, persistence and scenario tests.
-
-### Intended pressure loop
-
-1. Survey and extract finite local deposits; expansion opens access to new resource families.
-2. Convert raw resources through multi-step industrial chains, each consuming labour, machine capacity, energy and intermediate stock.
-3. Research higher eras to unlock more efficient tools and advanced buildings, while research itself consumes increasingly scarce Knowledge and Energy.
-4. Maintain housing, farms, power, storage, logistics, medical and defence infrastructure; every additional system adds upkeep and competes for workers and materials.
-5. Recover waste and recycle intermediate products, negotiate or trade for shortages, and decide which production chains deserve limited space and power.
-6. As The Blight pressures territory and supply routes, choose between immediate survival, expansion, research and long-term industrial resilience.
-
-The intended challenge is not merely accumulating a larger stockpile. It is keeping an increasingly interconnected economy balanced while every new capability creates both power and a new obligation.
-
-## Mouse-first colony management dashboard
-
-The **Manage** command-bar entry opens a nine-section dashboard over the playfield. Its left navigation keeps management categories consistently accessible while the main area displays current simulation data.
-
-- **Overview** — local population, pending work, construction completion, storage, campaign stockpiles, controlled regions and recent simulation events.
-- **Population** — colonist roster, hunger, current task, carried cargo and selection state.
-- **Resources** — every legacy resource, produced stable-ID materials, remaining deposits, shared storage capacity, plus import/export actions.
-- **Construction** — live architecture/object counts and status, recent tile orders, and direct mouse buttons for wall, floor, path, door, conduit, workbench, sleeping pod, storage rack, generator and garden placement.
-- **Production** — workstation status, the legacy component batch, catalogue recipe selection, input/output details, shortage feedback and completed/pending recipe orders.
-- **Research** — strategic Ward Protocol status, costs, prerequisites and a clickable research action.
-- **Statistics** — settlement activity, needs currently simulated, inventory/deposit totals, strategic holdings, army readiness and Blight metrics.
-- **Diplomacy** — faction relationship overview and clickable relation, non-aggression and trade actions.
-- **Territories** — selected world territory intelligence, Blight pressure, settlement/development, treasury and claim/turn actions.
-
-The dashboard is a first management surface built around live simulation state, not a claim that every desired system already exists. Local colony production now supports catalogue recipes with stable-ID intermediates, but the strategic Ward Protocol remains the only implemented research action; research-linked local unlocks are not yet active. Colonists have basic hunger/task/cargo state rather than full skills, health, mood, schedules or needs, and the world and regional campaign remain separate layers. Future work should expand the simulation and preserve mouse-first controls.
-
+The deterministic self-test continues to check resource conservation and session persistence in addition to colony and regional migration checks.

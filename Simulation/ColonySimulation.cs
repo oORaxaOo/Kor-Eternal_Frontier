@@ -1,8 +1,9 @@
-using KorTheBlight.Campaign;
+using KorTheBlight.WorldModel;
 
 namespace KorTheBlight.Simulation;
 
 internal enum TerrainKind { Ground, Rock, Water }
+internal enum FluidKind { Water, Magma }
 internal enum ArchitectureKind { None, Floor, Wall, Door, Path, Conduit }
 internal enum PlaceableKind { Habitat, Stockpile, Workbench, SleepingPod, StorageRack, Generator, Garden }
 internal enum ResourceKind { Wood, Stone, Food, Alloy, Components }
@@ -10,12 +11,16 @@ internal enum ConstructionStatus { Planned, WaitingForMaterials, UnderConstructi
 internal enum ColonyTaskKind { Move, Gather, Deliver, BuildTile, BuildObject, Produce }
 
 internal readonly record struct CellPosition(int X, int Y);
+internal readonly record struct PathCacheKey(CellPosition Start, CellPosition Target);
 
 internal sealed class TileCell
 {
     public TerrainKind Terrain { get; internal set; } = TerrainKind.Ground;
     public ArchitectureKind Architecture { get; internal set; }
     public int? ConstructionOrderId { get; internal set; }
+    public int WaterLevel { get; internal set; }
+    public int MagmaLevel { get; internal set; }
+    public float TemperatureCelsius { get; internal set; } = 20f;
 }
 
 internal sealed class TileConstructionOrder(int id, CellPosition cell, ArchitectureKind target, int workRequired)
@@ -68,6 +73,8 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float X { get; internal set; } = x;
     public float Y { get; internal set; } = y;
     public float Hunger { get; internal set; } = hunger;
+    public float ThermalExposure { get; internal set; }
+    public float Stress { get; internal set; }
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public string? CarriedMaterialId { get; internal set; }
@@ -110,6 +117,12 @@ internal sealed class ColonySimulation
     public const int BaseStockpileCapacity = 120;
     public const int StorageRackCapacity = 80;
     private const int CarryCapacity = 5;
+    private const int MaxCachedPaths = 8_192;
+    private readonly Dictionary<PathCacheKey, List<CellPosition>> _pathCache = [];
+    private readonly Queue<PathCacheKey> _pathCacheOrder = new();
+    internal int PathfindingSearches { get; private set; }
+    internal int PathCacheHits { get; private set; }
+    internal int CachedPathCount => _pathCache.Count;
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
     private readonly List<PlaceableObjectState> _objects = [];
@@ -118,16 +131,28 @@ internal sealed class ColonySimulation
     private readonly List<ColonyWorker> _workers = [];
     private readonly List<ProductionOrder> _productionOrders = [];
     private readonly Dictionary<ResourceKind, int> _inventory = Enum.GetValues<ResourceKind>().ToDictionary(k => k, _ => 0);
-    // Industry materials use catalogue-stable IDs; legacy five-resource APIs remain compatible.
-    private readonly Dictionary<string, int> _industryInventory = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _researchedProjects = new(StringComparer.Ordinal);
+    private ContinuousWorldState? _sharedInventoryWorld;
+    private long? _sharedInventoryOwnerId;
+    private ColonyEcosystem _ecosystem = null!;
+    private readonly Dictionary<int, CitizenAgent> _citizensByWorker = [];
+    private readonly Dictionary<int, int> _gardenJobsByObject = [];
+    private SocialRelationshipNetwork _socialRelationships = new();
+    private IncidentManager _incidentManager = new();
+    private long _socialTick;
+    private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
+    private int _nextWorkerId = 4;
+    private int _nextSpawnCellIndex = 12 * Width + 14;
     private int _nextObjectId = 1;
     private int _nextDepositId = 1;
     private int _nextMaterialDepositId = 1;
     private int _nextProductionId = 1;
+    private float _environmentAccumulatorSeconds;
+    private readonly float[,] _temperatureBuffer = new float[Width, Height];
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
+    public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
+    public IncidentManager Incidents => _incidentManager;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
     public IReadOnlyList<ResourceDeposit> Deposits => _deposits;
@@ -143,7 +168,9 @@ internal sealed class ColonySimulation
     public int PendingJobs => _tileOrders.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _objects.Count(x => x.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials or ConstructionStatus.UnderConstruction)
         + _productionOrders.Count(x => !x.Complete);
-    public int InventoryUsed => _inventory.Values.Sum() + _industryInventory.Values.Sum();
+    public int InventoryUsed => _sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue
+        ? _inventory.Values.Sum()
+        : (int)Math.Ceiling(_sharedInventoryWorld.InventoryTotalAt(_sharedInventoryOwnerId.Value));
     public int InventoryCapacity =>
         _objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.IsBuilt).Sum(_ => BaseStockpileCapacity) +
         _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).Sum(_ => StorageRackCapacity);
@@ -181,13 +208,7 @@ internal sealed class ColonySimulation
         AddDeposit(new CellPosition(27, 12), ResourceKind.Stone, 90);
         AddDeposit(new CellPosition(14, 21), ResourceKind.Food, 100);
         AddDeposit(new CellPosition(34, 20), ResourceKind.Alloy, 45);
-        AddMaterialDeposit(new CellPosition(25, 9), "ore", 100);
-        AddMaterialDeposit(new CellPosition(32, 14), "rare_earth", 45);
-        AddMaterialDeposit(new CellPosition(26, 8), "crystal", 35);
-        AddMaterialDeposit(new CellPosition(30, 17), "reagents", 70);
-        AddMaterialDeposit(new CellPosition(12, 20), "water", 100);
-        AddMaterialDeposit(new CellPosition(11, 16), "biomass", 80);
-        AddMaterialDeposit(new CellPosition(20, 18), "recycled_feedstock", 60);
+        InitializeEcosystem();
     }
 
     internal ColonySnapshot CaptureSnapshot()
@@ -195,8 +216,11 @@ internal sealed class ColonySimulation
         var snapshot = new ColonySnapshot
         {
             SchemaVersion = 4,
-            ResearchedProjects = _researchedProjects.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+            SocialTick = _socialTick,
+            SocialNetwork = _socialRelationships.CaptureSnapshot(),
+            IncidentManager = _incidentManager.CaptureSnapshot(),
             ElapsedSeconds = ElapsedSeconds,
+            EnvironmentAccumulatorSeconds = _environmentAccumulatorSeconds,
             Message = Message,
             SelectedWorkerId = SelectedWorkerId,
             NextOrderId = _nextOrderId,
@@ -222,7 +246,9 @@ internal sealed class ColonySimulation
             snapshot.Tiles.Add(new TileSnapshot
             {
                 X = x, Y = y, Terrain = tile.Terrain, Architecture = tile.Architecture,
-                ConstructionOrderId = tile.ConstructionOrderId
+                ConstructionOrderId = tile.ConstructionOrderId,
+                WaterLevel = tile.WaterLevel, MagmaLevel = tile.MagmaLevel,
+                TemperatureCelsius = tile.TemperatureCelsius
             });
         }
 
@@ -250,8 +276,10 @@ internal sealed class ColonySimulation
         snapshot.Workers.AddRange(_workers.Select(worker => new ColonyWorkerSnapshot
         {
             Id = worker.Id, Name = worker.Name, X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
-            CarriedResource = worker.CarriedResource, CarriedMaterialId = worker.CarriedMaterialId,
-            CarriedAmount = worker.CarriedAmount,
+            ThermalExposure = worker.ThermalExposure,
+            Stress = worker.Stress,
+            CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
+            CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
                 Kind = worker.Task.Kind, TargetX = worker.Task.Target.X, TargetY = worker.Task.Target.Y,
@@ -261,14 +289,13 @@ internal sealed class ColonySimulation
                 MaterialDepositId = worker.Task.MaterialDepositId
             }
         }));
-        snapshot.Inventory.AddRange(_inventory.Select(item => new ResourceStackSnapshot
-        {
-            Resource = item.Key, Amount = item.Value
-        }));
-        snapshot.Materials.AddRange(_industryInventory.Select(item => new MaterialStackSnapshot
-        {
-            MaterialId = item.Key, Amount = item.Value
-        }));
+        if (_sharedInventoryWorld == null)
+            snapshot.Inventory.AddRange(_inventory.Select(item => new ResourceStackSnapshot
+            {
+                Resource = item.Key, Amount = item.Value
+            }));
+        else
+            snapshot.InventoryOwnedByWorld = true;
         snapshot.ProductionOrders.AddRange(_productionOrders.Select(order => new ProductionOrderSnapshot
         {
             Id = order.Id, WorkstationId = order.WorkstationId, RecipeId = order.RecipeId,
@@ -288,6 +315,9 @@ internal sealed class ColonySimulation
             tile.Terrain = tileState.Terrain;
             tile.Architecture = tileState.Architecture;
             tile.ConstructionOrderId = tileState.ConstructionOrderId;
+            tile.WaterLevel = tileState.WaterLevel;
+            tile.MagmaLevel = tileState.MagmaLevel;
+            tile.TemperatureCelsius = tileState.TemperatureCelsius;
         }
 
         simulation._tileOrders.Clear();
@@ -315,6 +345,8 @@ internal sealed class ColonySimulation
         {
             var restored = new ColonyWorker(worker.Id, worker.Name, worker.X, worker.Y, worker.Hunger)
             {
+                ThermalExposure = worker.ThermalExposure,
+                Stress = worker.Stress,
                 CarriedResource = worker.CarriedResource,
                 CarriedMaterialId = worker.CarriedMaterialId,
                 CarriedAmount = worker.CarriedAmount,
@@ -331,13 +363,13 @@ internal sealed class ColonySimulation
             };
             return restored;
         }));
+        simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
 
-        simulation._inventory.Clear();
-        foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
-        simulation._industryInventory.Clear();
-        foreach (var item in snapshot.Materials) simulation._industryInventory.Add(item.MaterialId, item.Amount);
-        simulation._researchedProjects.Clear();
-        foreach (var projectId in snapshot.ResearchedProjects) simulation._researchedProjects.Add(projectId);
+        if (!snapshot.InventoryOwnedByWorld)
+        {
+            simulation._inventory.Clear();
+            foreach (var item in snapshot.Inventory) simulation._inventory.Add(item.Resource, item.Amount);
+        }
         simulation._productionOrders.Clear();
         simulation._productionOrders.AddRange(snapshot.ProductionOrders.Select(order => new ProductionOrder(
             order.Id, order.WorkstationId, order.WorkRequired, order.RecipeId)
@@ -351,167 +383,420 @@ internal sealed class ColonySimulation
         simulation._nextMaterialDepositId = snapshot.NextMaterialDepositId;
         simulation._nextProductionId = snapshot.NextProductionId;
         simulation.ElapsedSeconds = snapshot.ElapsedSeconds;
+        simulation._environmentAccumulatorSeconds = snapshot.EnvironmentAccumulatorSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
+        simulation.InitializeEcosystem();
+        foreach (var workerState in snapshot.Workers)
+        {
+            var citizen = simulation.CitizenForWorker(workerState.Id);
+            if (citizen != null) citizen.Fatigue = workerState.CitizenFatigue;
+        }
+        simulation._socialTick = snapshot.SocialTick;
+        var residentIds = simulation._workers.Select(worker => worker.Id).ToHashSet();
+        if (snapshot.SocialNetwork != null)
+            simulation._socialRelationships = SocialRelationshipNetwork.Restore(snapshot.SocialNetwork, residentIds);
+        if (snapshot.IncidentManager != null)
+            simulation._incidentManager = IncidentManager.Restore(snapshot.IncidentManager, residentIds);
         return simulation;
     }
 
-    public int ResourceCount(ResourceKind resource) => _inventory.TryGetValue(resource, out int amount) ? amount : 0;
-
-    public int MaterialCount(string materialId)
+    public int ResourceCount(ResourceKind resource)
     {
-        if (TryMapLegacyMaterial(materialId, out var legacy)) return ResourceCount(legacy);
-        return _industryInventory.TryGetValue(materialId, out int amount) ? amount : 0;
+        double amount = InventoryAmount(resource);
+        return (int)Math.Floor(amount + 1e-9);
     }
 
-    public bool IsResearchComplete(string researchId) => _researchedProjects.Contains(researchId);
-
-    public bool CanResearchProject(string researchId, CampaignSimulation campaign, out string reason)
+    /// <summary>
+    /// Makes the settlement ledger the sole authority for colony resources. Standalone colony
+    /// simulations retain an in-memory inventory for isolated tests and tooling.
+    /// </summary>
+    public void BindWorldInventory(ContinuousWorldState world, long settlementId)
     {
-        var project = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == researchId);
-        if (project == null)
-        {
-            reason = "Unknown research project.";
-            return false;
-        }
-        if (_researchedProjects.Contains(project.Id))
-        {
-            reason = "Research already completed.";
-            return false;
-        }
-        var missing = project.Prerequisites.Where(id => !_researchedProjects.Contains(id)).ToArray();
-        if (missing.Length > 0)
-        {
-            var names = missing.Select(id => ProgressionCatalog.Research.FirstOrDefault(item => item.Id == id)?.Name ?? id);
-            reason = "Requires: " + string.Join(", ", names) + ".";
-            return false;
-        }
-        if (campaign.State.Knowledge < project.CostKnowledge || campaign.State.Energy < project.CostEnergy)
-        {
-            reason = $"Needs {project.CostKnowledge} Knowledge and {project.CostEnergy} Energy.";
-            return false;
-        }
-        reason = "Ready to research.";
-        return true;
+        ArgumentNullException.ThrowIfNull(world);
+        if (!world.Entities.Any(entity => entity.Id == settlementId &&
+                                          entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("The shared inventory owner must be a settlement in this world.", nameof(settlementId));
+
+        _sharedInventoryWorld = world;
+        _sharedInventoryOwnerId = settlementId;
+        _inventory.Clear(); // No second resource balance remains once the canonical ledger is attached.
+        world.SetInventoryCapacity(settlementId, InventoryCapacity);
+
+        // The ecosystem grid is an operational buffer for citizen needs and garden jobs, not a
+        // second authority. Reconcile it from the canonical settlement ledger at bind time.
+        int ledgerFood = ResourceCount(ResourceKind.Food);
+        int gridFood = _ecosystem.Grid.ResourceCount(ResourceKind.Food);
+        if (ledgerFood > gridFood && !_ecosystem.Grid.TryAdd(ResourceKind.Food, ledgerFood - gridFood))
+            throw new InvalidOperationException("The ecosystem food buffer cannot mirror the settlement ledger.");
+        if (gridFood > ledgerFood) _ecosystem.Grid.TryTake(ResourceKind.Food, gridFood - ledgerFood);
     }
 
-    public bool ResearchProject(string researchId, CampaignSimulation campaign)
+    private double InventoryAmount(ResourceKind resource)
     {
-        if (!CanResearchProject(researchId, campaign, out string reason))
-        {
-            Message = reason;
-            return false;
-        }
-        var project = ProgressionCatalog.Research.First(item => item.Id == researchId);
-        campaign.State.Knowledge -= project.CostKnowledge;
-        campaign.State.Energy -= project.CostEnergy;
-        _researchedProjects.Add(project.Id);
-        Message = $"Research completed: {project.Name}. Unlocks now apply to colony production.";
-        campaign.State.LastEvent = Message;
-        return true;
+        if (_sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue)
+            return _inventory.GetValueOrDefault(resource);
+        var worldResource = Enum.Parse<WorldResourceKind>(resource.ToString(), ignoreCase: false);
+        return _sharedInventoryWorld.InventoryAt(_sharedInventoryOwnerId.Value, worldResource);
     }
 
-    internal IReadOnlyList<ProgressionCatalog.ResearchDef> ManagementResearch => ProgressionCatalog.Research
-        .Where(project => !_researchedProjects.Contains(project.Id))
-        // Keep the live production unlock path visible without forcing players through every
-        // unrelated era-zero catalogue entry first.
-        .OrderBy(project => project.Id.StartsWith("research.industry.machine_tools.era", StringComparison.Ordinal)
-            ? project.Era * 2
-            : project.Id.StartsWith("research.logistics.field_operations.era", StringComparison.Ordinal)
-                ? project.Era * 2 + 1
-                : 1000 + project.Era)
-        .ThenBy(project => project.Id, StringComparer.Ordinal)
-        .Take(8)
-        .ToArray();
-
-    public bool CanQueueRecipe(string recipeId, out string reason)
+    private void AdjustResource(ResourceKind resource, int delta)
     {
-        var recipe = ProgressionCatalog.Recipes.FirstOrDefault(item => item.Id == recipeId);
-        if (recipe == null)
+        if (_sharedInventoryWorld == null || !_sharedInventoryOwnerId.HasValue)
         {
-            reason = "Unknown production recipe.";
-            return false;
-        }
-        if (!_researchedProjects.Contains(recipe.UnlockResearchId))
-        {
-            string projectName = ProgressionCatalog.Research.FirstOrDefault(item => item.Id == recipe.UnlockResearchId)?.Name ?? recipe.UnlockResearchId;
-            reason = $"Locked by research: {projectName}.";
-            return false;
+            _inventory[resource] = checked(ResourceCount(resource) + delta);
+            return;
         }
 
-        foreach (var input in recipe.Inputs)
+        var worldResource = Enum.Parse<WorldResourceKind>(resource.ToString(), ignoreCase: false);
+        bool changed = delta > 0
+            ? _sharedInventoryWorld.TryAddInventory(_sharedInventoryOwnerId.Value, worldResource, delta)
+            : _sharedInventoryWorld.TryTakeInventory(_sharedInventoryOwnerId.Value, worldResource, -delta);
+        if (!changed)
+            throw new InvalidOperationException("The canonical resource ledger rejected an invalid or over-capacity adjustment.");
+    }
+
+    public int AddFluid(int x, int y, FluidKind kind, int amount)
+    {
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x), "Fluid coordinates must be inside the colony grid.");
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), "Fluid amount must be positive.");
+
+        var tile = _tiles[x, y];
+        if (tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall)
+            return 0;
+        if (kind == FluidKind.Water)
         {
-            if (input.Value <= 0)
+            if (tile.MagmaLevel > 0) return 0;
+            int accepted = Math.Min(amount, 7 - tile.WaterLevel);
+            tile.WaterLevel += accepted;
+            return accepted;
+        }
+
+        if (tile.WaterLevel > 0) return 0;
+        int acceptedMagma = Math.Min(amount, 7 - tile.MagmaLevel);
+        tile.MagmaLevel += acceptedMagma;
+        return acceptedMagma;
+    }
+
+    public int FluidLevelAt(int x, int y, FluidKind kind)
+    {
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        return kind == FluidKind.Water ? _tiles[x, y].WaterLevel : _tiles[x, y].MagmaLevel;
+    }
+
+    public float TemperatureAt(int x, int y)
+    {
+        if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
+        return _tiles[x, y].TemperatureCelsius;
+    }
+
+    public int TotalFluid(FluidKind kind)
+    {
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        int total = 0;
+        foreach (var tile in _tiles)
+            total += kind == FluidKind.Water ? tile.WaterLevel : tile.MagmaLevel;
+        return total;
+    }
+
+    private void StepEnvironment(float deltaSeconds)
+    {
+        // Cap the backlog and the work performed by a single frame. Large elapsed times are
+        // processed over subsequent steps rather than triggering an unbounded catch-up loop.
+        _environmentAccumulatorSeconds = Math.Min(_environmentAccumulatorSeconds + deltaSeconds, 1_000_000f);
+        int steps = 0;
+        while (_environmentAccumulatorSeconds >= 1f && steps < 8)
+        {
+            StepFluidLevels(FluidKind.Water);
+            StepFluidLevels(FluidKind.Magma);
+            StepTemperature();
+            _environmentAccumulatorSeconds -= 1f;
+            steps++;
+        }
+    }
+
+    private void StepFluidLevels(FluidKind kind)
+    {
+        int count = Width * Height;
+        var current = new int[count];
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            current[y * Width + x] = kind == FluidKind.Water ? _tiles[x, y].WaterLevel : _tiles[x, y].MagmaLevel;
+        var next = (int[])current.Clone();
+
+        for (int index = 0; index < count; index++)
+        {
+            int sourceLevel = current[index];
+            if (sourceLevel <= 0) continue;
+            int x = index % Width, y = index / Width;
+            int bestLevel = sourceLevel - 1;
+            int bestTarget = -1;
+            ConsiderFluidNeighbour(x, y - 1, current, next, kind, ref bestLevel, ref bestTarget);
+            ConsiderFluidNeighbour(x - 1, y, current, next, kind, ref bestLevel, ref bestTarget);
+            ConsiderFluidNeighbour(x + 1, y, current, next, kind, ref bestLevel, ref bestTarget);
+            ConsiderFluidNeighbour(x, y + 1, current, next, kind, ref bestLevel, ref bestTarget);
+            if (bestTarget < 0 || next[bestTarget] >= 7) continue;
+            next[index]--;
+            next[bestTarget]++;
+        }
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            int level = next[y * Width + x];
+            if (kind == FluidKind.Water) _tiles[x, y].WaterLevel = level;
+            else _tiles[x, y].MagmaLevel = level;
+        }
+    }
+
+    private void ConsiderFluidNeighbour(int x, int y, int[] current, int[] next, FluidKind kind,
+        ref int bestLevel, ref int bestTarget)
+    {
+        if (x < 0 || x >= Width || y < 0 || y >= Height) return;
+        var tile = _tiles[x, y];
+        if (tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall) return;
+        if (kind == FluidKind.Water ? tile.MagmaLevel > 0 : tile.WaterLevel > 0) return;
+        int index = y * Width + x;
+        int level = current[index];
+        if (level >= bestLevel || next[index] >= 7) return;
+        bestLevel = level;
+        bestTarget = index;
+    }
+
+    private void StepTemperature()
+    {
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            var tile = _tiles[x, y];
+            float current = tile.TemperatureCelsius;
+            float weightedDelta = 0;
+            int neighbours = 0;
+            AccumulateTemperatureExchange(x, y, x, y - 1, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x - 1, y, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x + 1, y, current, ref weightedDelta, ref neighbours);
+            AccumulateTemperatureExchange(x, y, x, y + 1, current, ref weightedDelta, ref neighbours);
+
+            float materialConductivity = tile.Architecture switch
             {
-                reason = "Recipe has an invalid input quantity.";
-                return false;
-            }
-            int available = MaterialCount(input.Key);
-            if (available < input.Value)
+                ArchitectureKind.Wall => 0.025f,
+                ArchitectureKind.Door => 0.07f,
+                _ when tile.Terrain == TerrainKind.Rock => 0.045f,
+                _ => 0.10f
+            };
+            // Edge conductance weights each neighbour's temperature delta. Dividing by neighbour
+            // count keeps the update bounded and lets walls insulate without perfect heat isolation.
+            float exchange = neighbours == 0 ? 0 : weightedDelta / neighbours;
+            float next = current + exchange * materialConductivity;
+
+            if (tile.MagmaLevel > 0)
             {
-                string name = ProgressionCatalog.Resources.FirstOrDefault(r => r.Id == input.Key)?.Name ?? input.Key;
-                reason = $"Needs {input.Value} {name}; stock has {available}.";
-                return false;
+                float magmaTemperature = Math.Min(2_000f, 600f + tile.MagmaLevel * 100f);
+                next += (magmaTemperature - next) * 0.25f;
             }
+            else if (tile.WaterLevel > 0)
+            {
+                next += (20f - next) * 0.10f;
+            }
+            _temperatureBuffer[x, y] = Math.Clamp(next, -273.15f, 5_000f);
         }
 
-        int inputTotal = recipe.Inputs.Values.Sum();
-        int outputTotal = recipe.Outputs.Values.Sum();
-        int pendingReserved = PendingProductionOutputCapacity;
-        if (InventoryFreeCapacity + inputTotal - pendingReserved < outputTotal)
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            _tiles[x, y].TemperatureCelsius = _temperatureBuffer[x, y];
+    }
+
+    private void AccumulateTemperatureExchange(int sourceX, int sourceY, int neighbourX, int neighbourY,
+        float sourceTemperature, ref float weightedDelta, ref int neighbours)
+    {
+        if (neighbourX < 0 || neighbourX >= Width || neighbourY < 0 || neighbourY >= Height) return;
+        var source = _tiles[sourceX, sourceY];
+        var neighbour = _tiles[neighbourX, neighbourY];
+        float edgeConductance = source.Architecture switch
         {
-            reason = "Insufficient free storage for this recipe output.";
-            return false;
-        }
-
-        reason = "Ready to queue.";
-        return true;
-    }
-
-    internal IReadOnlyList<ProgressionCatalog.RecipeDef> ManagementRecipes
-    {
-        get
+            ArchitectureKind.Wall => 0.08f,
+            ArchitectureKind.Door => 0.45f,
+            _ => 1f
+        };
+        edgeConductance = Math.Min(edgeConductance, neighbour.Architecture switch
         {
-            var recipes = ProgressionCatalog.Recipes;
-            var readyFollowUps = recipes
-                .Where(recipe => recipe.Stage > 0 && recipe.Inputs.All(input => MaterialCount(input.Key) >= input.Value))
-                .OrderBy(recipe => recipe.Stage)
-                .ThenBy(recipe => recipe.Industry, StringComparer.Ordinal)
-                .Take(4);
-            var readyStarters = recipes
-                .Where(recipe => recipe.Stage == 0 && recipe.Inputs.All(input => MaterialCount(input.Key) >= input.Value))
-                .Take(4);
-            var unavailableStarters = recipes
-                .Where(recipe => recipe.Stage == 0 && recipe.Inputs.Any(input => MaterialCount(input.Key) < input.Value))
-                .Take(2);
-            return readyFollowUps.Concat(readyStarters).Concat(unavailableStarters)
-                .DistinctBy(recipe => recipe.Id).Take(8).ToArray();
-        }
-    }
-
-    /// <summary>Accepts external deliveries without bypassing the colony's real storage limit.</summary>
-    public int AddExternalResource(ResourceKind resource, int requested)
-    {
-        if (requested <= 0 || !Enum.IsDefined(resource)) return 0;
-        int accepted = Math.Min(requested, UnreservedInventoryFreeCapacity);
-        if (accepted <= 0) return 0;
-        AddResource(resource, accepted);
-        Message = $"External logistics delivered {accepted} {resource}.";
-        return accepted;
-    }
-
-    /// <summary>Withdraws only resources actually present in colony inventory.</summary>
-    public int RemoveExternalResource(ResourceKind resource, int requested)
-    {
-        if (requested <= 0 || !Enum.IsDefined(resource)) return 0;
-        int removed = Math.Min(requested, ResourceCount(resource));
-        if (removed <= 0) return 0;
-        if (!TryTake(resource, removed)) return 0;
-        Message = $"External logistics collected {removed} {resource}.";
-        return removed;
+            ArchitectureKind.Wall => 0.08f,
+            ArchitectureKind.Door => 0.45f,
+            _ => 1f
+        });
+        weightedDelta += (neighbour.TemperatureCelsius - sourceTemperature) * edgeConductance;
+        neighbours++;
     }
 
     public TileCell? TileAt(int x, int y) => InBounds(x, y) ? _tiles[x, y] : null;
+
+    /// <summary>Live citizen/job state from the shared colony ecosystem.</summary>
+    public CitizenAgent? CitizenForWorker(int workerId) =>
+        _citizensByWorker.TryGetValue(workerId, out var citizen) ? citizen : null;
+
+    internal IReadOnlyList<SimulationEvent> DrainSimulationEvents(int maxCount = 4096) =>
+        _ecosystem.DrainEvents(maxCount);
+
+    /// <summary>
+    /// Recruits a batch of named, individually simulated residents. A batch is bounded to keep
+    /// accidental UI calls from freezing a frame; the settlement itself has no small population cap.
+    /// </summary>
+    public int RecruitColonists(int count)
+    {
+        if (count is < 1 or > 1_000)
+            throw new ArgumentOutOfRangeException(nameof(count), "Recruitment batches must contain between 1 and 1,000 colonists.");
+
+        int recruited = 0;
+        int mapArea = Width * Height;
+        for (int requested = 0; requested < count; requested++)
+        {
+            CellPosition? spawn = null;
+            // Rotate across the grid to spread new residents across available ground.
+            // Residents may share a tile; population is not artificially capped by map area.
+            for (int scanned = 0; scanned < mapArea; scanned++)
+            {
+                int index = _nextSpawnCellIndex;
+                _nextSpawnCellIndex = (_nextSpawnCellIndex + 1) % mapArea;
+                var candidate = new CellPosition(index % Width, index / Width);
+                if (!IsWalkable(candidate)) continue;
+                spawn = candidate;
+                break;
+            }
+            if (!spawn.HasValue) break;
+
+            int id = _nextWorkerId++;
+            var cell = spawn.Value;
+            var worker = new ColonyWorker(id, $"Kor-{id:0000}", cell.X + 0.5f, cell.Y + 0.5f, 0f);
+            _workers.Add(worker);
+            _citizensByWorker[id] = _ecosystem.AddCitizen(worker.Name, cell);
+            recruited++;
+        }
+
+        Message = recruited == 0
+            ? "Recruitment failed: no walkable ground is available."
+            : $"Recruited {recruited} colonist{(recruited == 1 ? "" : "s")}. Population: {_workers.Count}.";
+        return recruited;
+    }
+
+    private void InitializeEcosystem()
+    {
+        _ecosystem = new ColonyEcosystem(Width, Height);
+        _citizensByWorker.Clear();
+        _gardenJobsByObject.Clear();
+        _storageZonesByObject.Clear();
+
+        // The starter stockpile occupies six map tiles. The first runtime bridge maps its
+        // pooled capacity to the grid's bounded stacks while the legacy construction scheduler
+        // continues to own non-food materials during this migration slice.
+        _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food,
+        [
+            new CellPosition(18, 8), new CellPosition(19, 8), new CellPosition(20, 8),
+            new CellPosition(18, 9), new CellPosition(19, 9), new CellPosition(20, 9)
+        ]);
+        RegisterBuiltStorageRacks();
+        int initialFood = ResourceCount(ResourceKind.Food);
+        if (initialFood > 0 && !_ecosystem.Grid.TryAdd(ResourceKind.Food, initialFood))
+            throw new InvalidOperationException("Could not migrate starter food into grid storage.");
+
+        foreach (var worker in _workers)
+        {
+            var cell = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker.Name, cell);
+        }
+    }
+
+    private void RegisterBuiltStorageRacks()
+    {
+        foreach (var rack in _objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.IsBuilt).OrderBy(item => item.Id))
+        {
+            if (_storageZonesByObject.Contains(rack.Id)) continue;
+            int tileCount = checked(rack.Width * rack.Height);
+            if (tileCount <= 0 || StorageRackCapacity % tileCount != 0)
+                throw new InvalidOperationException("Storage rack capacity must divide evenly across its footprint.");
+            var cells = new List<CellPosition>(tileCount);
+            for (int y = rack.Origin.Y; y < rack.Origin.Y + rack.Height; y++)
+            for (int x = rack.Origin.X; x < rack.Origin.X + rack.Width; x++)
+                cells.Add(new CellPosition(x, y));
+            _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food, cells, StorageRackCapacity / tileCount);
+            _storageZonesByObject.Add(rack.Id);
+        }
+    }
+
+    private void StepEcosystem(float deltaSeconds)
+    {
+        RegisterBuiltStorageRacks();
+        var grid = _ecosystem.Grid;
+        int inventoryFood = ResourceCount(ResourceKind.Food);
+        int gridFood = grid.ResourceCount(ResourceKind.Food);
+        if (inventoryFood > gridFood)
+        {
+            if (!grid.TryAdd(ResourceKind.Food, inventoryFood - gridFood))
+                throw new InvalidOperationException("Grid food storage could not accept the current colony inventory.");
+        }
+        else if (gridFood > inventoryFood)
+        {
+            grid.TryTake(ResourceKind.Food, gridFood - inventoryFood);
+        }
+
+        foreach (var worker in _workers)
+        {
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            if (citizen.State == CitizenState.Idle || worker.Task != null)
+                citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            citizen.CanReceiveJob = worker.Task == null;
+            citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
+            citizen.Stress = worker.Stress;
+        }
+
+        // Completed gardens become real food-producing workplaces. Their output is reserved
+        // against the grid before work starts; pause/remove them when pooled legacy inventory
+        // has no free room so this bridge cannot silently overfill the colony.
+        foreach (var garden in _objects.Where(item => item.Kind == PlaceableKind.Garden && item.IsBuilt))
+        {
+            if (_gardenJobsByObject.ContainsKey(garden.Id)) continue;
+            if (InventoryFreeCapacity <= grid.ReservedCount(ResourceKind.Food)) continue;
+            int jobId = _ecosystem.JobBroker.RegisterWorkplace(
+                $"Garden #{garden.Id}", garden.Origin, workerCapacity: 1,
+                outputResource: ResourceKind.Food, outputAmount: 1, workSeconds: 8f);
+            _gardenJobsByObject.Add(garden.Id, jobId);
+        }
+        foreach (var pair in _gardenJobsByObject.ToArray())
+        {
+            if (InventoryFreeCapacity > 0 && InventoryFreeCapacity >= grid.ReservedCount(ResourceKind.Food)) continue;
+            _ecosystem.RemoveWorkplace(pair.Value);
+            _gardenJobsByObject.Remove(pair.Key);
+        }
+
+        int beforeFood = grid.ResourceCount(ResourceKind.Food);
+        _ecosystem.Step(deltaSeconds);
+        int afterFood = grid.ResourceCount(ResourceKind.Food);
+        if (afterFood < beforeFood)
+        {
+            int consumed = beforeFood - afterFood;
+            AdjustResource(ResourceKind.Food, -consumed);
+        }
+        else if (afterFood > beforeFood)
+        {
+            int produced = afterFood - beforeFood;
+            int accepted = Math.Min(produced, InventoryFreeCapacity);
+            if (accepted > 0) AdjustResource(ResourceKind.Food, accepted);
+            if (accepted < produced) grid.TryTake(ResourceKind.Food, produced - accepted);
+        }
+
+        foreach (var worker in _workers)
+        {
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
+            worker.Stress = citizen.Stress;
+            if (worker.Task == null)
+            {
+                worker.X = citizen.Position.X + 0.5f;
+                worker.Y = citizen.Position.Y + 0.5f;
+            }
+        }
+    }
 
     public ResourceDeposit? DepositAt(int x, int y) =>
         _deposits.FirstOrDefault(d => d.Cell.X == x && d.Cell.Y == y && d.Amount > 0);
@@ -591,6 +876,7 @@ internal sealed class ColonySimulation
 
         var item = new PlaceableObjectState(_nextObjectId++, kind, origin, width, height, work, ConstructionStatus.Planned);
         _objects.Add(item);
+        InvalidatePathCache();
         Message = $"{kind} blueprint placed at ({x}, {y}); materials and worker time are still required.";
         return item.Id;
     }
@@ -653,14 +939,23 @@ internal sealed class ColonySimulation
 
     public bool SelectWorkerAt(float worldX, float worldY)
     {
-        var worker = _workers.OrderBy(w => Distance(worldX, worldY, w.X, w.Y)).FirstOrDefault();
-        if (worker == null || Distance(worldX, worldY, worker.X, worker.Y) > 0.65f)
+        // A linear nearest-resident scan avoids sorting the entire population on every click.
+        ColonyWorker? nearest = null;
+        float nearestDistance = float.MaxValue;
+        foreach (var worker in _workers)
+        {
+            float distance = Distance(worldX, worldY, worker.X, worker.Y);
+            if (distance >= nearestDistance) continue;
+            nearest = worker;
+            nearestDistance = distance;
+        }
+        if (nearest == null || nearestDistance > 0.65f)
         {
             SelectedWorkerId = null;
             return false;
         }
-        SelectedWorkerId = worker.Id;
-        Message = $"{worker.Name} selected.";
+        SelectedWorkerId = nearest.Id;
+        Message = $"{nearest.Name} selected.";
         return true;
     }
 
@@ -690,11 +985,22 @@ internal sealed class ColonySimulation
             Message = $"{worker.Name} is committed to a construction or production task and cannot abandon its material/work reservation.";
             return;
         }
+        if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) &&
+            citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working)
+        {
+            Message = $"{worker.Name} is committed to a citizen need or workplace task and cannot take a conflicting order.";
+            return;
+        }
 
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
-            if (UnreservedInventoryFreeCapacity <= 0)
+            if (IsDepositReserved(deposit.Id, worker.Id))
+            {
+                Message = $"Another worker is already assigned to {deposit.Resource} at ({x}, {y}).";
+                return;
+            }
+            if (InventoryFreeCapacity <= 0)
             {
                 Message = "Colony storage is full or reserved for active production. Build storage or let production finish before gathering more resources.";
                 return;
@@ -743,13 +1049,104 @@ internal sealed class ColonySimulation
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
-        UpdateNeeds(deltaSeconds);
+        StepEnvironment(deltaSeconds);
+        StepEcosystem(deltaSeconds);
+        StepEnvironmentalExposure(deltaSeconds);
         AssignJobs();
 
         foreach (var worker in _workers)
         {
             if (worker.Task == null) continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
+                continue;
             AdvanceWorker(worker, deltaSeconds);
+        }
+        StepSocialRelationships(deltaSeconds);
+    }
+
+
+    private void StepSocialRelationships(float deltaSeconds)
+    {
+        _socialTick += Math.Max(1, (long)Math.Round(deltaSeconds * 10f, MidpointRounding.AwayFromZero));
+        // Bucket residents by occupied tile; only neighboring buckets are compared.
+        var buckets = new SortedDictionary<(int X, int Y), List<ColonyWorker>>();
+        foreach (var worker in _workers.OrderBy(w => w.Id))
+        {
+            var key = (Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
+            if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = [];
+            list.Add(worker);
+        }
+
+        var pairs = new SortedSet<(int A, int B)>();
+        foreach (var bucket in buckets)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int nx = bucket.Key.X + dx, ny = bucket.Key.Y + dy;
+                if (!buckets.TryGetValue((nx, ny), out var neighbors)) continue;
+                foreach (var a in bucket.Value)
+                foreach (var b in neighbors)
+                {
+                    if (a.Id >= b.Id) continue;
+                    float ddx = a.X - b.X, ddy = a.Y - b.Y;
+                    if (ddx * ddx + ddy * ddy > 2.25f) continue;
+                    pairs.Add((a.Id, b.Id));
+                }
+            }
+        }
+
+        var workersById = _workers.ToDictionary(w => w.Id);
+        foreach (var pair in pairs)
+        {
+            var a = workersById[pair.A];
+            var b = workersById[pair.B];
+            var existing = _socialRelationships.Get(a.Id, b.Id);
+            if (existing != null && _socialTick - existing.LastEncounterTick < 30) continue;
+            var citizenA = _citizensByWorker.GetValueOrDefault(a.Id);
+            var citizenB = _citizensByWorker.GetValueOrDefault(b.Id);
+            _socialRelationships.RecordEncounter(a.Id, b.Id, _socialTick,
+                a.Stress, a.Hunger, citizenA == null ? 100f : 100f - citizenA.Fatigue,
+                citizenA?.State == CitizenState.MentalBreak,
+                b.Stress, b.Hunger, citizenB == null ? 100f : 100f - citizenB.Fatigue,
+                citizenB?.State == CitizenState.MentalBreak);
+        }
+        _incidentManager.Consume(_socialRelationships.DrainEvents());
+    }
+
+    private void StepEnvironmentalExposure(float deltaSeconds)
+    {
+        foreach (var worker in _workers)
+        {
+            int x = Math.Clamp((int)worker.X, 0, Width - 1);
+            int y = Math.Clamp((int)worker.Y, 0, Height - 1);
+            float temperature = _tiles[x, y].TemperatureCelsius;
+            float exposureRate = temperature > 45f ? (temperature - 45f) / 25f
+                : temperature < 0f ? -temperature / 20f : 0f;
+            exposureRate = Math.Clamp(exposureRate, 0f, 4f);
+
+            float previous = worker.ThermalExposure;
+            worker.ThermalExposure = exposureRate > 0
+                ? Math.Min(100f, previous + exposureRate * deltaSeconds)
+                : Math.Max(0f, previous - deltaSeconds * 1.25f);
+
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            if (previous < 15f && worker.ThermalExposure >= 15f)
+            {
+                _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, worker.ThermalExposure);
+                Message = $"{worker.Name} is suffering dangerous thermal exposure.";
+            }
+            else if (previous >= 15f && worker.ThermalExposure < 15f)
+            {
+                _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, 0f);
+                Message = $"{worker.Name} has recovered from thermal exposure.";
+            }
+
+            // Thermal strain reduces rest satisfaction, which in turn makes the existing job
+            // broker release exhausted workers instead of treating heat/cold as a cosmetic effect.
+            if (worker.ThermalExposure > 15f)
+                citizen.Fatigue = Math.Max(0f, citizen.Fatigue -
+                    deltaSeconds * Math.Min(1.5f, (worker.ThermalExposure - 15f) * 0.025f));
         }
     }
 
@@ -771,6 +1168,13 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (worker.Task != null) continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
+            {
+                if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working or CitizenState.MentalBreak)
+                    continue;
+                if (citizen.Hunger < 30f || citizen.Fatigue < 60f)
+                    continue;
+            }
 
             if (worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId))
             {
@@ -872,13 +1276,20 @@ internal sealed class ColonySimulation
             foreach (var need in ObjectCost(item.Kind))
                 if (ResourceCount(need.Key) < need.Value) required.Add(need.Key);
 
-        var deposit = _deposits.Where(d => d.Amount > 0 && required.Contains(d.Resource))
+        var deposit = _deposits.Where(d => d.Amount > 0 && required.Contains(d.Resource) &&
+                                           !IsDepositReserved(d.Id, worker.Id))
             .OrderBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f)).FirstOrDefault();
         if (deposit == null) return;
         if (!TryFindPath(worker, deposit.Cell, out var route)) return;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
         Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} from the nearby deposit.";
     }
+
+    private bool IsDepositReserved(int depositId, int exceptWorkerId) =>
+        _workers.Any(candidate => candidate.Id != exceptWorkerId &&
+            candidate.Task != null &&
+            candidate.Task.Kind == ColonyTaskKind.Gather &&
+            candidate.Task.DepositId == depositId);
 
     private void AssignDelivery(ColonyWorker worker)
     {
@@ -1026,6 +1437,7 @@ internal sealed class ColonySimulation
         var tile = _tiles[order.Cell.X, order.Cell.Y];
         tile.Architecture = order.Target;
         tile.ConstructionOrderId = null;
+        InvalidatePathCache();
         order.Status = ConstructionStatus.Complete;
         worker.Task = null;
         Message = $"{order.Target} completed at ({order.Cell.X}, {order.Cell.Y}).";
@@ -1123,6 +1535,16 @@ internal sealed class ColonySimulation
     {
         path = [];
         if (!InBounds(start.X, start.Y) || !IsWalkable(target)) return false;
+
+        var key = new PathCacheKey(start, target);
+        if (_pathCache.TryGetValue(key, out var cachedPath))
+        {
+            PathCacheHits++;
+            path = [.. cachedPath];
+            return true;
+        }
+
+        PathfindingSearches++;
         var previous = new CellPosition?[Width, Height];
         var visited = new bool[Width, Height];
         var queue = new Queue<CellPosition>();
@@ -1153,7 +1575,33 @@ internal sealed class ColonySimulation
             cursor = prior.Value;
         }
         path.Reverse();
+        StoreCachedPath(key, path);
         return true;
+    }
+
+    /// <summary>Diagnostic route query used by deterministic scalability regression checks.</summary>
+    internal bool TryFindPathForDiagnostics(CellPosition start, CellPosition target, out List<CellPosition> path)
+        => TryFindPath(start, target, out path);
+
+    private void StoreCachedPath(PathCacheKey key, List<CellPosition> path)
+    {
+        if (_pathCache.Count >= MaxCachedPaths)
+        {
+            while (_pathCacheOrder.Count > 0)
+            {
+                var oldest = _pathCacheOrder.Dequeue();
+                if (_pathCache.Remove(oldest)) break;
+            }
+        }
+
+        _pathCache[key] = [.. path];
+        _pathCacheOrder.Enqueue(key);
+    }
+
+    private void InvalidatePathCache()
+    {
+        _pathCache.Clear();
+        _pathCacheOrder.Clear();
     }
 
     private bool IsWalkable(CellPosition cell)
@@ -1167,7 +1615,7 @@ internal sealed class ColonySimulation
     private bool TryConsume(Dictionary<ResourceKind, int> costs)
     {
         if (costs.Any(x => x.Value < 0 || ResourceCount(x.Key) < x.Value)) return false;
-        foreach (var (resource, amount) in costs) _inventory[resource] -= amount;
+        foreach (var (resource, amount) in costs) AdjustResource(resource, -amount);
         return true;
     }
 
@@ -1223,13 +1671,13 @@ internal sealed class ColonySimulation
     private bool TryTake(ResourceKind resource, int amount)
     {
         if (amount < 0 || ResourceCount(resource) < amount) return false;
-        _inventory[resource] -= amount;
+        AdjustResource(resource, -amount);
         return true;
     }
 
     private void AddResource(ResourceKind resource, int amount)
     {
-        if (amount > 0) _inventory[resource] = checked(ResourceCount(resource) + amount);
+        if (amount > 0) AdjustResource(resource, amount);
     }
 
     private void AddMany(Dictionary<ResourceKind, int> costs)

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - rebuild/kor-foundation-cleanup
+      - 'feature/**'
     paths:
       - "**.cs"
       - "**.csproj"
@@ -42,16 +43,52 @@ jobs:
       - name: Build canonical root project
         run: dotnet build GondwanaGame.csproj --configuration Release
 
-      - name: Run colony and campaign checks
+      - name: Run simulation and unified-session checks
         run: dotnet run --project GondwanaGame.csproj --configuration Release --no-build -- --self-test
+
+      - name: Install graphical test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb cmake ninja-build build-essential git patchelf \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxkbcommon-dev libwayland-dev libdecor-0-dev \
+            libdrm-dev libgbm-dev libasound2-dev libpulse-dev libudev-dev
+
+      - name: Build SDL3 runtime for graphical startup checks
+        run: |
+          git clone --depth 1 --branch release-3.4.2 https://github.com/libsdl-org/SDL.git /tmp/SDL
+          cmake -S /tmp/SDL -B /tmp/SDL/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/tmp/sdl3-install \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DSDL_SHARED=ON -DSDL_STATIC=OFF \
+            -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
+            -DSDL_WAYLAND=OFF -DSDL_ALSA=OFF -DSDL_PULSEAUDIO=OFF \
+            -DSDL_PIPEWIRE=OFF -DSDL_JACK=OFF -DSDL_SNDIO=OFF \
+            -DSDL_KMSDRM=OFF -DSDL_VIVANTE=OFF -DSDL_X11_XTEST=OFF
+          cmake --build /tmp/SDL/build --parallel 2
+          cmake --install /tmp/SDL/build
+          test -e /tmp/sdl3-install/lib/libSDL3.so
 
       - name: Publish self-contained Linux x86_64 build
         run: dotnet publish GondwanaGame.csproj --configuration Release --runtime linux-x64 --self-contained true --output artifacts/Kor-Eternal-Frontier/linux-x64
+
+      - name: Bundle SDL3 and configure local native library lookup
+        run: |
+          cp -a /tmp/sdl3-install/lib/libSDL3.so* artifacts/Kor-Eternal-Frontier/linux-x64/
+          patchelf --set-rpath '$ORIGIN' artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
+          test -f artifacts/Kor-Eternal-Frontier/linux-x64/libSDL3.so
 
       - name: Verify published executable
         run: |
           test -f artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
           file artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
+          ldd artifacts/Kor-Eternal-Frontier/linux-x64/libSDL3.so
+
+      - name: Smoke-test graphical startup, menu-to-game transition, and clean shutdown
+        env:
+          SDL_VIDEODRIVER: x11
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame --smoke-test
 
       - name: Upload downloadable Linux build
         uses: actions/upload-artifact@v4

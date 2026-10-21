@@ -8,16 +8,6 @@ internal static class ColonySaveService
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateOptions();
 
-    public static string SavePath
-    {
-        get
-        {
-            string root = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
-            return Path.Combine(root, "kor-eternal-frontier", "colony.json");
-        }
-    }
-
     public static string Serialize(ColonySimulation simulation)
     {
         ArgumentNullException.ThrowIfNull(simulation);
@@ -42,32 +32,6 @@ internal static class ColonySaveService
         return ColonySimulation.RestoreSnapshot(snapshot);
     }
 
-    public static void Save(ColonySimulation simulation, string? path = null)
-    {
-        string target = path ?? SavePath;
-        string directory = Path.GetDirectoryName(Path.GetFullPath(target))
-            ?? throw new InvalidOperationException("Could not determine the colony save directory.");
-        Directory.CreateDirectory(directory);
-        string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            File.WriteAllText(temporary, Serialize(simulation));
-            File.Move(temporary, target, true);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
-    }
-
-    public static ColonySimulation Load(string? path = null)
-    {
-        string target = path ?? SavePath;
-        if (!File.Exists(target))
-            throw new FileNotFoundException("No Kor Eternal Frontier colony save exists yet.", target);
-        return Deserialize(File.ReadAllText(target));
-    }
-
     private static JsonSerializerOptions CreateOptions()
     {
         var options = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = false };
@@ -78,10 +42,15 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 4;
+    public long SocialTick { get; set; }
+    public SocialNetworkSnapshot? SocialNetwork { get; set; }
+    public IncidentManagerSnapshot? IncidentManager { get; set; }
+    public bool InventoryOwnedByWorld { get; set; }
     public int Width { get; set; } = ColonySimulation.Width;
     public int Height { get; set; } = ColonySimulation.Height;
     public float ElapsedSeconds { get; set; }
+    public float EnvironmentAccumulatorSeconds { get; set; }
     public string Message { get; set; } = string.Empty;
     public int? SelectedWorkerId { get; set; }
     public int NextOrderId { get; set; }
@@ -102,11 +71,16 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion is not (1 or 2 or 3 or 4)) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SocialTick < 0) throw new InvalidDataException("Colony save contains an invalid social simulation tick.");
+        if (SchemaVersion == 4 && (SocialNetwork is null || IncidentManager is null))
+            throw new InvalidDataException("Current colony save is missing social or incident state.");
         if (Width != ColonySimulation.Width || Height != ColonySimulation.Height)
             throw new InvalidDataException($"Unsupported colony dimensions {Width}x{Height}.");
         if (!float.IsFinite(ElapsedSeconds) || ElapsedSeconds < 0)
             throw new InvalidDataException("Colony save contains an invalid simulation clock.");
+        if (!float.IsFinite(EnvironmentAccumulatorSeconds) || EnvironmentAccumulatorSeconds < 0 || EnvironmentAccumulatorSeconds > 1_000_000f)
+            throw new InvalidDataException("Colony save contains an invalid environment simulation accumulator.");
         if (Tiles is null || TileOrders is null || Objects is null || Deposits is null ||
             Workers is null || Inventory is null || ProductionOrders is null)
             throw new InvalidDataException("Colony save is missing a required collection.");
@@ -143,6 +117,10 @@ internal sealed class ColonySnapshot
             CheckCell(tile.X, tile.Y, "tile");
             if (!Enum.IsDefined(tile.Terrain) || !Enum.IsDefined(tile.Architecture))
                 throw new InvalidDataException("Colony save contains an unknown terrain or architecture enum.");
+            if (tile.WaterLevel is < 0 or > 7 || tile.MagmaLevel is < 0 or > 7 ||
+                (tile.WaterLevel > 0 && tile.MagmaLevel > 0) ||
+                !float.IsFinite(tile.TemperatureCelsius) || tile.TemperatureCelsius < -273.15f || tile.TemperatureCelsius > 5_000f)
+                throw new InvalidDataException("Colony save contains invalid tile fluid levels or temperature.");
             if (!tileCoordinates.Add((tile.X, tile.Y)))
                 throw new InvalidDataException("Colony save has duplicate tile coordinates.");
             if (tile.ConstructionOrderId is < 1)
@@ -247,7 +225,11 @@ internal sealed class ColonySnapshot
             if (string.IsNullOrWhiteSpace(worker.Name) ||
                 !float.IsFinite(worker.X) || !float.IsFinite(worker.Y) ||
                 worker.X < 0 || worker.Y < 0 || worker.X >= Width || worker.Y >= Height ||
-                !float.IsFinite(worker.Hunger) || worker.Hunger is < 0 or > 100 || worker.CarriedAmount < 0)
+                !float.IsFinite(worker.Hunger) || worker.Hunger is < 0 or > 100 ||
+                !float.IsFinite(worker.CitizenFatigue) || worker.CitizenFatigue is < 0 or > 100 ||
+                !float.IsFinite(worker.ThermalExposure) || worker.ThermalExposure is < 0 or > 100 ||
+                !float.IsFinite(worker.Stress) || worker.Stress is < 0 or > 100 ||
+                worker.CarriedAmount < 0)
                 throw new InvalidDataException("Colony save contains an invalid colonist state.");
             bool hasCargo = worker.CarriedResource.HasValue || !string.IsNullOrWhiteSpace(worker.CarriedMaterialId);
             if (hasCargo != (worker.CarriedAmount > 0) ||
@@ -273,25 +255,22 @@ internal sealed class ColonySnapshot
         }
 
         var resourceKinds = Enum.GetValues<ResourceKind>().ToHashSet();
-        if (Inventory.Count != resourceKinds.Count || Inventory.Any(stack =>
-                !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
+        if ((!InventoryOwnedByWorld && Inventory.Count != resourceKinds.Count) ||
+            (InventoryOwnedByWorld && Inventory.Count != 0) ||
+            Inventory.Any(stack => !resourceKinds.Contains(stack.Resource) || stack.Amount < 0) ||
             Inventory.Select(stack => stack.Resource).Distinct().Count() != Inventory.Count)
             throw new InvalidDataException("Colony inventory is incomplete, duplicated, or contains an invalid amount.");
 
-        var knownMaterialIds = ProgressionCatalog.Resources.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
-        if (Materials.Any(stack => string.IsNullOrWhiteSpace(stack.MaterialId) ||
-                !knownMaterialIds.Contains(stack.MaterialId) ||
-                ColonySimulation.IsLegacyMaterialId(stack.MaterialId) || stack.Amount <= 0) ||
-            Materials.Select(stack => stack.MaterialId).Distinct(StringComparer.Ordinal).Count() != Materials.Count)
-            throw new InvalidDataException("Colony save contains an unknown, duplicated, or invalid stable-ID material stack.");
-
-        int availableStorageCapacity =
-            Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
-            Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
-                .Sum(_ => ColonySimulation.StorageRackCapacity);
-        if (Inventory.Sum(stack => stack.Amount) + Materials.Sum(stack => stack.Amount) > availableStorageCapacity)
-            throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+        if (!InventoryOwnedByWorld)
+        {
+            int availableStorageCapacity =
+                Objects.Where(item => item.Kind == PlaceableKind.Stockpile && item.Status == ConstructionStatus.Complete)
+                    .Sum(_ => ColonySimulation.BaseStockpileCapacity) +
+                Objects.Where(item => item.Kind == PlaceableKind.StorageRack && item.Status == ConstructionStatus.Complete)
+                    .Sum(_ => ColonySimulation.StorageRackCapacity);
+            if (Inventory.Sum(stack => stack.Amount) > availableStorageCapacity)
+                throw new InvalidDataException("Colony save inventory exceeds available storage capacity.");
+        }
 
         var productionIds = new HashSet<int>();
         foreach (var order in ProductionOrders)
@@ -305,6 +284,13 @@ internal sealed class ColonySnapshot
         foreach (var worker in Workers)
             if (worker.Task?.Kind == ColonyTaskKind.Produce && !productionIds.Contains(worker.Task.TargetId))
                 throw new InvalidDataException("Worker task references a missing production order.");
+
+        if (SchemaVersion == 4)
+        {
+            var residents = workerIds.ToHashSet();
+            _ = SocialRelationshipNetwork.Restore(SocialNetwork!, residents);
+            _ = KorTheBlight.Simulation.IncidentManager.Restore(IncidentManager!, residents);
+        }
 
         if (SelectedWorkerId.HasValue && !workerIds.Contains(SelectedWorkerId.Value))
             throw new InvalidDataException("Selected colonist is missing from the colony save.");
@@ -337,6 +323,9 @@ internal sealed class TileSnapshot
     public TerrainKind Terrain { get; set; }
     public ArchitectureKind Architecture { get; set; }
     public int? ConstructionOrderId { get; set; }
+    public int WaterLevel { get; set; }
+    public int MagmaLevel { get; set; }
+    public float TemperatureCelsius { get; set; } = 20f;
 }
 internal sealed class TileOrderSnapshot
 {
@@ -383,6 +372,9 @@ internal sealed class ColonyWorkerSnapshot
     public float X { get; set; }
     public float Y { get; set; }
     public float Hunger { get; set; }
+    public float CitizenFatigue { get; set; } = 100f;
+    public float ThermalExposure { get; set; }
+    public float Stress { get; set; }
     public ResourceKind? CarriedResource { get; set; }
     public string? CarriedMaterialId { get; set; }
     public int CarriedAmount { get; set; }

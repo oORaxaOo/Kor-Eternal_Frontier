@@ -5,10 +5,10 @@ using Gondwana;
 using Gondwana.Rendering;
 using Gondwana.Rendering.Backbuffers;
 using Gondwana.Scenes;
-using KorTheBlight.Campaign;
 using KorTheBlight.Rendering;
 using KorTheBlight.Simulation;
 using KorTheBlight.Tests;
+using KorTheBlight.WorldModel;
 using SkiaSharp;
 
 namespace KorTheBlight;
@@ -25,27 +25,25 @@ internal static class Program
         IntPtr window = IntPtr.Zero, rendererHandle = IntPtr.Zero;
         SdlAdapter? adapter = null;
         ColonyRenderer? painter = null;
-        WorldMapRenderer? worldPainter = null;
-        MouseMenuRenderer? menuPainter = null;
-        ManagementPanelRenderer? managementPainter = null;
+        MainMenuRenderer? menuPainter = null;
         Engine? engine = null;
-        bool engineStarted = false;
+        bool engineStarted = false, sdlInitialized = false;
         try
         {
             if (Sdl.SDL_Init(Sdl.InitVideo) < 0) throw new InvalidOperationException(Sdl.Error());
+            sdlInitialized = true;
             window = Sdl.SDL_CreateWindow("KOR-ETERNAL FRONTIER", 1100, 720, Sdl.WindowResizable);
             if (window == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
 
-            var simulation = new ColonySimulation();
-            var campaign = new CampaignSimulation(70241);
-            var worldMap = new WorldMapSimulation(70241);
+            var world = new WorldSimulation(70241);
+            var simulation = world.Colony;
+            bool gameStarted = false, settingsMenu = false, startPaused = false;
+            string menuMessage = string.Empty;
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
             painter = new ColonyRenderer();
-            worldPainter = new WorldMapRenderer();
-            menuPainter = new MouseMenuRenderer();
-            managementPainter = new ManagementPanelRenderer();
+            menuPainter = new MainMenuRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
             using var scene = new Scene();
             host.Bind(scene, false);
@@ -53,19 +51,16 @@ internal static class Program
             host.RedrawDirtyRectangleOnly = false;
 
             float cameraX = 0, cameraY = 0, zoom = 1;
+            float worldCameraX = (float)(ContinuousWorldState.WorldExtent / 2), worldCameraY = (float)(ContinuousWorldState.WorldExtent / 2);
+            long? selectedWorldEntityId = null;
+            WorldResourceKind? selectedShipmentResource = null;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
-            bool placingObject = false, paused = false, worldMapMode = false;
-            int activeMenu = 0;
-            bool managementOpen = false;
-            int managementPage = 1;
-            bool commandMode = false;
+            bool placingObject = false, paused = false;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (worldMapMode) worldPainter.Draw(canvas, worldMap);
-                else painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, campaign);
-                menuPainter.Draw(canvas, activeMenu, worldMapMode, architectureMode, objectType, placingObject, paused);
-                if (managementOpen) managementPainter.Draw(canvas, managementPage, simulation, campaign, worldMap, worldMapMode);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource);
+                else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
             engine.Initialize();
@@ -74,10 +69,8 @@ internal static class Program
             engine.StartTimerDriven(context);
             engineStarted = true;
 
-            bool running = true, wasLeft = false, wasRight = false, wasEscape = false, wasLeftArrow = false, wasRightArrow = false;
-            bool was1 = false, was2 = false, was3 = false, was4 = false, was5 = false;
-            bool wasObject = false, wasTab = false, wasSpace = false, wasF5 = false, wasF9 = false;
-            bool wasT = false, wasI = false, wasE = false, wasM = false, wasY = false, wasG = false, wasR = false, wasC = false;
+            bool running = true, wasLeft = false, wasRight = false, wasMiddle = false;
+            float previousMouseX = 0, previousMouseY = 0;
             var clock = Stopwatch.StartNew();
             var appLifetime = Stopwatch.StartNew();
             double accumulator = 0;
@@ -92,335 +85,215 @@ internal static class Program
                 double frame = Math.Min(clock.Elapsed.TotalSeconds, .1);
                 clock.Restart();
                 accumulator += frame;
-                if (!paused)
+                if (gameStarted && !paused)
                 {
-                    while (accumulator >= .1) { simulation.Step(.1f); accumulator -= .1; }
+                    while (accumulator >= .1) { world.Step(.1f); simulation = world.Colony; accumulator -= .1; }
                 }
                 else accumulator = 0;
                 scene.FullRefreshNeeded = true;
 
-                IntPtr keys = Sdl.SDL_GetKeyboardState(out _);
-                float panSpeed = 300 * (float)frame;
-                if (IsDown(keys, Sdl.ScancodeW)) cameraY = Math.Min(240, cameraY + panSpeed);
-                if (IsDown(keys, Sdl.ScancodeS)) cameraY = Math.Max(-240, cameraY - panSpeed);
-                if (IsDown(keys, Sdl.ScancodeA)) cameraX = Math.Min(350, cameraX + panSpeed);
-                if (IsDown(keys, Sdl.ScancodeD)) cameraX = Math.Max(-350, cameraX - panSpeed);
-                if (IsDown(keys, Sdl.ScancodeEquals)) zoom = Math.Min(1.7f, zoom + (float)frame * .65f);
-                if (IsDown(keys, Sdl.ScancodeMinus)) zoom = Math.Max(.65f, zoom - (float)frame * .65f);
-
-                bool oneDown = IsDown(keys, Sdl.Scancode1);
-                bool twoDown = IsDown(keys, Sdl.Scancode2);
-                bool threeDown = IsDown(keys, Sdl.Scancode3);
-                bool fourDown = IsDown(keys, Sdl.Scancode4);
-                bool fiveDown = IsDown(keys, Sdl.Scancode5);
-                bool objectDown = IsDown(keys, Sdl.ScancodeO);
-                bool tabDown = IsDown(keys, Sdl.ScancodeTab);
-                bool spaceDown = IsDown(keys, Sdl.ScancodeSpace);
-                bool f5Down = IsDown(keys, Sdl.ScancodeF5);
-                bool f9Down = IsDown(keys, Sdl.ScancodeF9);
-                bool tDown = IsDown(keys, Sdl.ScancodeT);
-                bool iDown = IsDown(keys, Sdl.ScancodeI);
-                bool eDown = IsDown(keys, Sdl.ScancodeE);
-                bool escapeDown = IsDown(keys, Sdl.ScancodeEscape);
-                bool mDown = IsDown(keys, Sdl.ScancodeM);
-                bool yDown = IsDown(keys, Sdl.ScancodeY);
-                bool gDown = IsDown(keys, Sdl.ScancodeG);
-                bool rDown = IsDown(keys, Sdl.ScancodeR);
-                bool cDown = IsDown(keys, Sdl.ScancodeC);
-                bool leftDown = IsDown(keys, Sdl.ScancodeLeft);
-                bool rightDown = IsDown(keys, Sdl.ScancodeRight);
-
-                if (oneDown && !was1) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
-                if (twoDown && !was2) { architectureMode = ArchitectureKind.Floor; placingObject = false; }
-                if (threeDown && !was3) { architectureMode = ArchitectureKind.Path; placingObject = false; }
-                if (fourDown && !was4) { architectureMode = ArchitectureKind.Door; placingObject = false; }
-                if (fiveDown && !was5) { architectureMode = ArchitectureKind.Conduit; placingObject = false; }
-                if (objectDown && !wasObject) { placingObject = !placingObject; if (placingObject) architectureMode = ArchitectureKind.None; }
-                if (tabDown && !wasTab)
-                {
-                    objectType = NextPlaceable(objectType);
-                    placingObject = true;
-                    architectureMode = ArchitectureKind.None;
-                }
-                if (escapeDown && !wasEscape) { architectureMode = ArchitectureKind.None; placingObject = false; }
-                if (mDown && !wasM) worldMapMode = !worldMapMode;
-                if (worldMapMode && leftDown && !wasLeftArrow) worldMap.SelectNext(-1);
-                if (worldMapMode && rightDown && !wasRightArrow) worldMap.SelectNext(1);
-                if (worldMapMode && yDown && !wasY) worldMap.OfferNonAggression();
-                if (worldMapMode && gDown && !wasG) worldMap.OfferTradePact();
-                if (worldMapMode && rDown && !wasR) worldMap.ImproveRelations();
-                if (worldMapMode && cDown && !wasC) worldMap.ClaimSelected();
-                if (spaceDown && !wasSpace) paused = !paused;
-                if (tDown && !wasT)
-                {
-                    try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
-                    catch (Exception ex) { simulation.SetMessage($"Campaign turn failed: {ex.Message}"); }
-                }
-                if (iDown && !wasI)
-                {
-                    try { int moved = CampaignColonyBridge.ImportToColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Resupply unavailable: colony storage may be full."); }
-                    catch (Exception ex) { simulation.SetMessage($"Import failed: {ex.Message}"); }
-                }
-                if (eDown && !wasE)
-                {
-                    try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Export unavailable: no Food or Alloy in colony stores."); }
-                    catch (Exception ex) { simulation.SetMessage($"Export failed: {ex.Message}"); }
-                }
-                if (f5Down && !wasF5)
-                {
-                    try { GameSessionService.Save(simulation, campaign); simulation.SetMessage("Campaign and colony session saved."); }
-                    catch (Exception ex) { simulation.SetMessage($"Session save failed: {ex.Message}"); }
-                }
-                if (f9Down && !wasF9)
-                {
-                    try
-                    {
-                        var loaded = GameSessionService.Load();
-                        simulation = loaded.Colony;
-                        campaign = loaded.Campaign;
-                        simulation.SetMessage("Campaign and colony session loaded.");
-                    }
-                    catch (Exception ex) { simulation.SetMessage($"Session load failed: {ex.Message}"); }
-                }
-
-                wasLeftArrow = leftDown; wasRightArrow = rightDown;
-                was1 = oneDown; was2 = twoDown; was3 = threeDown; was4 = fourDown; was5 = fiveDown;
-                wasObject = objectDown; wasTab = tabDown; wasSpace = spaceDown;
-                wasF5 = f5Down; wasF9 = f9Down; wasEscape = escapeDown;
-                wasT = tDown; wasI = iDown; wasE = eDown; wasM = mDown; wasY = yDown; wasG = gDown; wasR = rDown; wasC = cDown;
-
                 uint buttons = Sdl.SDL_GetMouseState(out float mouseX, out float mouseY);
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
-                var worldMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                bool worldView = zoom < .65f;
+                var continuousMouse = ContinuousWorldProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, worldCameraX, worldCameraY, zoom);
+                var colonyMouse = OrthogonalGridProjection.ScreenToWorld(logicalMouse.X, logicalMouse.Y, cameraX, cameraY, zoom);
+                (float X, float Y) worldMouse = worldView
+                    ? ((float)continuousMouse.X, (float)continuousMouse.Y)
+                    : colonyMouse;
                 bool inWorldView = logicalMouse.X < 770 && logicalMouse.Y >= 62 && logicalMouse.Y < 650;
-                bool left = (buttons & Sdl.ButtonLeftMask) != 0, right = (buttons & Sdl.ButtonRightMask) != 0;
+                bool left = (buttons & Sdl.ButtonLeftMask) != 0;
+                bool right = (buttons & Sdl.ButtonRightMask) != 0;
+                bool middle = (buttons & Sdl.ButtonMiddleMask) != 0;
+
+                // Middle-mouse drag pans the camera; no keyboard is required for navigation.
+                if (middle && wasMiddle)
+                {
+                    if (worldView)
+                    {
+                        float worldScale = ContinuousWorldProjection.Scale(zoom);
+                        worldCameraX = Math.Clamp(worldCameraX - (logicalMouse.X - previousMouseX) / worldScale, 0f, (float)ContinuousWorldState.WorldExtent);
+                        worldCameraY = Math.Clamp(worldCameraY - (logicalMouse.Y - previousMouseY) / worldScale, 0f, (float)ContinuousWorldState.WorldExtent);
+                    }
+                    else
+                    {
+                        cameraX = Math.Clamp(cameraX - (logicalMouse.X - previousMouseX) / Math.Max(.65f, zoom), -350f, 350f);
+                        cameraY = Math.Clamp(cameraY - (logicalMouse.Y - previousMouseY) / Math.Max(.65f, zoom), -240f, 240f);
+                    }
+                }
+                previousMouseX = logicalMouse.X;
+                previousMouseY = logicalMouse.Y;
+                wasMiddle = middle;
+
                 if (left && !wasLeft)
                 {
-                    bool menuClick = false;
-                    if (logicalMouse.Y >= MouseMenuRenderer.Top && logicalMouse.Y <= MouseMenuRenderer.Top + MouseMenuRenderer.ButtonHeight &&
-                        logicalMouse.X >= 10 && logicalMouse.X < 790)
+                    if (!gameStarted)
                     {
-                        int chosen = logicalMouse.X < 110 ? 1 : logicalMouse.X < 218 ? 2 :
-                            logicalMouse.X < 326 ? 3 : logicalMouse.X < 458 ? 4 : logicalMouse.X < 562 ? 5 :
-                            logicalMouse.X < 670 ? 10 : 11;
-                        if (chosen == 11)
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (settingsMenu)
                         {
-                            managementOpen = !managementOpen;
-                            if (managementOpen) managementPage = 1;
-                            activeMenu = 0;
+                            if (Hit(mx, my, 370, 420, 730, 472)) startPaused = !startPaused;
+                            else if (Hit(mx, my, 370, 490, 730, 542)) { settingsMenu = false; menuMessage = string.Empty; }
                         }
-                        else
+                        else if (Hit(mx, my, 370, 260, 730, 312))
                         {
-                            managementOpen = false;
-                            activeMenu = activeMenu == chosen ? 0 : chosen;
+                            world = new WorldSimulation(70241);
+                            simulation = world.Colony;
+                            paused = startPaused;
+                            world.IsPaused = paused;
+                            gameStarted = true;
+                            menuMessage = string.Empty;
                         }
-                        menuClick = true;
-                    }
-                    else if (managementOpen)
-                    {
-                        if (logicalMouse.Y < 120) { menuClick = true; }
-                        else if (logicalMouse.X >= 18 && logicalMouse.X <= 214 && logicalMouse.Y >= 128)
+                        else if (Hit(mx, my, 370, 326, 730, 378))
                         {
-                            managementPage = Math.Clamp((int)((logicalMouse.Y - 128) / 48) + 1, 1, ManagementPanelRenderer.PageNames.Length);
-                        }
-                        else
-                        {
-                            switch (managementPage)
+                            try
                             {
-                                case 3:
-                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 && logicalMouse.Y >= 194 && logicalMouse.Y < 229)
-                                    {
-                                        try { int moved = CampaignColonyBridge.ImportToColony(campaign, simulation); simulation.SetMessage(moved == 0 ? "Import unavailable: storage may be full." : "Imported resources into colony stores."); }
-                                        catch (Exception ex) { simulation.SetMessage("Import failed: " + ex.Message); }
-                                    }
-                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 && logicalMouse.Y >= 239 && logicalMouse.Y < 274)
-                                    {
-                                        try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); simulation.SetMessage(moved == 0 ? "Export unavailable: no exportable resources." : "Exported resources to empire stock."); }
-                                        catch (Exception ex) { simulation.SetMessage("Export failed: " + ex.Message); }
-                                    }
-                                    break;
-                                case 4:
-                                    if (logicalMouse.Y >= 194 && logicalMouse.Y < 366 && logicalMouse.X >= 670 && logicalMouse.X < 1046)
-                                    {
-                                        int col = Math.Clamp((int)((logicalMouse.X - 670) / 125), 0, 2);
-                                        int row = (int)((logicalMouse.Y - 194) / 43);
-                                        int action = row * 3 + col;
-                                        if (action >= 0 && action < 5)
-                                        {
-                                            architectureMode = action switch { 0 => ArchitectureKind.Wall, 1 => ArchitectureKind.Floor, 2 => ArchitectureKind.Path, 3 => ArchitectureKind.Door, _ => ArchitectureKind.Conduit };
-                                            placingObject = false; managementOpen = false;
-                                        }
-                                        else if (action >= 5 && action < 12)
-                                        {
-                                            objectType = action switch
-                                            {
-                                                5 => PlaceableKind.Workbench, 6 => PlaceableKind.SleepingPod, 7 => PlaceableKind.StorageRack,
-                                                8 => PlaceableKind.Generator, 9 => PlaceableKind.Garden, 10 => PlaceableKind.Habitat,
-                                                _ => PlaceableKind.Stockpile
-                                            };
-                                            placingObject = true; architectureMode = ArchitectureKind.None; managementOpen = false;
-                                        }
-                                    }
-                                    break;
-                                case 5:
-                                    if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
-                                        logicalMouse.Y >= 350 && logicalMouse.Y < 385)
-                                    {
-                                        var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
-                                        if (bench == null)
-                                            simulation.SetMessage("Build and complete a Workbench before queuing component production.");
-                                        else
-                                            simulation.QueueComponentProduction(bench.Id);
-                                    }
-                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
-                                             logicalMouse.Y >= 194 && logicalMouse.Y < 594)
-                                    {
-                                        int index = (int)((logicalMouse.Y - 194) / 50);
-                                        var recipe = simulation.ManagementRecipes.ElementAtOrDefault(index);
-                                        var bench = simulation.Objects.FirstOrDefault(o => o.Kind == PlaceableKind.Workbench && o.IsBuilt);
-                                        if (recipe == null)
-                                            simulation.SetMessage("No recipe is listed at that position.");
-                                        else if (bench == null)
-                                            simulation.SetMessage("Build and complete a Workbench before queuing catalog recipes.");
-                                        else
-                                            simulation.QueueRecipeProduction(bench.Id, recipe.Id);
-                                    }
-                                    break;
-                                case 6:
-                                    if (logicalMouse.X >= 254 && logicalMouse.X <= 650 &&
-                                        logicalMouse.Y >= 316 && logicalMouse.Y < 351)
-                                        simulation.SetMessage(campaign.ResearchWard() ? campaign.Message : "Ward Protocol unavailable: need 30 Knowledge and 20 Energy, or project already complete.");
-                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
-                                             logicalMouse.Y >= 194 && logicalMouse.Y < 594)
-                                    {
-                                        int index = (int)((logicalMouse.Y - 194) / 50);
-                                        var project = simulation.ManagementResearch.ElementAtOrDefault(index);
-                                        if (project == null)
-                                            simulation.SetMessage("No local research project is listed at that position.");
-                                        else
-                                            simulation.ResearchProject(project.Id, campaign);
-                                    }
-                                    break;
-                                case 8:
-                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 &&
-                                        ((logicalMouse.Y >= 274 && logicalMouse.Y < 309) ||
-                                         (logicalMouse.Y >= 319 && logicalMouse.Y < 354) ||
-                                         (logicalMouse.Y >= 364 && logicalMouse.Y < 399)))
-                                    {
-                                        worldMapMode = true;
-                                        if (logicalMouse.Y < 309) worldMap.ImproveRelations();
-                                        else if (logicalMouse.Y < 354) worldMap.OfferNonAggression();
-                                        else worldMap.OfferTradePact();
-                                    }
-                                    break;
-                                case 9:
-                                    if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 && logicalMouse.Y >= 274 && logicalMouse.Y < 309) worldMap.ClaimSelected();
-                                    else if (logicalMouse.X >= 670 && logicalMouse.X <= 1035 && logicalMouse.Y >= 319 && logicalMouse.Y < 354)
-                                    {
-                                        try { campaign.EndTurn(); worldMap.EndTurn(); simulation.SetMessage(campaign.Message); }
-                                        catch (Exception ex) { simulation.SetMessage("Strategic turn failed: " + ex.Message); }
-                                    }
-                                    break;
+                                var loaded = GameSessionService.Load();
+                                world = new WorldSimulation(70241);
+                                world.Restore(loaded);
+                                simulation = world.Colony;
+                                paused = false;
+                                gameStarted = true;
+                                menuMessage = string.Empty;
+                            }
+                            catch (Exception ex) { menuMessage = $"Spielstand konnte nicht geladen werden: {ex.Message}"; }
+                        }
+                        else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
+                        else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
+                    }
+                    else if (!worldView && Hit(logicalMouse.X, logicalMouse.Y, 920, 660, 1085, 687))
+                    {
+                        int recruited = simulation.RecruitColonists(10);
+                        simulation.SetMessage(recruited > 0
+                            ? $"Recruited {recruited} residents. Population: {simulation.Workers.Count}."
+                            : "Recruitment failed: no walkable ground is available.");
+                    }
+                    else if (inWorldView && worldView)
+                    {
+                        // Convert the 20-pixel hit radius to world units and ask the spatial index
+                        // for local candidates instead of projecting every world entity on each click.
+                        double worldHitRadius = 20d / ContinuousWorldProjection.Scale(zoom);
+                        var hit = world.SpatialWorld.QueryRadius(continuousMouse.X, continuousMouse.Y, worldHitRadius)
+                            .Select(entity => (Entity: entity, Screen: ContinuousWorldProjection.WorldToScreen(entity.X, entity.Y, worldCameraX, worldCameraY, zoom)))
+                            .Select(item => (item.Entity, Distance: MathF.Sqrt(MathF.Pow(item.Screen.X - logicalMouse.X, 2) + MathF.Pow(item.Screen.Y - logicalMouse.Y, 2))))
+                            .Where(item => item.Distance <= 20f).OrderBy(item => item.Distance).FirstOrDefault();
+                        if (hit.Entity != null && selectedShipmentResource.HasValue &&
+                            selectedWorldEntityId.HasValue &&
+                            world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind == WorldEntityKind.Caravan) &&
+                            hit.Entity.Kind == WorldEntityKind.Settlement)
+                        {
+                            var home = world.SpatialWorld.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+                            if (home.Id == hit.Entity.Id)
+                                simulation.SetMessage("Choose a different destination settlement.");
+                            else
+                            {
+                                bool created = world.SpatialWorld.CreateShipment(selectedWorldEntityId.Value, home.Id, hit.Entity.Id, selectedShipmentResource.Value, 10, 1_000);
+                                simulation.SetMessage(created
+                                    ? $"Shipment dispatched: 10 {selectedShipmentResource.Value} to {hit.Entity.Name}."
+                                    : $"Shipment unavailable: Kor Hearthhold lacks {selectedShipmentResource.Value}.");
+                                if (created) selectedShipmentResource = null;
                             }
                         }
-                        menuClick = true;
-                    }
-                    else if (activeMenu != 0 && logicalMouse.Y >= MouseMenuRenderer.MenuTop)
-                    {
-                        string[] items = MouseMenuRenderer.ItemsFor(activeMenu);
-                        float menuX = MouseMenuRenderer.MenuX(activeMenu);
-                        if (logicalMouse.X >= menuX && logicalMouse.X <= menuX + MouseMenuRenderer.MenuWidth &&
-                            logicalMouse.Y < MouseMenuRenderer.MenuTop + items.Length * MouseMenuRenderer.RowHeight + 10)
+                        else if (hit.Entity != null)
                         {
-                            int index = (int)((logicalMouse.Y - MouseMenuRenderer.MenuTop - 5) / MouseMenuRenderer.RowHeight);
-                            if (index >= 0 && index < items.Length)
+                            selectedWorldEntityId = hit.Entity.Id;
+                            simulation.SetMessage($"Selected world entity: {hit.Entity.Name} ({hit.Entity.Kind}).");
+                        }
+                    }
+                    else if (inWorldView)
+                    {
+                        int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
+                        if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
+                        else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
+                        else simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
+                    }
+                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 493 && logicalMouse.Y < 650)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (Hit(mx, my, 784, 501, 850, 523))
+                        {
+                            paused = !paused;
+                            world.IsPaused = paused;
+                            simulation.SetMessage(paused ? "Simulation paused." : "Simulation resumed.");
+                        }
+                        else if (Hit(mx, my, 856, 501, 914, 523))
+                        {
+                            world.SetSpeed(Math.Max(.25f, world.SpeedMultiplier / 2f));
+                            simulation.SetMessage($"World speed: {world.SpeedMultiplier:0.##}x.");
+                        }
+                        else if (Hit(mx, my, 920, 501, 978, 523))
+                        {
+                            world.SetSpeed(Math.Min(4f, world.SpeedMultiplier * 2f));
+                            simulation.SetMessage($"World speed: {world.SpeedMultiplier:0.##}x.");
+                        }
+                        else if (Hit(mx, my, 984, 501, 1050, 523))
+                        {
+                            architectureMode = ArchitectureKind.None;
+                            placingObject = false;
+                            simulation.SetMessage("Current placement mode cancelled.");
+                        }
+                        else if (Hit(mx, my, 784, 527, 850, 549))
+                        {
+                            try { GameSessionService.Save(world); simulation.SetMessage("World session saved."); }
+                            catch (Exception ex) { simulation.SetMessage($"Save failed: {ex.Message}"); }
+                        }
+                        else if (Hit(mx, my, 854, 527, 920, 549))
+                        {
+                            try
                             {
-                                switch (activeMenu)
-                                {
-                                    case 1:
-                                        if (index == 0) worldMapMode = !worldMapMode;
-                                        else if (index == 1) paused = !paused;
-                                        else if (index == 2) activeMenu = 8;
-                                        break;
-                                    case 2:
-                                        if (index == 0) activeMenu = 6;
-                                        else if (index == 1) activeMenu = 7;
-                                        else { architectureMode = ArchitectureKind.None; placingObject = false; activeMenu = 0; }
-                                        break;
-                                    case 3:
-                                        if (index == 0) { try { campaign.EndTurn(); if (worldMapMode) worldMap.EndTurn(); simulation.SetMessage(campaign.Message); } catch (Exception ex) { simulation.SetMessage($"Turn failed: {ex.Message}"); } }
-                                        else if (index == 1) activeMenu = 9;
-                                        else if (index == 2 && worldMapMode) worldMap.ClaimSelected();
-                                        else if (index == 2) simulation.SetMessage("Open Colony → Strategic World Map before claiming frontier territory.");
-                                        break;
-                                    case 4:
-                                        if (worldMapMode) { if (index == 0) worldMap.ImproveRelations(); else if (index == 1) worldMap.OfferNonAggression(); else if (index == 2) worldMap.OfferTradePact(); }
-                                        else simulation.SetMessage("Diplomacy actions are available from the Strategic World Map.");
-                                        break;
-                                    case 5:
-                                        if (index == 0) { try { GameSessionService.Save(simulation, campaign); simulation.SetMessage("Campaign and colony session saved."); } catch (Exception ex) { simulation.SetMessage($"Save failed: {ex.Message}"); } }
-                                        else if (index == 1) { try { var loaded = GameSessionService.Load(); simulation = loaded.Colony; campaign = loaded.Campaign; simulation.SetMessage("Campaign and colony session loaded."); } catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); } }
-                                        else if (index == 2) activeMenu = 0;
-                                        break;
-                                    case 6:
-                                        if (index < 5) { architectureMode = index switch { 0 => ArchitectureKind.Wall, 1 => ArchitectureKind.Floor, 2 => ArchitectureKind.Path, 3 => ArchitectureKind.Door, _ => ArchitectureKind.Conduit }; placingObject = false; activeMenu = 0; }
-                                        else activeMenu = 2;
-                                        break;
-                                    case 7:
-                                        if (index < 7) { objectType = index switch { 0 => PlaceableKind.Workbench, 1 => PlaceableKind.SleepingPod, 2 => PlaceableKind.StorageRack, 3 => PlaceableKind.Generator, 4 => PlaceableKind.Garden, 5 => PlaceableKind.Habitat, _ => PlaceableKind.Stockpile }; placingObject = true; architectureMode = ArchitectureKind.None; activeMenu = 0; }
-                                        else activeMenu = 2;
-                                        break;
-                                    case 8:
-                                        if (index == 0) cameraX = Math.Min(350, cameraX + 80);
-                                        else if (index == 1) cameraX = Math.Max(-350, cameraX - 80);
-                                        else if (index == 2) cameraY = Math.Min(240, cameraY + 80);
-                                        else if (index == 3) cameraY = Math.Max(-240, cameraY - 80);
-                                        else if (index == 4) zoom = Math.Min(1.7f, zoom + .15f);
-                                        else if (index == 5) zoom = Math.Max(.65f, zoom - .15f);
-                                        else activeMenu = 1;
-                                        break;
-                                    case 9:
-                                        if (index == 0) { try { int moved = CampaignColonyBridge.ImportToColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Import unavailable: storage may be full."); } catch (Exception ex) { simulation.SetMessage($"Import failed: {ex.Message}"); } }
-                                        else if (index == 1) { try { int moved = CampaignColonyBridge.ExportFromColony(campaign, simulation); if (moved == 0) simulation.SetMessage("Export unavailable: no Food or Alloy."); } catch (Exception ex) { simulation.SetMessage($"Export failed: {ex.Message}"); } }
-                                        else activeMenu = 3;
-                                        break;
-                                    case 10:
-                                        if (index == 0) { commandMode = true; activeMenu = 0; simulation.SetMessage("Order mode active: left-click a destination or resource deposit."); }
-                                        else { commandMode = false; activeMenu = 0; simulation.SetMessage("Order mode cancelled."); }
-                                        break;
-                                }
-                                menuClick = true;
+                                var loaded = GameSessionService.Load();
+                                world.Restore(loaded);
+                                simulation = world.Colony;
+                                simulation.SetMessage("World session loaded.");
                             }
+                            catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); }
                         }
-                        else { activeMenu = 0; menuClick = true; }
-                    }
-                    if (!menuClick && activeMenu == 0)
-                    {
-                        if (worldMapMode && logicalMouse.X >= 24 && logicalMouse.X < 24 + WorldMapSimulation.Width * 29 &&
-                            logicalMouse.Y >= 82 && logicalMouse.Y < 82 + WorldMapSimulation.Height * 29)
+                        else if (Hit(mx, my, 924, 527, 990, 549))
                         {
-                            int tx = (int)((logicalMouse.X - 24) / 29), ty = (int)((logicalMouse.Y - 82) / 29);
-                            worldMap.SelectAt(tx, ty);
+                            zoom = Math.Max(.08f, zoom / 1.15f);
                         }
-                        else if (!worldMapMode && inWorldView)
+                        else if (Hit(mx, my, 994, 527, 1060, 549))
                         {
-                            int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
-                            if (commandMode) { simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y); commandMode = false; }
-                            else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
-                            else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
-                            else simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
+                            zoom = Math.Min(1.7f, zoom * 1.15f);
+                        }
+                        else if (worldView && Hit(mx, my, 784, 566, 838, 588)) { selectedShipmentResource = WorldResourceKind.Wood; simulation.SetMessage("Cargo selected: Wood. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 842, 566, 896, 588)) { selectedShipmentResource = WorldResourceKind.Stone; simulation.SetMessage("Cargo selected: Stone. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 900, 566, 954, 588)) { selectedShipmentResource = WorldResourceKind.Food; simulation.SetMessage("Cargo selected: Food. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 958, 566, 1012, 588)) { selectedShipmentResource = WorldResourceKind.Alloy; simulation.SetMessage("Cargo selected: Alloy. Select a caravan, then click a destination settlement."); }
+                        else if (worldView && Hit(mx, my, 1016, 566, 1070, 588)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
+                        else if (worldView && Hit(mx, my, 784, 593, 1086, 615)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
+                        else if (!worldView && Hit(mx, my, 784, 566, 838, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 842, 566, 896, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 900, 566, 954, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 958, 566, 1012, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 1016, 566, 1070, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; }
+                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615)) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615)) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615)) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615)) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615)) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; }
+                        else if (!worldView && Hit(mx, my, 1039, 593, 1086, 615))
+                        {
+                            architectureMode = ArchitectureKind.None;
+                            placingObject = false;
+                            simulation.SetMessage("Placement cancelled.");
                         }
                     }
                 }
-                if (!worldMapMode && activeMenu == 0 && inWorldView && right && !wasRight)
+                if (gameStarted && inWorldView && right && !wasRight)
                 {
-                    simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
-                    commandMode = false;
+                    if (worldView && selectedWorldEntityId.HasValue && !world.SpatialWorld.Shipments.Any(shipment => shipment.CarrierEntityId == selectedWorldEntityId.Value && shipment.Status == WorldShipmentStatus.InTransit) && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
+                    {
+                        world.SpatialWorld.OrderMove(selectedWorldEntityId.Value, worldMouse.X, worldMouse.Y, 240d);
+                        simulation.SetMessage("World movement order issued.");
+                    }
+                    else if (!worldView) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
                 }
-                wasLeft = left; wasRight = right;
+                wasLeft = left;
+                wasRight = right;
 
                 engine.Tick();
                 context.Drain();
+                if (args.Contains("--smoke-test", StringComparer.Ordinal) && appLifetime.Elapsed >= TimeSpan.FromSeconds(1)) gameStarted = true;
                 if (args.Contains("--smoke-test", StringComparer.Ordinal) && appLifetime.Elapsed >= TimeSpan.FromSeconds(2)) running = false;
                 Sdl.SDL_Delay(4);
             }
@@ -437,23 +310,16 @@ internal static class Program
         finally
         {
             if (engineStarted) { engine!.StopAndWait(); engine.Dispose(); }
-            painter?.Dispose(); worldPainter?.Dispose(); menuPainter?.Dispose(); managementPainter?.Dispose(); adapter?.Dispose();
+            menuPainter?.Dispose(); painter?.Dispose(); adapter?.Dispose();
             if (rendererHandle != IntPtr.Zero) Sdl.SDL_DestroyRenderer(rendererHandle);
             if (window != IntPtr.Zero) Sdl.SDL_DestroyWindow(window);
-            Sdl.SDL_Quit();
+            if (sdlInitialized) Sdl.SDL_Quit();
         }
     }
 
-    private static PlaceableKind NextPlaceable(PlaceableKind current) => current switch
-    {
-        PlaceableKind.Workbench => PlaceableKind.SleepingPod,
-        PlaceableKind.SleepingPod => PlaceableKind.StorageRack,
-        PlaceableKind.StorageRack => PlaceableKind.Generator,
-        PlaceableKind.Generator => PlaceableKind.Garden,
-        _ => PlaceableKind.Workbench
-    };
+    private static bool Hit(float x, float y, float left, float top, float right, float bottom)
+        => x >= left && x <= right && y >= top && y <= bottom;
 
-    private static bool IsDown(IntPtr state, int scancode) => state != IntPtr.Zero && Marshal.ReadByte(state, scancode) != 0;
 }
 
 internal sealed class SdlAdapter(IntPtr renderer, int width, int height) : RenderSurfaceAdapterBase(width, height), IDisposable
@@ -507,12 +373,8 @@ internal static class Sdl
 {
     private const string Lib = "SDL3";
     public const uint InitVideo = 0x20, WindowResizable = 0x20, EventQuit = 0x100, EventWindowClose = 0x210, EventWindowResized = 0x206;
-    public const uint ButtonLeftMask = 1, ButtonRightMask = 4;
+    public const uint ButtonLeftMask = 1, ButtonMiddleMask = 2, ButtonRightMask = 4;
     public const int TextureAccessStreaming = 1, PixelFormatBgra32 = 372645892;
-    public const int ScancodeA = 4, ScancodeC = 6, ScancodeD = 7, ScancodeE = 8, ScancodeG = 10, ScancodeI = 12, ScancodeM = 16, ScancodeO = 18, ScancodeR = 21, ScancodeS = 22, ScancodeT = 23, ScancodeW = 26, ScancodeY = 28;
-    public const int Scancode1 = 30, Scancode2 = 31, Scancode3 = 32, Scancode4 = 33, Scancode5 = 34;
-    public const int ScancodeTab = 43, ScancodeSpace = 44, ScancodeMinus = 45, ScancodeEquals = 46, ScancodeEscape = 41;
-    public const int ScancodeF5 = 62, ScancodeF9 = 66, ScancodeRight = 79, ScancodeLeft = 80;
     [StructLayout(LayoutKind.Explicit, Size = 128)] public struct Event { [FieldOffset(0)] public uint Type; }
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_Init(uint flags);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Quit();
@@ -525,7 +387,6 @@ internal static class Sdl
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_RenderPresent(IntPtr renderer);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_PollEvent(out Event e);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern uint SDL_GetMouseState(out float x, out float y);
-    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetKeyboardState(out int count);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] [return: MarshalAs(UnmanagedType.I1)] public static extern bool SDL_GetWindowSize(IntPtr window, out int width, out int height);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_Delay(uint ms);
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern void SDL_DestroyTexture(IntPtr texture);
