@@ -176,7 +176,13 @@ internal sealed class MacroWorldState
     public int MacroTurnsProcessed { get; set; }
     public int MacroTurnsScheduled { get; set; }
     public int MacroTurnCursor { get; set; }
+    public MacroTurnPhase MacroTurnPhase { get; set; }
+    public MacroMarketAccumulator MarketTurnAccumulator { get; set; } = new();
+    public Dictionary<int, int> TurnHungryCellIds { get; set; } = [];
+    public Dictionary<int, int> TurnBestDonorCellIds { get; set; } = [];
+    public Dictionary<int, double> TurnBestDonorDistances { get; set; } = [];
     public int TickSliceCursor { get; set; }
+    private int _cachedLocalMapCellId;
     private readonly BackgroundWorldRouteScheduler _routeScheduler = new();
     private const int MacroCellsPerSlice = 128;
     private const int IncidentCellsPerSlice = 128;
