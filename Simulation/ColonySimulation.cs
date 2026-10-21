@@ -191,8 +191,7 @@ internal sealed class ColonySimulation
     {
         if (string.IsNullOrWhiteSpace(faction)) throw new ArgumentException("Visitor faction cannot be empty.", nameof(faction));
         var targetCandidates = new[] { new CellPosition(19, 8), new CellPosition(18, 8), new CellPosition(20, 8), new CellPosition(19, 9), new CellPosition(18, 9), new CellPosition(20, 9) };
-        CellPosition? target = targetCandidates.FirstOrDefault(IsWalkable);
-        if (!target.HasValue || !IsWalkable(target.Value)) target = FindWalkableEdgeCell(1);
+        CellPosition? target = targetCandidates.Where(IsWalkable).Select(cell => (CellPosition?)cell).FirstOrDefault();
         if (!target.HasValue) return 0;
         CellPosition? entry = null;
         for (int y = 0; y < Height && !entry.HasValue; y++)
