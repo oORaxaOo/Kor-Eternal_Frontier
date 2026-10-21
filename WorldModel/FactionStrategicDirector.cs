@@ -37,10 +37,15 @@ internal static class FactionStrategicDirector
                     // Existing shared ledger performs atomic debit and capacity-aware delivery.
                     var resource = world.InventoryAt(home.Id, WorldResourceKind.Food) >= 20 ? WorldResourceKind.Food : WorldResourceKind.Wood;
                     double amount = Math.Min(10, world.InventoryAt(home.Id, resource));
-                    if (amount > 0) world.CreateShipment(caravan.Id, home.Id, destination.Id, resource, amount, 60 / Math.Max(1, route.Nodes.Count * .75));
+                    if (amount > 0)
+                    {
+                        double directDistance = Math.Sqrt(Math.Pow(destination.X - home.X, 2) + Math.Pow(destination.Y - home.Y, 2));
+                        world.CreateShipment(caravan.Id, home.Id, destination.Id, resource, amount,
+                            directDistance / Math.Max(1, route.EstimatedSeconds));
+                    }
                 }
             }
-            else if (!hasArmy && profile.Strategy is FactionStrategy.Defense or FactionStrategy.WarPreparation &&
+            else if (!hasArmy && (profile.Strategy is FactionStrategy.Defense or FactionStrategy.WarPreparation) &&
                      world.Entities.Count(entity => entity.Kind == WorldEntityKind.Army && entity.Faction == profile.Faction) < 3)
             {
                 var army = world.AddEntity(WorldEntityKind.Army, $"{profile.Faction} Response Guard", profile.Faction,
