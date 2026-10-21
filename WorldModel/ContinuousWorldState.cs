@@ -183,6 +183,7 @@ internal sealed class ContinuousWorldState
         if (Ecology.Herds.Count == 0 && Ecology.Hotspots.Count == 0) Ecology.Initialize(Seed);
         Ecology.Step(deltaSeconds, ClockSeconds, Seed);
         FactionIntelligenceSystem.Step(this, deltaSeconds);
+        FactionStrategicDirector.Step(this);
         // Continuous settlement food production is integrated directly against elapsed world time.
         foreach (var settlement in Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement))
         {
