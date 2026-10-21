@@ -238,7 +238,22 @@ internal static class Program
                         if (demolitionMode) simulation.DemolishAt(tileX, tileY);
                         else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                         else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
-                        else if (architectureMode != ArchitectureKind.None) simulation.DesignTileConstruction(tileX, tileY, architectureMode);
+                        else if (architectureMode != ArchitectureKind.None)
+                        {
+                            architectureDragActive = architectureMode is ArchitectureKind.Wall or ArchitectureKind.Floor;
+                            architectureDragKind = architectureMode;
+                            architectureDragStartX = architectureDragLastX = tileX;
+                            architectureDragStartY = architectureDragLastY = tileY;
+                            if (architectureMode == ArchitectureKind.Wall)
+                                DesignArchitectureLine(simulation, tileX, tileY, tileX, tileY, ArchitectureKind.Wall);
+                            else if (architectureMode != ArchitectureKind.Floor)
+                                simulation.DesignTileConstruction(tileX, tileY, architectureMode);
+                            simulation.SetMessage(architectureMode == ArchitectureKind.Wall
+                                ? "Wall tool: hold the left mouse button and drag to draw a straight wall."
+                                : architectureMode == ArchitectureKind.Floor
+                                    ? "Floor tool: hold the left mouse button and drag to fill a rectangular area."
+                                    : $"Construction order: {architectureMode}.");
+                        }
                         else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                     }
                     else if (logicalMouse.X >= 770 && logicalMouse.Y >= 423 && logicalMouse.Y < 650)
