@@ -24,7 +24,7 @@ internal sealed class ColonyWealth
     }
 
     public ColonyWealthSnapshot Sample(long tick, IReadOnlyDictionary<ResourceKind, int> inventory,
-        IEnumerable<(PlaceableKind Kind, bool Built)> objects, IEnumerable<(ArchitectureKind Kind)> architecture)
+        IEnumerable<(PlaceableKind Kind, bool Built)> objects, IEnumerable<ArchitectureKind> architecture)
     {
         if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
         double stored = inventory.Sum(item => Math.Max(0, item.Value) * MarketValues[item.Key]);
@@ -34,7 +34,7 @@ internal sealed class ColonyWealth
             PlaceableKind.Workbench => 90, PlaceableKind.StorageRack => 65, PlaceableKind.Garden => 75,
             PlaceableKind.SleepingPod => 55, PlaceableKind.DiningTable => 45, PlaceableKind.Lamp => 25,
             PlaceableKind.ComfortBench => 40, _ => 0
-        }) + architecture.Sum(item => item.Kind switch
+        }) + architecture.Sum(kind => kind switch
         {
             ArchitectureKind.Wall => 12, ArchitectureKind.Door => 18, ArchitectureKind.Floor => 5,
             ArchitectureKind.Path => 3, ArchitectureKind.Conduit => 9, _ => 0
