@@ -62,8 +62,12 @@ internal static class ColonyChecks
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.Lamp, 10, 6) > 0, "lamp should accept a blueprint");
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.ComfortBench, 12, 6) > 0, "comfort bench should accept a blueprint");
         var builderControls = new ColonySimulation();
+        Check(builderControls.CanDesignTileConstruction(5, 5, ArchitectureKind.Floor),
+            "the tile placement preview should recognize a clear tile as valid");
         Check(builderControls.DesignTileConstruction(5, 5, ArchitectureKind.Floor),
             "a clear tile should accept a construction blueprint");
+        Check(!builderControls.CanDesignTileConstruction(5, 5, ArchitectureKind.Floor),
+            "the tile placement preview should turn invalid after the tile is reserved");
         Check(builderControls.SelectWorkOrderAt(5.5f, 5.5f) && builderControls.CancelSelectedWorkOrder(),
             "a selected planned tile blueprint should be cancellable");
         Check(builderControls.TileOrderAt(5, 5) == null,
