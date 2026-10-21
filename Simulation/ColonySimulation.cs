@@ -151,6 +151,9 @@ internal sealed class ColonySimulation
     private SocialRelationshipNetwork _socialRelationships = new();
     private IncidentManager _incidentManager = new();
     private ColonyStoryteller _storyteller = new();
+    private readonly WorkPriorityMatrix _workPriorities = new();
+    private readonly ReservationManager _reservations = new();
+    private readonly ColonyWealth _wealth = new();
     private long _socialTick;
     private readonly HashSet<int> _storageZonesByObject = [];
     private int _nextOrderId = 1;
@@ -169,6 +172,9 @@ internal sealed class ColonySimulation
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public ColonyStoryteller Storyteller => _storyteller;
+    public WorkPriorityMatrix WorkPriorities => _workPriorities;
+    public ReservationManager Reservations => _reservations;
+    public ColonyWealthSnapshot Wealth => _wealth.Current;
     public IReadOnlyList<TileConstructionOrder> TileOrders => _tileOrders;
     public IReadOnlyList<ExcavationOrder> ExcavationOrders => _excavationOrders;
     public IReadOnlyList<PlaceableObjectState> Objects => _objects;
@@ -258,13 +264,16 @@ internal sealed class ColonySimulation
         }
         InitializeEcosystem();
         SyncThingGrid();
+        RefreshWealthMetrics();
     }
 
     internal ColonySnapshot CaptureSnapshot()
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 7,
+            SchemaVersion = 8,
+            WorkPriorities = _workPriorities.CaptureSnapshot(),
+            Wealth = _wealth.Current,
             SocialTick = _socialTick,
             SocialNetwork = _socialRelationships.CaptureSnapshot(),
             IncidentManager = _incidentManager.CaptureSnapshot(),
@@ -433,6 +442,19 @@ internal sealed class ColonySimulation
         simulation._environmentAccumulatorSeconds = snapshot.EnvironmentAccumulatorSeconds;
         simulation.Message = snapshot.Message;
         simulation.SelectedWorkerId = snapshot.SelectedWorkerId;
+        simulation._wealth.Restore(snapshot.Wealth);
+        foreach (var worker in simulation._workers.Where(item => item.Task?.Kind == ColonyTaskKind.Gather).OrderBy(item => item.Id))
+        {
+            var deposit = simulation._deposits.FirstOrDefault(item => item.Id == worker.Task!.DepositId);
+            if (deposit == null || deposit.Amount <= 0) continue;
+            int stack = Math.Max(0, deposit.Amount - simulation._reservations.ReservedByOthers($"deposit:{deposit.Id}", worker.Id));
+            if (stack > 0) simulation._reservations.Reserve($"deposit:{deposit.Id}", worker.Id, stack, deposit.Amount);
+        }
+        var workerIdsForPriorities = simulation._workers.Select(worker => worker.Id).ToHashSet();
+        var restoredPriorities = WorkPriorityMatrix.Restore(snapshot.WorkPriorities, workerIdsForPriorities);
+        foreach (var workerId in workerIdsForPriorities)
+            foreach (var category in Enum.GetValues<WorkCategory>())
+                simulation._workPriorities.SetPriority(workerId, category, restoredPriorities.GetPriority(workerId, category));
         simulation.InitializeEcosystem();
         foreach (var workerState in snapshot.Workers)
         {
@@ -449,6 +471,7 @@ internal sealed class ColonySimulation
             simulation._storyteller = ColonyStoryteller.Restore(snapshot.Storyteller);
         simulation._tickManager.RestoreTickCount((long)Math.Round(simulation.ElapsedSeconds * TickManager.TicksPerSecond));
         simulation.SyncThingGrid();
+        simulation.RefreshWealthMetrics();
         return simulation;
     }
 
@@ -508,6 +531,7 @@ internal sealed class ColonySimulation
         if (ledgerFood > gridFood && !_ecosystem.Grid.TryAdd(ResourceKind.Food, ledgerFood - gridFood))
             throw new InvalidOperationException("The ecosystem food buffer cannot mirror the settlement ledger.");
         if (gridFood > ledgerFood) _ecosystem.Grid.TryTake(ResourceKind.Food, gridFood - ledgerFood);
+        RefreshWealthMetrics();
     }
 
     private double InventoryAmount(ResourceKind resource)
@@ -1402,11 +1426,6 @@ internal sealed class ColonySimulation
         var deposit = DepositAt(x, y);
         if (deposit != null)
         {
-            if (IsDepositReserved(deposit.Id, worker.Id))
-            {
-                Message = $"Another worker is already assigned to {deposit.Resource} at ({x}, {y}).";
-                return;
-            }
             if (InventoryFreeCapacity <= 0)
             {
                 Message = "Colony storage is full. Build or complete additional storage before gathering more resources.";
@@ -1417,6 +1436,14 @@ internal sealed class ColonySimulation
                 Message = "No route to that resource deposit.";
                 return;
             }
+            int reservedStack = deposit.Amount;
+            if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount))
+            {
+                Message = "Another worker is already assigned to this resource deposit; its stack is reserved.";
+                return;
+            }
+            if (worker.Task?.Kind == ColonyTaskKind.Gather && worker.Task.DepositId != deposit.Id)
+                _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
             worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
             Message = $"{worker.Name} ordered to gather {deposit.Resource}. The material will be carried back to stockpile.";
             return;
@@ -1428,6 +1455,8 @@ internal sealed class ColonySimulation
             Message = "No walkable route to the selected tile.";
             return;
         }
+        if (worker.Task?.Kind == ColonyTaskKind.Gather)
+            _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
         worker.Task = new WorkerTask(ColonyTaskKind.Move, target, movement);
         Message = $"{worker.Name} moving to ({x}, {y}).";
     }
@@ -1495,12 +1524,26 @@ internal sealed class ColonySimulation
         _thingGrid.Rebuild(things);
     }
 
+    internal ColonyWealthSnapshot RefreshWealthMetrics()
+    {
+        var inventory = Enum.GetValues<ResourceKind>().ToDictionary(resource => resource, ResourceCount);
+        var objects = _objects.Select(item => (Kind: item.Kind, Built: item.IsBuilt));
+        var architecture = _tiles.Cast<TileCell>().Where(tile => tile.Architecture != ArchitectureKind.None)
+            .Select(tile => tile.Architecture);
+        return _wealth.Sample(_tickManager.TickCount, inventory, objects, architecture);
+    }
+
     private void StepStoryteller()
     {
         float averageStress = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Stress);
         float averageHunger = _workers.Count == 0 ? 0f : _workers.Average(worker => worker.Hunger);
-        _storyteller.Step(_socialTick, new StorytellerColonyState(
-            _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger));
+        var wealth = RefreshWealthMetrics();
+        var events = _storyteller.Step(_tickManager.TickCount, new StorytellerColonyState(
+            _workers.Count, ResourceCount(ResourceKind.Food), PendingJobs, averageStress, averageHunger,
+            wealth.TotalWealth, wealth.ThreatPoints));
+        var threatEvent = events.FirstOrDefault(item => item.ThreatPoints > 0);
+        if (threatEvent != null)
+            Message = $"STORYTELLER INCIDENT: {threatEvent.Message} | threat budget {threatEvent.ThreatPoints} points.";
     }
 
 
@@ -1626,13 +1669,30 @@ internal sealed class ColonySimulation
             bool assigned = false;
             // Priority is evaluated across excavation, tile builds, object blueprints and production orders.
             // Within one priority level, task-type order remains stable and existing behavior is preserved.
-            for (int priority = 5; priority >= 1 && !assigned; priority--)
-                assigned = TryAssignExcavation(worker, priority) ||
-                           TryAssignTileBuild(worker, priority) ||
-                           TryAssignObjectBuild(worker, priority) ||
-                           TryAssignProduction(worker, priority);
+            // Work-order importance remains the outer scheduling constraint; the per-pawn
+            // matrix decides which enabled category wins among orders at that same importance.
+            for (int orderPriority = 5; orderPriority >= 1 && !assigned; orderPriority--)
+            {
+                for (int pawnPriority = 4; pawnPriority >= 1 && !assigned; pawnPriority--)
+                {
+                    foreach (var category in Enum.GetValues<WorkCategory>())
+                    {
+                        if (_workPriorities.GetPriority(worker.Id, category) != pawnPriority) continue;
+                        assigned = category switch
+                        {
+                            WorkCategory.Mining => TryAssignExcavation(worker, orderPriority),
+                            WorkCategory.Construction => TryAssignTileBuild(worker, orderPriority) ||
+                                                        TryAssignObjectBuild(worker, orderPriority),
+                            WorkCategory.Production => TryAssignProduction(worker, orderPriority),
+                            WorkCategory.Gathering => TryAssignGatherForShortage(worker, orderPriority),
+                            WorkCategory.Hauling => false,
+                            _ => false
+                        };
+                        if (assigned) break;
+                    }
+                }
+            }
             if (assigned) continue;
-            TryAssignGatherForShortage(worker);
         }
     }
 
@@ -1662,6 +1722,7 @@ internal sealed class ColonySimulation
                 continue;
             }
 
+            if (!_reservations.Reserve($"excavation:{order.Id}", worker.Id, 1, 1)) continue;
             order.Status = ConstructionStatus.UnderConstruction;
             worker.Task = new WorkerTask(ColonyTaskKind.Mine, workCell.Value, route) { TargetId = order.Id };
             Message = $"{worker.Name} assigned to excavate rock at ({order.Cell.X}, {order.Cell.Y}).";
@@ -1691,6 +1752,12 @@ internal sealed class ColonySimulation
                 continue;
             }
 
+            if (!_reservations.Reserve($"tile-order:{order.Id}", worker.Id, 1, 1))
+            {
+                AddMany(TileCost(order.Target));
+                order.Status = ConstructionStatus.WaitingForMaterials;
+                continue;
+            }
             order.Status = ConstructionStatus.UnderConstruction;
             worker.Task = new WorkerTask(ColonyTaskKind.BuildTile, workCell.Value, route) { TargetId = order.Id };
             Message = $"{worker.Name} assigned to build {order.Target} at ({order.Cell.X}, {order.Cell.Y}).";
@@ -1718,6 +1785,12 @@ internal sealed class ColonySimulation
                 item.Status = ConstructionStatus.WaitingForMaterials;
                 continue;
             }
+            if (!_reservations.Reserve($"object-order:{item.Id}", worker.Id, 1, 1))
+            {
+                AddMany(cost);
+                item.Status = ConstructionStatus.WaitingForMaterials;
+                continue;
+            }
             item.Status = ConstructionStatus.UnderConstruction;
             worker.Task = new WorkerTask(ColonyTaskKind.BuildObject, workCell.Value, route) { TargetId = item.Id };
             Message = $"{worker.Name} assigned to construct {item.Kind}.";
@@ -1735,6 +1808,7 @@ internal sealed class ColonySimulation
             var workCell = FindWorkCell(worker, station.Origin, station.Width, station.Height);
             if (!workCell.HasValue || !TryFindPath(worker, workCell.Value, out var route)) continue;
 
+            if (!_reservations.Reserve($"production-order:{order.Id}", worker.Id, 1, 1)) continue;
             order.Assigned = true;
             worker.Task = new WorkerTask(ColonyTaskKind.Produce, workCell.Value, route) { TargetId = order.Id };
             Message = $"{worker.Name} assigned to produce components.";
@@ -1743,9 +1817,9 @@ internal sealed class ColonySimulation
         return false;
     }
 
-    private void TryAssignGatherForShortage(ColonyWorker worker)
+    private bool TryAssignGatherForShortage(ColonyWorker worker, int priority)
     {
-        if (InventoryFreeCapacity <= 0) return;
+        if (InventoryFreeCapacity <= 0) return false;
 
         // A shortage inherits the highest priority of any pending order that needs that resource.
         // Among resources at the same priority, prefer the nearest available finite deposit.
@@ -1762,33 +1836,36 @@ internal sealed class ColonySimulation
         }
 
         foreach (var order in _tileOrders
-                     .Where(order => order.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials)
-                     .OrderByDescending(order => order.Priority).ThenBy(order => order.Id))
+                     .Where(order => (order.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials) && order.Priority == priority)
+                     .OrderBy(order => order.Id))
             IncludeShortages(order.Priority, TileCost(order.Target));
 
         foreach (var item in _objects
-                     .Where(item => item.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials)
-                     .OrderByDescending(item => item.Priority).ThenBy(item => item.Id))
+                     .Where(item => (item.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials) && item.Priority == priority)
+                     .OrderBy(item => item.Id))
             IncludeShortages(item.Priority, ObjectCost(item.Kind));
 
         var deposit = _deposits
             .Where(d => d.Amount > 0 && priorityByResource.ContainsKey(d.Resource) &&
-                        !IsDepositReserved(d.Id, worker.Id))
+                        _reservations.ReservedByOthers($"deposit:{d.Id}", worker.Id) < d.Amount)
             .OrderByDescending(d => priorityByResource[d.Resource])
             .ThenBy(d => Distance(worker.X, worker.Y, d.Cell.X + 0.5f, d.Cell.Y + 0.5f))
             .ThenBy(d => d.Id)
             .FirstOrDefault();
-        if (deposit == null) return;
-        if (!TryFindPath(worker, deposit.Cell, out var route)) return;
+        if (deposit == null) return false;
+        if (!TryFindPath(worker, deposit.Cell, out var route)) return false;
+        int reservedStack = deposit.Amount;
+        if (!_reservations.Reserve($"deposit:{deposit.Id}", worker.Id, reservedStack, deposit.Amount)) return false;
         worker.Task = new WorkerTask(ColonyTaskKind.Gather, deposit.Cell, route) { DepositId = deposit.Id };
         Message = $"{worker.Name} hauling is needed; gathering {deposit.Resource} for a priority {priorityByResource[deposit.Resource]} order.";
+        return true;
     }
 
-    private bool IsDepositReserved(int depositId, int exceptWorkerId) =>
-        _workers.Any(candidate => candidate.Id != exceptWorkerId &&
-            candidate.Task != null &&
-            candidate.Task.Kind == ColonyTaskKind.Gather &&
-            candidate.Task.DepositId == depositId);
+    private bool IsDepositReserved(int depositId, int exceptWorkerId)
+    {
+        var deposit = _deposits.FirstOrDefault(item => item.Id == depositId);
+        return deposit == null || _reservations.ReservedByOthers($"deposit:{depositId}", exceptWorkerId) >= deposit.Amount;
+    }
 
     private void AssignDelivery(ColonyWorker worker)
     {
@@ -1830,6 +1907,7 @@ internal sealed class ColonySimulation
         switch (task.Kind)
         {
             case ColonyTaskKind.Move:
+                _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
                 break;
             case ColonyTaskKind.Gather:
@@ -1859,7 +1937,8 @@ internal sealed class ColonySimulation
         var deposit = _deposits.FirstOrDefault(d => d.Id == task.DepositId);
         if (deposit == null || deposit.Amount <= 0)
         {
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             Message = "The resource deposit is exhausted.";
             return;
         }
@@ -1868,7 +1947,8 @@ internal sealed class ColonySimulation
         deposit.Amount -= amount;
         worker.CarriedResource = deposit.Resource;
         worker.CarriedAmount = amount;
-        worker.Task = null;
+        _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
         AssignDelivery(worker);
         Message = $"{worker.Name} collected {amount} {deposit.Resource}; returning it to stockpile.";
     }
@@ -1877,7 +1957,8 @@ internal sealed class ColonySimulation
     {
         if (!worker.CarriedResource.HasValue || worker.CarriedAmount <= 0)
         {
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             return;
         }
 
@@ -1900,7 +1981,8 @@ internal sealed class ColonySimulation
                 ? "Colony storage is full; carried resources are waiting for storage space."
                 : $"{worker.Name} delivered {delivered}; {worker.CarriedAmount} remain carried until storage space is available.";
         }
-        worker.Task = null;
+        _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
     }
 
     private void WorkOnExcavation(ColonyWorker worker, WorkerTask task, float deltaSeconds)
@@ -1908,7 +1990,8 @@ internal sealed class ColonySimulation
         var order = _excavationOrders.FirstOrDefault(candidate => candidate.Id == task.TargetId);
         if (order == null || order.Status != ConstructionStatus.UnderConstruction)
         {
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             return;
         }
 
@@ -1919,7 +2002,8 @@ internal sealed class ColonySimulation
         if (tile.Terrain != TerrainKind.Rock || tile.Architecture != ArchitectureKind.None)
         {
             order.Status = ConstructionStatus.Blocked;
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             Message = $"Excavation at ({order.Cell.X}, {order.Cell.Y}) is blocked because the tile is no longer solid rock.";
             return;
         }
@@ -1929,7 +2013,8 @@ internal sealed class ColonySimulation
         InvalidatePathCache();
         AddDeposit(order.Cell, ResourceKind.Stone, amount: 3);
         order.Status = ConstructionStatus.Complete;
-        worker.Task = null;
+        _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
         Message = $"Excavation complete at ({order.Cell.X}, {order.Cell.Y}); 3 stone are ready to be hauled.";
     }
 
@@ -1938,7 +2023,8 @@ internal sealed class ColonySimulation
         var order = _tileOrders.FirstOrDefault(o => o.Id == task.TargetId);
         if (order == null || order.Status != ConstructionStatus.UnderConstruction)
         {
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             return;
         }
         order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
@@ -1949,7 +2035,8 @@ internal sealed class ColonySimulation
         tile.ConstructionOrderId = null;
         InvalidatePathCache();
         order.Status = ConstructionStatus.Complete;
-        worker.Task = null;
+        _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
         Message = $"{order.Target} completed at ({order.Cell.X}, {order.Cell.Y}).";
     }
 
@@ -1958,13 +2045,15 @@ internal sealed class ColonySimulation
         var item = _objects.FirstOrDefault(o => o.Id == task.TargetId);
         if (item == null || item.Status != ConstructionStatus.UnderConstruction)
         {
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             return;
         }
         item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
         if (item.WorkDone < item.WorkRequired) return;
         item.Status = ConstructionStatus.Complete;
-        worker.Task = null;
+        _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
         Message = $"{item.Kind} completed and is now operational.";
     }
 
@@ -1973,7 +2062,8 @@ internal sealed class ColonySimulation
         var order = _productionOrders.FirstOrDefault(o => o.Id == task.TargetId);
         if (order == null || order.Complete)
         {
-            worker.Task = null;
+            _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
             return;
         }
         float workRate = worker.Hungry ? 0.5f : 1f;
@@ -1987,7 +2077,8 @@ internal sealed class ColonySimulation
         order.Complete = true;
         order.Assigned = false;
         AddResource(ResourceKind.Components, 1);
-        worker.Task = null;
+        _reservations.ReleasePawn(worker.Id);
+                worker.Task = null;
         Message = "Workbench production completed: 1 component produced from committed materials.";
     }
 

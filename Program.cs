@@ -59,13 +59,16 @@ internal static class Program
             bool factionDashboardOpen = false;
             string? selectedFactionName = "Kor";
             int factionTab = 0;
+            bool workMatrixOpen = false;
+            int workerInspectorTab = 0;
+            int workMatrixPage = 0;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -201,6 +204,32 @@ internal static class Program
                         else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
                         else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
                     }
+                    else if (workMatrixOpen)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (Hit(mx, my, 850, 584, 942, 612)) workMatrixOpen = false;
+                        else if (Hit(mx, my, 710, 584, 770, 612)) workMatrixPage = Math.Max(0, workMatrixPage - 1);
+                        else if (Hit(mx, my, 778, 584, 838, 612)) workMatrixPage = Math.Min(Math.Max(0, (simulation.Workers.Count - 1) / 9), workMatrixPage + 1);
+                        else
+                        {
+                            var categories = Enum.GetValues<WorkCategory>();
+                            int[] columnX = [420, 520, 620, 720, 820];
+                            var workers = simulation.Workers.Skip(workMatrixPage * 9).Take(9).ToArray();
+                            for (int row = 0; row < workers.Length; row++)
+                            {
+                                float rowY = 244 + row * 38;
+                                for (int col = 0; col < categories.Length; col++)
+                                {
+                                    if (!Hit(mx, my, columnX[col], rowY, columnX[col] + 64, rowY + 28)) continue;
+                                    int current = simulation.WorkPriorities.GetPriority(workers[row].Id, categories[col]);
+                                    simulation.WorkPriorities.SetPriority(workers[row].Id, categories[col], (current + 1) % 5);
+                                    simulation.SetMessage($"{workers[row].Name}: {categories[col]} priority is now {(current + 1) % 5}.");
+                                    goto WorkMatrixClickHandled;
+                                }
+                            }
+                            WorkMatrixClickHandled:;
+                        }
+                    }
                     else if (factionDashboardOpen)
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
@@ -222,6 +251,16 @@ internal static class Program
                                 }
                             }
                         }
+                    }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 1008, 8, 1085, 35))
+                    {
+                        workMatrixOpen = true;
+                        factionDashboardOpen = false;
+                    }
+                    else if (!worldView && simulation.SelectedWorkerId.HasValue && Hit(logicalMouse.X, logicalMouse.Y, 14, 476, 374, 646))
+                    {
+                        if (Hit(logicalMouse.X, logicalMouse.Y, 22, 506, 122, 528)) workerInspectorTab = 0;
+                        else if (Hit(logicalMouse.X, logicalMouse.Y, 128, 506, 228, 528)) workerInspectorTab = 1;
                     }
                     else if (Hit(logicalMouse.X, logicalMouse.Y, 955, 8, 1005, 35))
                     {

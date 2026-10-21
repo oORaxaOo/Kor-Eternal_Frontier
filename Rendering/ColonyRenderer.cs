@@ -31,7 +31,7 @@ internal sealed class ColonyRenderer : IDisposable
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource,
-        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab)
+        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab, int workMatrixPage)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -46,7 +46,11 @@ internal sealed class ColonyRenderer : IDisposable
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
         DrawFactionButton(canvas, factionDashboardOpen);
+        DrawWorkMatrixButton(canvas, workMatrixOpen);
+        if (!worldView && !workMatrixOpen && simulation.SelectedWorkerId.HasValue)
+            DrawWorkerInspector(canvas, simulation, workerInspectorTab);
         if (factionDashboardOpen) DrawFactionDashboard(canvas, spatialWorld, selectedFactionName, factionTab);
+        if (workMatrixOpen) DrawWorkMatrix(canvas, simulation, workMatrixPage);
     }
 
     private void DrawContinuousWorld(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, long? selectedId)
@@ -455,6 +459,101 @@ internal sealed class ColonyRenderer : IDisposable
     }
 
 
+    private void DrawWorkMatrixButton(SKCanvas canvas, bool isOpen)
+    {
+        _fill.Color = isOpen ? Gold : Panel;
+        canvas.DrawRoundRect(new SKRect(1008, 8, 1085, 35), 4, 4, _fill);
+        _line.Color = Gold;
+        canvas.DrawRoundRect(new SKRect(1008, 8, 1085, 35), 4, 4, _line);
+        _text.Color = isOpen ? Background : TextColor;
+        canvas.DrawText("WORK", 1046, 26, SKTextAlign.Center, _smallFont, _text);
+    }
+
+    private void DrawWorkerInspector(SKCanvas canvas, ColonySimulation simulation, int tab)
+    {
+        var worker = simulation.Workers.FirstOrDefault(item => item.Id == simulation.SelectedWorkerId);
+        if (worker == null) return;
+        _fill.Color = new SKColor(12, 16, 17, 245);
+        canvas.DrawRoundRect(new SKRect(14, 476, 374, 646), 5, 5, _fill);
+        _line.Color = Gold;
+        canvas.DrawRoundRect(new SKRect(14, 476, 374, 646), 5, 5, _line);
+        _text.Color = Gold;
+        canvas.DrawText($"{worker.Name}  /  COLONIST INSPECTOR", 24, 497, SKTextAlign.Left, _headingFont, _text);
+        DrawButton(canvas, "STATUS", 22, 506, 100, 22, tab == 0);
+        DrawButton(canvas, "SOCIAL", 128, 506, 100, 22, tab == 1);
+        _text.Color = TextColor;
+        if (tab == 0)
+        {
+            var citizen = simulation.CitizenForWorker(worker.Id);
+            string toil = worker.Task?.JobTracker.CurrentToil?.Kind.ToString() ?? "Idle";
+            canvas.DrawText($"Job: {worker.Task?.Kind.ToString() ?? "No assigned job"}", 24, 550, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 570, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Hunger {worker.Hunger:0}/100  |  Mood {citizen?.Mood ?? 100:0}  |  Stress {worker.Stress:0}", 24, 590, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0}  |  Carried {worker.CarriedAmount} {worker.CarriedResource?.ToString() ?? "—"}", 24, 610, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText(simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.", 24, 630, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            var relationships = simulation.SocialRelationships.Relationships
+                .Where(item => item.ResidentA == worker.Id || item.ResidentB == worker.Id)
+                .OrderByDescending(item => item.Affinity).ThenBy(item => item.ResidentA).Take(4).ToArray();
+            if (relationships.Length == 0)
+            {
+                _muted.Color = MutedColor;
+                canvas.DrawText("No recorded social encounters yet.", 24, 552, SKTextAlign.Left, _smallFont, _muted);
+            }
+            else
+            {
+                int row = 552;
+                foreach (var relation in relationships)
+                {
+                    int otherId = relation.ResidentA == worker.Id ? relation.ResidentB : relation.ResidentA;
+                    string otherName = simulation.Workers.FirstOrDefault(item => item.Id == otherId)?.Name ?? $"Resident {otherId}";
+                    _text.Color = relation.Affinity < -30 ? Crimson : TextColor;
+                    canvas.DrawText($"{otherName}: affinity {relation.Affinity:+#;-#;0} | trust {relation.Trust:+#;-#;0} | tension {relation.Tension}", 24, row, SKTextAlign.Left, _smallFont, _text);
+                    row += 20;
+                }
+            }
+        }
+    }
+
+    private void DrawWorkMatrix(SKCanvas canvas, ColonySimulation simulation, int page)
+    {
+        _fill.Color = new SKColor(8, 11, 12, 250);
+        canvas.DrawRoundRect(new SKRect(130, 112, 970, 624), 8, 8, _fill);
+        _line.Color = Gold;
+        canvas.DrawRoundRect(new SKRect(130, 112, 970, 624), 8, 8, _line);
+        _text.Color = Gold;
+        canvas.DrawText("COLONY WORK PRIORITIES", 155, 145, SKTextAlign.Left, _titleFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText("Click a cell to cycle 0–4. 0 = disabled, 4 = highest priority. Hauling carried cargo remains mandatory.", 155, 170, SKTextAlign.Left, _smallFont, _muted);
+        var categories = Enum.GetValues<WorkCategory>();
+        int[] columnX = [420, 520, 620, 720, 820];
+        for (int i = 0; i < categories.Length; i++)
+        {
+            _text.Color = TextColor;
+            canvas.DrawText(categories[i].ToString().ToUpperInvariant(), columnX[i] + 32, 212, SKTextAlign.Center, _smallFont, _text);
+        }
+        int rowY = 244;
+        foreach (var worker in simulation.Workers.Skip(page * 9).Take(9))
+        {
+            _text.Color = TextColor;
+            canvas.DrawText(worker.Name, 160, rowY + 17, SKTextAlign.Left, _normalFont, _text);
+            for (int i = 0; i < categories.Length; i++)
+            {
+                int priority = simulation.WorkPriorities.GetPriority(worker.Id, categories[i]);
+                DrawButton(canvas, priority.ToString(), columnX[i], rowY, 64, 28, priority == 0);
+            }
+            rowY += 38;
+        }
+        _muted.Color = MutedColor;
+        canvas.DrawText($"Page {page + 1}/{Math.Max(1, (simulation.Workers.Count + 8) / 9)} · priorities persist with the colony", 155, 598, SKTextAlign.Left, _smallFont, _muted);
+        DrawButton(canvas, "PREV", 710, 584, 60, 28, page == 0);
+        DrawButton(canvas, "NEXT", 778, 584, 60, 28, (page + 1) * 9 >= simulation.Workers.Count);
+        DrawButton(canvas, "CLOSE", 850, 584, 92, 28);
+    }
+
     private void DrawFactionButton(SKCanvas canvas, bool isOpen)
     {
         _fill.Color = isOpen ? new SKColor(87, 28, 35) : new SKColor(28, 35, 32);
@@ -643,7 +742,7 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"Time: {(int)(simulation.ElapsedSeconds / 60)}m {((int)simulation.ElapsedSeconds % 60):00}s", 790, 215, SKTextAlign.Left, _normalFont, _text);
         canvas.DrawText(paused ? "SIMULATION PAUSED" : "SIMULATION RUNNING", 790, 239, SKTextAlign.Left, _normalFont, _text);
         _text.Color = simulation.InventoryFreeCapacity == 0 ? Crimson : TextColor;
-        canvas.DrawText($"Storage: {simulation.InventoryUsed}/{simulation.InventoryCapacity}", 790, 263, SKTextAlign.Left, _normalFont, _text);
+        canvas.DrawText($"Storage {simulation.InventoryUsed}/{simulation.InventoryCapacity} | Wealth {simulation.Wealth.TotalWealth:0} | TP {simulation.Wealth.ThreatPoints}", 790, 263, SKTextAlign.Left, _smallFont, _text);
 
         _text.Color = Gold;
         canvas.DrawText(worldView ? "WORLD ENTITY INSPECTOR" : "STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);

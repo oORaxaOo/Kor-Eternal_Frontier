@@ -27,6 +27,7 @@ internal sealed class FactionIntelligenceState
     public int Aggression { get; set; }
     public int ThreatLevel { get; set; }
     public double LastDecisionAt { get; set; }
+    public long LastStrategicDecisionTick { get; set; }
     public List<FactionRelationshipState> Relationships { get; set; } = [];
 
     public FactionStanceTowardKor StanceToward(string faction = "Kor")

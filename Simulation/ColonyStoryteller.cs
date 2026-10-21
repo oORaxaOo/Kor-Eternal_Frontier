@@ -2,16 +2,19 @@ namespace KorTheBlight.Simulation;
 
 /// <summary>Metrics sampled from the authoritative colony state, independent of rendering.</summary>
 internal readonly record struct StorytellerColonyState(
-    int Population, int Food, int PendingJobs, float AverageStress, float AverageHunger);
+    int Population, int Food, int PendingJobs, float AverageStress, float AverageHunger, double Wealth = 0, int ThreatPoints = 0);
 
-internal enum StorytellerMetric { FoodPerResident, AverageStress, JobBacklogPerResident, AverageHunger }
+internal enum StorytellerMetric { FoodPerResident, AverageStress, JobBacklogPerResident, AverageHunger, ColonyWealth }
 internal enum StorytellerComparison { Below, Above }
 
 internal sealed record StorytellerRule(
     string Code, StorytellerMetric Metric, StorytellerComparison Comparison, float Threshold,
     int MinimumPopulation, long CooldownTicks, int Severity, string Message);
 
-internal sealed record StorytellerEvent(long Id, long Tick, string Code, int Severity, string Message);
+internal sealed record StorytellerEvent(long Id, long Tick, string Code, int Severity, string Message, int ThreatPoints = 0)
+{
+    public int ThreatUnits => ThreatPoints / 25;
+}
 
 /// <summary>
 /// Deterministic, data-driven colony event evaluator. It observes the simulation and emits narrative
@@ -43,7 +46,8 @@ internal sealed class ColonyStoryteller
     {
         if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
         if (state.Population < 0 || state.Food < 0 || state.PendingJobs < 0 ||
-            !float.IsFinite(state.AverageStress) || !float.IsFinite(state.AverageHunger))
+            !float.IsFinite(state.AverageStress) || !float.IsFinite(state.AverageHunger) ||
+            !double.IsFinite(state.Wealth) || state.Wealth < 0 || state.ThreatPoints is < 0 or > 250)
             throw new ArgumentOutOfRangeException(nameof(state), "Storyteller metrics must be finite and non-negative.");
         var emitted = new List<StorytellerEvent>();
         foreach (var rule in _rules)
@@ -55,7 +59,8 @@ internal sealed class ColonyStoryteller
             if (_lastTriggered.TryGetValue(rule.Code, out long last) && tick - last < rule.CooldownTicks) continue;
             _activeRules.Add(rule.Code);
 
-            var item = new StorytellerEvent(_nextId++, tick, rule.Code, rule.Severity, rule.Message);
+            int budget = rule.Severity >= 2 ? Math.Clamp(state.ThreatPoints, 0, 250) : 0;
+            var item = new StorytellerEvent(_nextId++, tick, rule.Code, rule.Severity, rule.Message, budget);
             _lastTriggered[rule.Code] = tick;
             while (_events.Count >= MaximumEvents) _events.Dequeue();
             _events.Enqueue(item);
@@ -82,9 +87,13 @@ internal sealed class ColonyStoryteller
             snapshot.ActiveRules is null || snapshot.ActiveRules.Count > 1024)
             throw new InvalidDataException("Storyteller save contains invalid collection sizes.");
         var storyteller = new ColonyStoryteller(snapshot.Rules ?? throw new InvalidDataException("Storyteller save is missing rule definitions.")) { _nextId = snapshot.NextId };
+        if (!storyteller._rules.Any(rule => rule.Code == "wealth_attracts_attention"))
+            storyteller._rules.Add(new StorytellerRule("wealth_attracts_attention", StorytellerMetric.ColonyWealth,
+                StorytellerComparison.Above, 5_000f, 1, 2_000, 2,
+                "The colony's growing wealth attracts outside attention; an incident budget has been allocated."));
         foreach (var item in snapshot.Events)
         {
-            if (item.Id <= 0 || item.Tick < 0 || item.Severity is < 1 or > 3 ||
+            if (item.Id <= 0 || item.Tick < 0 || item.Severity is < 1 or > 3 || item.ThreatPoints is < 0 or > 250 ||
                 string.IsNullOrWhiteSpace(item.Code) || string.IsNullOrWhiteSpace(item.Message))
                 throw new InvalidDataException("Storyteller save contains an invalid event.");
             storyteller._events.Enqueue(item);
@@ -114,6 +123,7 @@ internal sealed class ColonyStoryteller
         StorytellerMetric.AverageStress => state.AverageStress,
         StorytellerMetric.JobBacklogPerResident => state.Population == 0 ? 0f : (float)state.PendingJobs / state.Population,
         StorytellerMetric.AverageHunger => state.AverageHunger,
+        StorytellerMetric.ColonyWealth => (float)Math.Min(float.MaxValue, state.Wealth),
         _ => throw new ArgumentOutOfRangeException(nameof(metric))
     };
 
@@ -127,6 +137,8 @@ internal sealed class ColonyStoryteller
             1, "The work backlog is growing faster than the colony can comfortably manage.");
         yield return new("hunger_wave", StorytellerMetric.AverageHunger, StorytellerComparison.Above, 70f, 1, 600,
             2, "Many residents are going hungry; review food production and distribution.");
+        yield return new("wealth_attracts_attention", StorytellerMetric.ColonyWealth, StorytellerComparison.Above, 5_000f, 1, 2_000,
+            2, "The colony's growing wealth attracts outside attention; an incident budget has been allocated.");
     }
 }
 
