@@ -52,7 +52,52 @@ internal sealed class WorldSimulation
         }
         SpatialWorld.SetInventoryCapacity(KorSettlementId(SpatialWorld), Colony.InventoryCapacity);
         SpatialWorld.Step(scaledSeconds);
+        ProcessMacroArrivals();
         ElapsedSeconds = SpatialWorld.ClockSeconds;
+    }
+
+    private void ProcessMacroArrivals()
+    {
+        var macro = SpatialWorld.MacroWorld;
+        foreach (var arrival in macro.Arrivals.OrderBy(item => item.Id))
+        {
+            if (macro.ConsumedArrivalIds.Contains(arrival.Id)) continue;
+            if (arrival.TargetCellId < 1 || arrival.TargetCellId > macro.Cells.Length) continue;
+            var target = macro.Cells[arrival.TargetCellId - 1];
+            if (!target.IsLocalMapGenerated) continue;
+
+            string faction = macro.FactionIds.FirstOrDefault(pair => pair.Value == arrival.FactionId).Key ?? "Unknown";
+            var cargo = new Dictionary<ResourceKind, int>();
+            foreach (var item in arrival.Cargo)
+            {
+                ResourceKind? localResource = item.Key switch
+                {
+                    MacroResource.Food => ResourceKind.Food,
+                    MacroResource.Wood => ResourceKind.Wood,
+                    MacroResource.Stone => ResourceKind.Stone,
+                    MacroResource.Alloy => ResourceKind.Alloy,
+                    MacroResource.Components => ResourceKind.Components,
+                    _ => null
+                };
+                if (localResource.HasValue && item.Value > 0)
+                    cargo[localResource.Value] = checked((int)Math.Ceiling(item.Value));
+            }
+
+            int desiredVisitors = arrival.IsRefugeeWave ? Math.Clamp(arrival.Population, 1, 12) : 1;
+            while (arrival.SpawnedVisitorCount < desiredVisitors)
+            {
+                int spawned = Colony.SpawnExternalVisitor(faction, arrival.IsRefugeeWave ? null : cargo);
+                if (spawned == 0) break;
+                arrival.SpawnedVisitorCount++;
+            }
+            if (arrival.SpawnedVisitorCount >= desiredVisitors)
+            {
+                macro.ConsumedArrivalIds.Add(arrival.Id);
+                Colony.SetMessage(arrival.IsRefugeeWave
+                    ? $"{desiredVisitors} refugees from {faction} reached the colony. Select a visitor to admit or dismiss them."
+                    : $"A {faction} caravan reached the colony. Its trader pawn carries the strategic cargo for barter.");
+            }
+        }
     }
 
     private void ProcessStorytellerThreats()
