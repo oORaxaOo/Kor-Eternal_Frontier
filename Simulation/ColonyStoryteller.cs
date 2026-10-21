@@ -51,8 +51,9 @@ internal sealed class ColonyStoryteller
             bool active = state.Population >= rule.MinimumPopulation &&
                 Compare(MetricValue(rule.Metric, state), rule.Comparison, rule.Threshold);
             if (!active) { _activeRules.Remove(rule.Code); continue; }
-            if (!_activeRules.Add(rule.Code)) continue;
+            if (_activeRules.Contains(rule.Code)) continue;
             if (_lastTriggered.TryGetValue(rule.Code, out long last) && tick - last < rule.CooldownTicks) continue;
+            _activeRules.Add(rule.Code);
 
             var item = new StorytellerEvent(_nextId++, tick, rule.Code, rule.Severity, rule.Message);
             _lastTriggered[rule.Code] = tick;
