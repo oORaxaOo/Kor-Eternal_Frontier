@@ -204,6 +204,20 @@ internal static class Program
                         else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
                         else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
                     }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 12, 38, 1088, 59))
+                    {
+                        var latest = world.SpatialWorld.MacroWorld.Notifications.LastOrDefault();
+                        if (latest is not null && latest.CellId > 0 && latest.CellId <= world.SpatialWorld.MacroWorld.Cells.Length)
+                        {
+                            var cell = world.SpatialWorld.MacroWorld.Cells[latest.CellId - 1];
+                            worldCameraX = (cell.X + 0.5f) * MacroWorldState.WorldCellSize;
+                            worldCameraY = (cell.Y + 0.5f) * MacroWorldState.WorldCellSize;
+                            zoom = 0.5f;
+                            selectedWorldEntityId = null;
+                        }
+                        else if (latest is not null)
+                            simulation.SetMessage($"World report: {latest.Message}");
+                    }
                     else if (workMatrixOpen)
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
