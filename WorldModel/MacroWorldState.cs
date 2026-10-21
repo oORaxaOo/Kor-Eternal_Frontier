@@ -116,6 +116,7 @@ internal sealed class MacroWorldState
     public List<WorldNotification> Notifications { get; set; } = [];
     public MarketSnapshot Market { get; set; } = new();
     public long SimulationTicks { get; set; }
+    public double FractionalTickRemainder { get; set; }
     public long NextNotificationId { get; set; } = 1;
     public long NextCaravanId { get; set; } = 1;
     public int MacroTurnsProcessed { get; set; }
@@ -153,7 +154,7 @@ internal sealed class MacroWorldState
                 double distance = Distance(wx, wy, front.X, front.Y);
                 blight = Math.Max(blight, (float)Math.Clamp(1d - distance / 9_000d, 0d, 1d));
             }
-            blight = Math.Max(blight, Math.Clamp(ecology.EnvironmentalPressureAt(wx, wy), 0f, 1f));
+            blight = Math.Max(blight, (float)Math.Clamp(ecology.EnvironmentalPressureAt(wx, wy), 0d, 1d));
             float fertility = region.Biome switch
             {
                 WorldBiomeKind.Plains => 1.15f,
@@ -225,20 +226,18 @@ internal sealed class MacroWorldState
     {
         if (!double.IsFinite(deltaSeconds) || deltaSeconds < 0) throw new ArgumentOutOfRangeException(nameof(deltaSeconds));
         ArgumentNullException.ThrowIfNull(continuous);
-        double tickDelta = deltaSeconds * TickManager.TicksPerSecond;
-        long nextTicks = checked(SimulationTicks + (long)Math.Floor(tickDelta + 1e-8));
-        // Carry fractional tick time without introducing frame-rate-dependent turns.
-        double fractional = tickDelta - Math.Floor(tickDelta + 1e-8);
-        SimulationTicks = nextTicks;
+        double totalTickDelta = deltaSeconds * TickManager.TicksPerSecond + FractionalTickRemainder;
+        long tickDelta = (long)Math.Floor(totalTickDelta + 1e-8);
+        FractionalTickRemainder = Math.Max(0d, totalTickDelta - tickDelta);
+        SimulationTicks = checked(SimulationTicks + tickDelta);
         UpdateCaravans(deltaSeconds);
         // Storyteller-style cell scanning is sliced into small deterministic batches every shared tick.
-        EvaluateIncidentSlice(continuous, 100);
+        EvaluateIncidentSlice(continuous, 600);
         while (SimulationTicks / TicksPerMacroTurn > MacroTurnsProcessed)
         {
             ProcessMacroTurn(continuous);
             MacroTurnsProcessed++;
         }
-        if (fractional < 0) SimulationTicks = nextTicks;
     }
 
     public void ProcessMacroTurn(ContinuousWorldState continuous)
@@ -287,7 +286,6 @@ internal sealed class MacroWorldState
 
         DispatchReliefCaravans();
         UpdatePricesAndEmitMarketNews();
-        MacroTurnsProcessed++;
     }
 
     private void DispatchReliefCaravans()
@@ -404,7 +402,7 @@ internal sealed class MacroWorldState
     public void Validate()
     {
         if (Cells is null || Cells.Length != CellCount || FactionIds is null || Notifications is null || Caravans is null || Market is null ||
-            SimulationTicks < 0 || MacroTurnsProcessed < 0 || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
+            SimulationTicks < 0 || !double.IsFinite(FractionalTickRemainder) || FractionalTickRemainder is < 0 or >= 1 || MacroTurnsProcessed < 0 || MacroTurnsProcessed > SimulationTicks / TicksPerMacroTurn || TickSliceCursor < 0 || TickSliceCursor >= CellCount ||
             NextNotificationId <= Notifications.Select(n => n.Id).DefaultIfEmpty(0).Max() ||
             NextCaravanId <= Caravans.Select(c => c.Id).DefaultIfEmpty(0).Max())
             throw new InvalidDataException("Macro world data has invalid dimensions or counters.");
