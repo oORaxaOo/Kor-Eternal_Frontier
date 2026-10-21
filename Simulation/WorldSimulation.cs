@@ -65,12 +65,29 @@ internal sealed class WorldSimulation
     private void ProcessMacroArrivals()
     {
         var macro = SpatialWorld.MacroWorld;
-        foreach (var arrival in macro.Arrivals.OrderBy(item => item.Id))
+        // Arrivals is a pending-work queue: completed entries are removed immediately.
+        // Avoid sorting/rescanning every historical caravan arrival on every fixed step.
+        int index = 0;
+        while (index < macro.Arrivals.Count)
         {
-            if (macro.ConsumedArrivalIds.Contains(arrival.Id)) continue;
-            if (arrival.TargetCellId < 1 || arrival.TargetCellId > macro.Cells.Length) continue;
+            var arrival = macro.Arrivals[index];
+            if (macro.ConsumedArrivalIds.Contains(arrival.Id))
+            {
+                macro.Arrivals.RemoveAt(index);
+                macro.ConsumedArrivalIds.Remove(arrival.Id);
+                continue;
+            }
+            if (arrival.TargetCellId < 1 || arrival.TargetCellId > macro.Cells.Length)
+            {
+                macro.Arrivals.RemoveAt(index);
+                continue;
+            }
             var target = macro.Cells[arrival.TargetCellId - 1];
-            if (!target.IsLocalMapGenerated) continue;
+            if (!target.IsLocalMapGenerated)
+            {
+                index++;
+                continue;
+            }
 
             string faction = macro.FactionIds.FirstOrDefault(pair => pair.Value == arrival.FactionId).Key ?? "Unknown";
             var cargo = new Dictionary<ResourceKind, int>();
@@ -96,12 +113,19 @@ internal sealed class WorldSimulation
                 if (spawned == 0) break;
                 arrival.SpawnedVisitorCount++;
             }
+
             if (arrival.SpawnedVisitorCount >= desiredVisitors)
             {
-                macro.ConsumedArrivalIds.Add(arrival.Id);
+                macro.Arrivals.RemoveAt(index);
+                macro.ConsumedArrivalIds.Remove(arrival.Id);
                 Colony.SetMessage(arrival.IsRefugeeWave
                     ? $"{desiredVisitors} refugees from {faction} reached the colony. Select a visitor to admit or dismiss them."
                     : $"A {faction} caravan reached the colony. Its trader pawn carries the strategic cargo for barter.");
+            }
+            else
+            {
+                // Keep only the unfinished arrival in the queue and retry on a later tick.
+                index++;
             }
         }
     }
