@@ -1668,31 +1668,27 @@ internal sealed class ColonySimulation
             bool assigned = false;
             // Priority is evaluated across excavation, tile builds, object blueprints and production orders.
             // Within one priority level, task-type order remains stable and existing behavior is preserved.
-            for (int pawnPriority = 4; pawnPriority >= 1 && !assigned; pawnPriority--)
+            // Work-order importance remains the outer scheduling constraint; the per-pawn
+            // matrix decides which enabled category wins among orders at that same importance.
+            for (int orderPriority = 5; orderPriority >= 1 && !assigned; orderPriority--)
             {
-                foreach (var category in Enum.GetValues<WorkCategory>())
+                for (int pawnPriority = 4; pawnPriority >= 1 && !assigned; pawnPriority--)
                 {
-                    if (_workPriorities.GetPriority(worker.Id, category) != pawnPriority) continue;
-                    if (category == WorkCategory.Gathering)
+                    foreach (var category in Enum.GetValues<WorkCategory>())
                     {
-                        assigned = TryAssignGatherForShortage(worker);
-                    }
-                    else
-                    {
-                        for (int orderPriority = 5; orderPriority >= 1 && !assigned; orderPriority--)
+                        if (_workPriorities.GetPriority(worker.Id, category) != pawnPriority) continue;
+                        assigned = category switch
                         {
-                            assigned = category switch
-                            {
-                                WorkCategory.Mining => TryAssignExcavation(worker, orderPriority),
-                                WorkCategory.Construction => TryAssignTileBuild(worker, orderPriority) ||
-                                                            TryAssignObjectBuild(worker, orderPriority),
-                                WorkCategory.Production => TryAssignProduction(worker, orderPriority),
-                                WorkCategory.Hauling => false,
-                                _ => false
-                            };
-                        }
+                            WorkCategory.Mining => TryAssignExcavation(worker, orderPriority),
+                            WorkCategory.Construction => TryAssignTileBuild(worker, orderPriority) ||
+                                                        TryAssignObjectBuild(worker, orderPriority),
+                            WorkCategory.Production => TryAssignProduction(worker, orderPriority),
+                            WorkCategory.Gathering => TryAssignGatherForShortage(worker, orderPriority),
+                            WorkCategory.Hauling => false,
+                            _ => false
+                        };
+                        if (assigned) break;
                     }
-                    if (assigned) break;
                 }
             }
             if (assigned) continue;
@@ -1820,7 +1816,7 @@ internal sealed class ColonySimulation
         return false;
     }
 
-    private bool TryAssignGatherForShortage(ColonyWorker worker)
+    private bool TryAssignGatherForShortage(ColonyWorker worker, int priority)
     {
         if (InventoryFreeCapacity <= 0) return false;
 
@@ -1839,13 +1835,13 @@ internal sealed class ColonySimulation
         }
 
         foreach (var order in _tileOrders
-                     .Where(order => order.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials)
-                     .OrderByDescending(order => order.Priority).ThenBy(order => order.Id))
+                     .Where(order => (order.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials) && order.Priority == priority)
+                     .OrderBy(order => order.Id))
             IncludeShortages(order.Priority, TileCost(order.Target));
 
         foreach (var item in _objects
-                     .Where(item => item.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials)
-                     .OrderByDescending(item => item.Priority).ThenBy(item => item.Id))
+                     .Where(item => (item.Status is ConstructionStatus.Planned or ConstructionStatus.WaitingForMaterials) && item.Priority == priority)
+                     .OrderBy(item => item.Id))
             IncludeShortages(item.Priority, ObjectCost(item.Kind));
 
         var deposit = _deposits
