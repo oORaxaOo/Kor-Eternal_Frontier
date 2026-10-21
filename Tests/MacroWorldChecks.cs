@@ -55,11 +55,16 @@ internal static class MacroWorldChecks
             TargetCellId = routeTargetCellId, TravelSpeed = 0.05f,
             Cargo = new Dictionary<MacroResource, float> { [MacroResource.Food] = 10f }
         });
-        macro.Advance(0.1, first);
         var dispatchedCaravan = macro.Caravans.Single(item => item.TargetCellId == routeTargetCellId);
+        var routeTimeout = System.Diagnostics.Stopwatch.StartNew();
+        while (!dispatchedCaravan.RouteReady && !dispatchedCaravan.RoutePending &&
+               routeTimeout.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            macro.Advance(0.1, first);
+            Thread.Sleep(1);
+        }
         Check(dispatchedCaravan.RoutePending || dispatchedCaravan.RouteReady,
             "A real macro caravan must enter the asynchronous route scheduler.");
-        var routeTimeout = System.Diagnostics.Stopwatch.StartNew();
         while (!dispatchedCaravan.RouteReady && routeTimeout.Elapsed < TimeSpan.FromSeconds(5))
         {
             Thread.Sleep(1);
