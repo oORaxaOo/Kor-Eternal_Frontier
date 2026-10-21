@@ -11,6 +11,7 @@ internal sealed class WorldSimulation
 {
     private float _simulationAccumulator;
     private const float FixedStepSeconds = 0.1f;
+    private const int MaxFixedStepsPerFrame = 8;
 
     public ColonySimulation Colony { get; private set; }
     public ContinuousWorldState SpatialWorld { get; private set; }
@@ -42,17 +43,22 @@ internal sealed class WorldSimulation
         if (!float.IsFinite(scaledSeconds))
             throw new ArgumentOutOfRangeException(nameof(deltaSeconds), "Scaled elapsed time must be finite.");
 
-        // Use a stable fixed step even if callers supply uneven frame times.
+        // Consume bounded fixed-step work per render frame. Excess time remains in the accumulator
+        // instead of turning a long frame into an unbounded catch-up spike.
         _simulationAccumulator += scaledSeconds;
-        while (_simulationAccumulator >= FixedStepSeconds)
+        int fixedSteps = 0;
+        while (_simulationAccumulator + 1e-8f >= FixedStepSeconds && fixedSteps < MaxFixedStepsPerFrame)
         {
             Colony.Step(FixedStepSeconds);
             ProcessStorytellerThreats();
+            SpatialWorld.SetInventoryCapacity(KorSettlementId(SpatialWorld), Colony.InventoryCapacity);
+            // The world and colony consume the exact same fixed interval. Macro cells are separately
+            // timesliced inside SpatialWorld.Step so no daily world turn monopolizes this loop.
+            SpatialWorld.Step(FixedStepSeconds);
+            ProcessMacroArrivals();
             _simulationAccumulator -= FixedStepSeconds;
+            fixedSteps++;
         }
-        SpatialWorld.SetInventoryCapacity(KorSettlementId(SpatialWorld), Colony.InventoryCapacity);
-        SpatialWorld.Step(scaledSeconds);
-        ProcessMacroArrivals();
         ElapsedSeconds = SpatialWorld.ClockSeconds;
     }
 
