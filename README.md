@@ -79,3 +79,18 @@ The WorldSimulation advances the colony and continuous world under one clock. St
 The obsolete instant campaign transfer bridge and linked-hex campaign model have been removed. Colony construction, production, worker hauling and strategic shipments read or mutate the same settlement-owned resource ledger; a session snapshot does not duplicate the colony inventory. Settlement storage capacity is shared across local and strategic views, and deliveries wait at their destination if storage is full. The session format now represents the active unified world directly; old saves are intentionally not migrated. A dynamic Blight ecosystem and population-level strategic simulation remain unfinished.
 
 Save / Load in the mouse menu saves or restores the current session. Run the self-test command shown above to check colony behavior, shared-ledger debits, capacity-aware storage, continuous production, the shared clock, shipment conservation, and session persistence.
+
+
+## Deterministic colony simulation architecture
+
+The colony simulation uses a fixed-step `TickManager` at **60 simulation ticks per simulated second**, independent of render FPS. The existing speed control scales how much simulation time advances; 3x therefore means 180 ticks per real-world second (360 would be 6x at a 60-tick base rate). A bounded catch-up loop prevents an application stall from triggering an unbounded simulation backlog.
+
+- **Every tick:** worker movement and environmental exposure advance in small, deterministic steps.
+- **Every 6 ticks (10 Hz):** job assignment and broader economy/ecosystem planning run.
+- **Every 250 ticks (~4.17 simulated seconds):** social relationship updates run.
+- **Every 2,000 ticks (~33.33 simulated seconds):** global storyteller checks run.
+- **Pawn jobs:** tasks now expose ordered movement/work/completion toils, while the existing colony work system remains responsible for resource reservations and the actual action.
+- **Pathfinding:** worker routes use four-neighbour A* with positive movement costs; path/floor/door tiles can have different traversal costs, and route caching remains in place.
+- **Thing grid:** pawns, buildings, resource deposits and architecture are indexed by stable identity and map cell, with cell lookup, nearest-match queries, movement and removal. This is a migration bridge to a single authoritative entity model; existing simulation domain records still own their data during this stage.
+
+These systems use original KOR project code and broad colony-simulation design patterns rather than copying proprietary implementation code or assets.
