@@ -355,8 +355,10 @@ internal sealed class MacroWorldState
     private void TryTriggerRefugeeWave(int sourceIndex, ContinuousWorldState continuous)
     {
         ref var source = ref Cells[sourceIndex];
-        var destination = Cells.Where(c => c.OwningFactionId != source.OwningFactionId && c.IsLocalMapGenerated)
-            .OrderBy(c => Distance(c.X, c.Y, source.X, source.Y)).FirstOrDefault();
+        int sourceFactionId = source.OwningFactionId;
+        float sourceX = source.X, sourceY = source.Y;
+        var destination = Cells.Where(c => c.OwningFactionId != sourceFactionId && c.IsLocalMapGenerated)
+            .OrderBy(c => Distance(c.X, c.Y, sourceX, sourceY)).FirstOrDefault();
         if (destination.CellId == 0) return;
         int refugeeCount = Math.Min(12, Math.Max(2, source.Population / 1000));
         source.Population = Math.Max(0, source.Population - refugeeCount);
@@ -433,8 +435,8 @@ internal sealed class MacroWorldState
             throw new InvalidDataException("Macro market prices are outside their supported range.");
     }
 
-    private static float Distance(float x1, float y1, float x2, float y2)
-    { float dx = x1 - x2, dy = y1 - y2; return MathF.Sqrt(dx * dx + dy * dy); }
+    private static double Distance(double x1, double y1, double x2, double y2)
+    { double dx = x1 - x2, dy = y1 - y2; return Math.Sqrt(dx * dx + dy * dy); }
 
     private static uint StableHash(int seed, int x, int y)
     {
