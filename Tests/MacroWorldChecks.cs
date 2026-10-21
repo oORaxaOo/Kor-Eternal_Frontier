@@ -32,6 +32,8 @@ internal static class MacroWorldChecks
         // A save taken mid-turn must preserve the cursor, the accumulated prices and the
         // famine-relief selection state so resumed simulation neither repeats nor skips cells.
         string partialTurnJson = JsonSerializer.Serialize(macro);
+        Check(partialTurnJson.Contains("\"MacroTurnPhase\"", StringComparison.Ordinal),
+            "In-progress macro phase must retain its stable persisted JSON field name.");
         macro = JsonSerializer.Deserialize<MacroWorldState>(partialTurnJson)
             ?? throw new InvalidOperationException("Macro save must deserialize.");
         macro.Validate();

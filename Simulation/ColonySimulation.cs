@@ -190,30 +190,127 @@ internal sealed class ColonySimulation
     public int SpawnExternalVisitor(string faction, IReadOnlyDictionary<ResourceKind, int>? cargo = null)
     {
         if (string.IsNullOrWhiteSpace(faction)) throw new ArgumentException("Visitor faction cannot be empty.", nameof(faction));
-        var targetCandidates = new[] { new CellPosition(19, 8), new CellPosition(18, 8), new CellPosition(20, 8), new CellPosition(19, 9), new CellPosition(18, 9), new CellPosition(20, 9) };
-        CellPosition? target = targetCandidates.Where(IsWalkable).Select(cell => (CellPosition?)cell).FirstOrDefault();
-        if (!target.HasValue) return 0;
-        CellPosition? entry = null;
-        for (int y = 0; y < Height && !entry.HasValue; y++)
-        {
-            var west = new CellPosition(0, y);
-            var east = new CellPosition(Width - 1, y);
-            if (IsWalkable(west)) entry = west;
-            else if (IsWalkable(east)) entry = east;
-        }
-        if (!entry.HasValue || !TryFindPath(entry.Value, target.Value, out var route)) return 0;
+        if (!TryFindVisitorEntryAndTarget(out var entry, out var target, out var route)) return 0;
         int id = _nextWorkerId++;
-        var visitor = new ColonyWorker(id, $"{faction}-Visitor-{id:0000}", entry.Value.X + 0.5f, entry.Value.Y + 0.5f, 0f)
+        var visitor = new ColonyWorker(id, $"{faction}-Visitor-{id:0000}", entry.X + 0.5f, entry.Y + 0.5f, 0f)
         {
             Faction = faction,
             IsExternalVisitor = true,
             TradeCargo = cargo is null ? [] : cargo.Where(pair => pair.Value > 0).ToDictionary(pair => pair.Key, pair => pair.Value),
-            Task = new WorkerTask(ColonyTaskKind.Move, target.Value, route)
+            Task = new WorkerTask(ColonyTaskKind.Move, target, route)
         };
         _workers.Add(visitor);
-        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry.Value);
+        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry);
         Message = $"{faction} visitor entered the colony and is heading to the stockpile.";
         return id;
+    }
+
+    private bool TryFindVisitorEntryAndTarget(out CellPosition entry, out CellPosition target, out List<CellPosition> route)
+    {
+        entry = default;
+        target = default;
+        route = [];
+
+        // Use a single bounded flood-fill to discover edge-connected walkable cells, then
+        // ask the existing cached A* for the final entry-to-stockpile route.
+        int area = Width * Height;
+        var parent = new int[area];
+        var root = new int[area];
+        var distance = new int[area];
+        Array.Fill(parent, -2);
+        Array.Fill(root, -1);
+        var queue = new Queue<int>(area);
+
+        var edges = new List<CellPosition>(2 * Width + 2 * Height);
+        for (int y = 0; y < Height; y++)
+        {
+            edges.Add(new CellPosition(0, y));
+            edges.Add(new CellPosition(Width - 1, y));
+        }
+        for (int x = 1; x < Width - 1; x++)
+        {
+            edges.Add(new CellPosition(x, 0));
+            edges.Add(new CellPosition(x, Height - 1));
+        }
+
+        foreach (var edge in edges
+                     .OrderBy(cell => Math.Abs(cell.X - 19) + Math.Abs(cell.Y - 8))
+                     .ThenBy(cell => cell.Y).ThenBy(cell => cell.X))
+        {
+            if (!IsWalkable(edge)) continue;
+            int index = edge.Y * Width + edge.X;
+            if (parent[index] != -2) continue;
+            parent[index] = -1;
+            root[index] = index;
+            queue.Enqueue(index);
+        }
+        if (queue.Count == 0) return false;
+
+        while (queue.Count > 0)
+        {
+            int current = queue.Dequeue();
+            int x = current % Width, y = current / Width;
+            if (x > 0) Enqueue(current - 1, current);
+            if (x + 1 < Width) Enqueue(current + 1, current);
+            if (y > 0) Enqueue(current - Width, current);
+            if (y + 1 < Height) Enqueue(current + Width, current);
+        }
+
+        void Enqueue(int next, int previous)
+        {
+            if (parent[next] != -2 || !IsWalkable(new CellPosition(next % Width, next / Width))) return;
+            parent[next] = previous;
+            root[next] = root[previous];
+            distance[next] = distance[previous] + 1;
+            queue.Enqueue(next);
+        }
+
+        var stockpileTargets = new[]
+        {
+            new CellPosition(19, 8), new CellPosition(18, 8), new CellPosition(20, 8),
+            new CellPosition(19, 9), new CellPosition(18, 9), new CellPosition(20, 9)
+        };
+        int targetIndex = -1;
+        foreach (var candidate in stockpileTargets)
+        {
+            if (!IsWalkable(candidate)) continue;
+            int index = candidate.Y * Width + candidate.X;
+            if (parent[index] == -2) continue;
+            if (targetIndex < 0 ||
+                Math.Abs(candidate.X - 19) + Math.Abs(candidate.Y - 8) <
+                Math.Abs(targetIndex % Width - 19) + Math.Abs(targetIndex / Width - 8) ||
+                (Math.Abs(candidate.X - 19) + Math.Abs(candidate.Y - 8) ==
+                 Math.Abs(targetIndex % Width - 19) + Math.Abs(targetIndex / Width - 8) && distance[index] < distance[targetIndex]))
+                targetIndex = index;
+        }
+
+        // If the stockpile is temporarily sealed off, send visitors to the nearest reachable
+        // interior tile so they can wait for player intervention instead of blocking the arrival queue.
+        if (targetIndex < 0)
+        {
+            int bestScore = int.MaxValue;
+            for (int index = 0; index < area; index++)
+            {
+                if (parent[index] == -2) continue;
+                int x = index % Width, y = index / Width;
+                bool edge = x == 0 || y == 0 || x == Width - 1 || y == Height - 1;
+                int score = Math.Abs(x - 19) + Math.Abs(y - 8) + (edge ? 100 : 0);
+                if (score < bestScore ||
+                    (score == bestScore && (targetIndex < 0 ||
+                     distance[index] < distance[targetIndex] ||
+                     (distance[index] == distance[targetIndex] && index < targetIndex))))
+                {
+                    bestScore = score;
+                    targetIndex = index;
+                }
+            }
+        }
+
+        if (targetIndex < 0 || root[targetIndex] < 0) return false;
+        int entryIndex = root[targetIndex];
+        entry = new CellPosition(entryIndex % Width, entryIndex / Width);
+        target = new CellPosition(targetIndex % Width, targetIndex / Width);
+        return TryFindPath(entry, target, out route);
     }
 
     public bool TradeWithVisitor(int workerId, ResourceKind offeredResource, int offeredAmount, MarketSnapshot market)

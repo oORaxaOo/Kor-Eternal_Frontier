@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json.Serialization;
 using KorTheBlight.Simulation;
 using KorTheBlight.Simulation.Research;
 
@@ -187,6 +188,7 @@ internal sealed class MacroWorldState
     public int MacroTurnsProcessed { get; set; }
     public int MacroTurnsScheduled { get; set; }
     public int MacroTurnCursor { get; set; }
+    [JsonPropertyName("MacroTurnPhase")]
     public MacroTurnPhase TurnPhase { get; set; }
     public MacroMarketAccumulator MarketTurnAccumulator { get; set; } = new();
     public Dictionary<int, int> TurnHungryCellIds { get; set; } = [];
