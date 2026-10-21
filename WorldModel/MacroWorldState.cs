@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using KorTheBlight.Simulation;
 using KorTheBlight.Simulation.Research;
 
 namespace KorTheBlight.WorldModel;
