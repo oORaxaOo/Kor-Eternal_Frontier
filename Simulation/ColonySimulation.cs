@@ -227,6 +227,7 @@ internal sealed class ColonySimulation
         AddDeposit(new CellPosition(14, 21), ResourceKind.Food, 100);
         AddDeposit(new CellPosition(34, 20), ResourceKind.Alloy, 45);
         InitializeEcosystem();
+        SyncThingGrid();
     }
 
     internal ColonySnapshot CaptureSnapshot()
@@ -416,6 +417,8 @@ internal sealed class ColonySimulation
             simulation._incidentManager = IncidentManager.Restore(snapshot.IncidentManager, residentIds);
         if (snapshot.Storyteller != null)
             simulation._storyteller = ColonyStoryteller.Restore(snapshot.Storyteller);
+        simulation._tickManager.RestoreTickCount((long)Math.Round(simulation.ElapsedSeconds * TickManager.TicksPerSecond));
+        simulation.SyncThingGrid();
         return simulation;
     }
 
