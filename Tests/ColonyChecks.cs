@@ -8,6 +8,21 @@ internal static class ColonyChecks
     public static void Run()
     {
         var environment = new ColonySimulation();
+        var builderControls = new ColonySimulation();
+        Check(builderControls.DesignTileConstruction(5, 5, ArchitectureKind.Floor),
+            "a clear tile should accept a construction blueprint");
+        Check(builderControls.SelectWorkOrderAt(5.5f, 5.5f) && builderControls.CancelSelectedWorkOrder(),
+            "a selected planned tile blueprint should be cancellable");
+        Check(builderControls.TileOrderAt(5, 5) == null,
+            "cancelling a tile blueprint must release the tile reservation");
+        int cancellableObject = builderControls.PlaceObjectBlueprint(PlaceableKind.SleepingPod, 8, 8);
+        Check(cancellableObject > 0 && builderControls.SelectWorkOrderAt(8.5f, 8.5f) &&
+              builderControls.CancelSelectedWorkOrder() && builderControls.Objects.All(item => item.Id != cancellableObject),
+            "a selected object blueprint should be removable before construction starts");
+        Check(!builderControls.DemolishAt(15, 8),
+            "the starter habitat must remain protected from accidental demolition");
+        Check(!builderControls.DemolishAt(20, 12),
+            "an empty tile should not be treated as a completed structure");
         Check(environment.AddFluid(10, 10, FluidKind.Water, 7) == 7,
             "open tiles must accept fluid up to the seven-unit level cap");
         Check(environment.AddFluid(22, 6, FluidKind.Water, 1) == 0,
