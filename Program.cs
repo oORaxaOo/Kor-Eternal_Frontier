@@ -275,8 +275,24 @@ internal static class Program
                     }
                     else if (!worldView && simulation.SelectedWorkerId.HasValue && Hit(logicalMouse.X, logicalMouse.Y, 14, 476, 374, 646))
                     {
-                        if (Hit(logicalMouse.X, logicalMouse.Y, 22, 506, 122, 528)) workerInspectorTab = 0;
-                        else if (Hit(logicalMouse.X, logicalMouse.Y, 128, 506, 228, 528)) workerInspectorTab = 1;
+                        var inspectedWorker = simulation.Workers.FirstOrDefault(worker => worker.Id == simulation.SelectedWorkerId.Value);
+                        if (inspectedWorker?.IsExternalVisitor == true)
+                        {
+                            if (Hit(logicalMouse.X, logicalMouse.Y, 22, 506, 122, 528))
+                            {
+                                bool resolved = inspectedWorker.TradeCargo.Count == 0
+                                    ? simulation.ResolveExternalVisitor(inspectedWorker.Id, true)
+                                    : simulation.TradeWithVisitor(inspectedWorker.Id, world.SpatialWorld.MacroWorld.Market);
+                                if (!resolved) simulation.SetMessage("Visitor action unavailable: check cargo, market value, and colony stock.");
+                            }
+                            else if (Hit(logicalMouse.X, logicalMouse.Y, 128, 506, 228, 528))
+                                simulation.ResolveExternalVisitor(inspectedWorker.Id, false);
+                        }
+                        else
+                        {
+                            if (Hit(logicalMouse.X, logicalMouse.Y, 22, 506, 122, 528)) workerInspectorTab = 0;
+                            else if (Hit(logicalMouse.X, logicalMouse.Y, 128, 506, 228, 528)) workerInspectorTab = 1;
+                        }
                     }
                     else if (Hit(logicalMouse.X, logicalMouse.Y, 955, 8, 1005, 35))
                     {
