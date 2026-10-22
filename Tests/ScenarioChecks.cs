@@ -69,7 +69,7 @@ internal static class ScenarioChecks
     {
         if (ColonyHudLayout.ResourceX(4) + ColonyHudLayout.ResourceWidth >= ColonyHudLayout.SystemsButtonLeft ||
             ColonyHudLayout.ResourceX(0) < ColonyHudLayout.ResourceStart ||
-            ColonyHudLayout.ResourceLabel(ResourceKind.Components) != "COMP")
+            ColonyHudLayout.ResourceLabel(KorTheBlight.Simulation.ResourceKind.Components) != "COMP")
             throw new InvalidOperationException("Resource chips must fit before navigation buttons and use compact labels.");
     }
 
