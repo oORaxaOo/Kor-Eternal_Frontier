@@ -37,12 +37,12 @@ internal static class ScenarioChecks
 
     private static void VerifyRightClickCancelsActiveMapTools()
     {
-        if (!Program.ShouldCancelMapToolOnRightClick(false, true, ArchitectureKind.None, false, false) ||
-            !Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.Wall, false, false) ||
-            !Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.None, true, false) ||
-            !Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.None, false, true) ||
-            Program.ShouldCancelMapToolOnRightClick(true, true, ArchitectureKind.None, false, false) ||
-            Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.None, false, false))
+        if (!Program.ShouldCancelMapToolOnRightClick(false, true, KorTheBlight.Simulation.ArchitectureKind.None, false, false) ||
+            !Program.ShouldCancelMapToolOnRightClick(false, false, KorTheBlight.Simulation.ArchitectureKind.Wall, false, false) ||
+            !Program.ShouldCancelMapToolOnRightClick(false, false, KorTheBlight.Simulation.ArchitectureKind.None, true, false) ||
+            !Program.ShouldCancelMapToolOnRightClick(false, false, KorTheBlight.Simulation.ArchitectureKind.None, false, true) ||
+            Program.ShouldCancelMapToolOnRightClick(true, true, KorTheBlight.Simulation.ArchitectureKind.None, false, false) ||
+            Program.ShouldCancelMapToolOnRightClick(false, false, KorTheBlight.Simulation.ArchitectureKind.None, false, false))
             throw new InvalidOperationException("Right-click map-tool cancellation rules are inconsistent.");
     }
 
