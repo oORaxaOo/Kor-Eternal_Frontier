@@ -12,7 +12,9 @@ namespace KorTheBlight.Simulation;
 internal sealed class WorldSimulation
 {
     private float _simulationAccumulator;
+    private float _blightInfectionAccumulatorSeconds;
     private const float FixedStepSeconds = 0.1f;
+    private const float BlightInfectionIntervalSeconds = 10f;
     private const int MaxFixedStepsPerFrame = 8;
 
     public ColonySimulation Colony { get; private set; }
@@ -72,7 +74,14 @@ internal sealed class WorldSimulation
             SyncCombatCoverFromColony();
             MaterializeNearbyArmies();
             CombatEngine.Step(FixedStepSeconds, CombatCover);
+            ApplyCombatSiege(FixedStepSeconds);
             ApplyCombatConsequences();
+            _blightInfectionAccumulatorSeconds += FixedStepSeconds;
+            if (_blightInfectionAccumulatorSeconds >= BlightInfectionIntervalSeconds)
+            {
+                _blightInfectionAccumulatorSeconds -= BlightInfectionIntervalSeconds;
+                Colony.ApplyBlightInfectionTick();
+            }
             SyncCombatantPawnPositions();
             Workshop.Advance(1);
             ResearchManager.AddProgress(1f);
@@ -324,6 +333,84 @@ internal sealed class WorldSimulation
             _combatByWorldEntity.Remove(worldId);
     }
 
+
+    /// <summary>
+    /// Hostiles without a living combatant target advance on the nearest remaining local structure.
+    /// A hit enters the same colony model that owns construction, storage, cover and persistence.
+    /// </summary>
+    private void ApplyCombatSiege(float deltaSeconds)
+    {
+        var targets = new List<(float X, float Y, int CellX, int CellY)>();
+        foreach (var item in Colony.Objects.Where(item => item.IsBuilt).OrderBy(item => item.Id))
+        {
+            int cellX = Math.Clamp(item.Origin.X + item.Width / 2, 0, ColonySimulation.Width - 1);
+            int cellY = Math.Clamp(item.Origin.Y + item.Height / 2, 0, ColonySimulation.Height - 1);
+            targets.Add((cellX + 0.5f, cellY + 0.5f, cellX, cellY));
+        }
+
+        for (int y = 0; y < ColonySimulation.Height; y++)
+        for (int x = 0; x < ColonySimulation.Width; x++)
+        {
+            var tile = Colony.TileAt(x, y);
+            if (tile is null || tile.Architecture == ArchitectureKind.None || Colony.ObjectAt(x, y) is not null)
+                continue;
+            targets.Add((x + 0.5f, y + 0.5f, x, y));
+        }
+
+        if (targets.Count == 0) return;
+        foreach (var attacker in CombatEngine.Entities.OrderBy(entity => entity.Id))
+        {
+            if (attacker.FactionId == 1 || attacker.TargetEntityId >= 0) continue;
+            var nearest = targets
+                .Select(target => (Target: target,
+                    Distance: MathF.Sqrt(MathF.Pow(target.X - attacker.X, 2) + MathF.Pow(target.Y - attacker.Y, 2))))
+                .OrderBy(item => item.Distance)
+                .ThenBy(item => item.Target.CellY)
+                .ThenBy(item => item.Target.CellX)
+                .First();
+
+            if (nearest.Distance > 1.25f)
+            {
+                float dx = nearest.Target.X - attacker.X;
+                float dy = nearest.Target.Y - attacker.Y;
+                float step = MathF.Min(nearest.Distance - 1f,
+                    MathF.Max(0.35f, attacker.Speed) * deltaSeconds);
+                float length = MathF.Max(0.001f, nearest.Distance);
+                CombatEngine.TrySetPosition(attacker.Id,
+                    Math.Clamp(attacker.X + dx / length * step, 0.01f, CombatCoverGrid.Width - 0.01f),
+                    Math.Clamp(attacker.Y + dy / length * step, 0.01f, CombatCoverGrid.Height - 0.01f));
+                continue;
+            }
+
+            if (attacker.StructureAttackCooldown > 0f) continue;
+            float damage = attacker.EquippedWeapon switch
+            {
+                CombatWeaponType.TankCannon => 24f,
+                CombatWeaponType.Plasma => 14f,
+                CombatWeaponType.Rifle => 7f,
+                CombatWeaponType.Pistol => 5f,
+                _ => attacker.Type == CombatEntityType.BlightTitan ? 28f : 9f
+            };
+            // Siege volleys consume the same ammunition as unit combat. Empty ranged weapons
+            // fall back to weak close-quarters structure damage instead of firing infinitely.
+            bool hasAmmunition = attacker.EquippedWeapon == CombatWeaponType.Melee ||
+                CombatEngine.TryConsumeAmmo(attacker.Id);
+            if (!hasAmmunition) damage = 2f;
+            bool blightAttack = attacker.FactionId == 99 ||
+                attacker.Type is CombatEntityType.BlightBeast or CombatEntityType.BlightTitan;
+            Colony.DamageStructureAt(nearest.Target.CellX, nearest.Target.CellY, damage, blightAttack);
+            CombatEngine.TrySetStructureAttackCooldown(attacker.Id,
+                attacker.Type == CombatEntityType.BlightTitan ? 1.5f : 2f);
+        }
+    }
+
+    public int RepairDamagedStructures()
+    {
+        int repaired = Colony.RepairAllDamagedStructures();
+        SyncCombatCoverFromColony();
+        return repaired;
+    }
+
     private void ApplyCombatConsequences()
     {
         foreach (var death in CombatEngine.Deaths)
@@ -485,7 +572,8 @@ internal sealed class WorldSimulation
             CombatEngine.Snapshot(CombatCover),
             Workshop.SnapshotState(),
             _nemeses.Values.OrderBy(record => record.Id).ToList(),
-            _pendingCombatLoot.ToList());
+            _pendingCombatLoot.ToList(),
+            _blightInfectionAccumulatorSeconds);
         return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
     }
 
@@ -494,6 +582,7 @@ internal sealed class WorldSimulation
         _combatByWorldEntity.Clear();
         _nemeses.Clear();
         _pendingCombatLoot.Clear();
+        _blightInfectionAccumulatorSeconds = 0f;
         if (string.IsNullOrWhiteSpace(json)) return;
         CombatRuntimeSnapshot snapshot;
         try
@@ -506,6 +595,11 @@ internal sealed class WorldSimulation
         {
             throw new InvalidDataException($"Combat runtime save is invalid JSON: {error.Message}", error);
         }
+        if (!float.IsFinite(snapshot.BlightInfectionAccumulatorSeconds) ||
+            snapshot.BlightInfectionAccumulatorSeconds < 0f ||
+            snapshot.BlightInfectionAccumulatorSeconds >= BlightInfectionIntervalSeconds)
+            throw new InvalidDataException("Combat runtime has an invalid Blight infection accumulator.");
+        _blightInfectionAccumulatorSeconds = snapshot.BlightInfectionAccumulatorSeconds;
         CombatEngine.Restore(snapshot.Engine, CombatCover);
         Workshop.RestoreState(snapshot.Workshop);
         foreach (var record in snapshot.Nemeses ?? [])

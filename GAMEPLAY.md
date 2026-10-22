@@ -28,10 +28,9 @@ The active game uses `WorldSimulation` as the shared clock and coordinates the l
 
 ## Implementation priority
 
-1. Add direct structural damage, repair and infection consequences to colony buildings when local combat reaches them.
-2. Extend weapon/vehicle loadouts and recipe balancing without bypassing the canonical stockpile or technology gates.
-3. Expand combat tactics—retreat, cover seeking, reload resupply and vehicle crew assignment—while keeping the deterministic single-writer simulation.
-4. Continue the colony/strategic population migration only where it preserves stable identity, resource conservation and save compatibility.
+1. Extend weapon/vehicle loadouts and recipe balancing without bypassing the canonical stockpile or technology gates.
+2. Expand combat tactics—retreat, cover seeking, reload resupply and vehicle crew assignment—while keeping the deterministic single-writer simulation.
+3. Continue the colony/strategic population migration only where it preserves stable identity, resource conservation and save compatibility.
 
 
 ## Live colony ecosystem integration (migration slice)
@@ -53,12 +52,12 @@ This is an incremental migration, not a wholesale replacement of the established
 
 The world-view cargo controls select Wood, Stone, Food or Alloy; select a Kor caravan and click a destination settlement to dispatch a capacity-aware shipment. World movement uses right-click commands when a strategic army or caravan is selected.
 
-The deterministic self-test checks colony construction/logistics, resource conservation, regional generation, strategic movement, research-gated production, combat simulation, workshop ledger debits, resident deployment, Nemesis state and unified session round-trips.
+The deterministic self-test checks colony construction/logistics, resource conservation, regional generation, strategic movement, research-gated production, combat simulation, workshop ledger debits, resident deployment, Nemesis state, structure siege damage, recurring Blight infection, material-consuming repairs and unified-session round-trips.
 
 The **WAR ROOM** button opens the three connected systems:
-- **COMBAT:** inspect combatants, select a Kor unit and click an enemy entry to issue an attack order, or deploy eligible colonists as defenders. Deployed residents stop taking colony jobs and stay linked to their combat entities; combat casualties are removed from the active colony roster.
+- **COMBAT:** inspect combatants, select a Kor unit and click an enemy entry to issue an attack order, or deploy eligible colonists as defenders. Deployed residents stop taking colony jobs and stay linked to their combat entities; combat casualties are removed from the active colony roster. Hostiles without an active fighting target besiege the nearest building or architectural tile. Blight attacks infect structures, which then lose integrity every ten simulated seconds.
 - **WORKSHOP:** craft researched weapons and vehicle parts from the canonical settlement store. A completed workbench is required, inputs are deducted at job start, outputs are added at completion, and completed outputs wait if storage is full. Assemble a heavy tank when the armored-vehicle technology and all required parts are available.
 - **RESEARCH:** start a project only after its prerequisites are complete. Research progresses with the unified simulation clock and unlocks matching workshop recipes.
 
-Local tactical combat is integrated at the unit level, including automatic target acquisition, attack orders, ammunition, cover, armor, health, death consequences and Nemesis titles. Direct damage or infection of colony buildings remains unfinished and is not claimed as complete.
+Local tactical combat integrates automatic target acquisition, attack orders, ammunition, cover, armor, unit health, siege damage, structural health, Blight infection and Nemesis titles. Use **WAR ROOM → REPAIR ALL** to spend shared settlement resources on damaged structures; infected structures additionally require components to cleanse. Habitat and stockpile can be critically damaged but remain repairable. More advanced tactics—retreat, seeking cover, reloading/resupply and crew assignment—remain future work.
 

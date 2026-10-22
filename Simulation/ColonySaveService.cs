@@ -42,7 +42,7 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 8;
+    public int SchemaVersion { get; set; } = 9;
     public long SocialTick { get; set; }
     public SocialNetworkSnapshot? SocialNetwork { get; set; }
     public IncidentManagerSnapshot? IncidentManager { get; set; }
@@ -72,7 +72,7 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion != 2 && SchemaVersion != 3 && SchemaVersion != 4 && SchemaVersion != 5 && SchemaVersion != 6 && SchemaVersion != 7 && SchemaVersion != 8) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion < 2 || SchemaVersion > 9) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (SocialTick < 0) throw new InvalidDataException("Colony save contains an invalid social simulation tick.");
         if (SchemaVersion >= 4 && (SocialNetwork is null || IncidentManager is null))
             throw new InvalidDataException("Current colony save is missing social or incident state.");
@@ -108,6 +108,12 @@ internal sealed class ColonySnapshot
                 throw new InvalidDataException("Colony save has duplicate tile coordinates.");
             if (tile.ConstructionOrderId is < 1)
                 throw new InvalidDataException("Colony save has an invalid tile construction reference.");
+            if (SchemaVersion >= 9 &&
+                (!float.IsFinite(tile.Health) || tile.Health < 0f || tile.Health > 180f ||
+                 (tile.Architecture == ArchitectureKind.None && tile.Health > 0f) ||
+                 (tile.Architecture != ArchitectureKind.None &&
+                    (tile.Health <= 0f || tile.Health > TileMaxHealth(tile.Architecture)))))
+                throw new InvalidDataException("Colony save contains invalid structure integrity on a tile.");
         }
 
         var tileOrderIds = new HashSet<int>();
@@ -168,6 +174,14 @@ internal sealed class ColonySnapshot
                 (item.Status == ConstructionStatus.Complete && item.WorkDone < item.WorkRequired) ||
                 (item.Status != ConstructionStatus.Complete && item.WorkDone >= item.WorkRequired))
                 throw new InvalidDataException("Colony save contains invalid placeable object work values or progress.");
+            if (SchemaVersion >= 9 &&
+                (!float.IsFinite(item.Health) || item.Health < 0f || item.Health > ObjectMaxHealth(item.Kind) ||
+                 (item.Status != ConstructionStatus.Complete && (item.Health != 0f || item.IsBlightInfected))))
+                throw new InvalidDataException("Colony save contains invalid integrity or infection on a placeable object.");
+            bool destroyedObject = SchemaVersion >= 9 &&
+                item.Status == ConstructionStatus.Complete && item.Health <= 0f &&
+                item.Kind is not (PlaceableKind.Habitat or PlaceableKind.Stockpile);
+            if (destroyedObject) continue;
             for (int y = item.Y; y < item.Y + item.Height; y++)
             for (int x = item.X; x < item.X + item.Width; x++)
             {
@@ -297,6 +311,31 @@ internal sealed class ColonySnapshot
             throw new InvalidDataException("Colony save contains an invalid next-ID counter.");
     }
 
+    private static float TileMaxHealth(ArchitectureKind kind) => kind switch
+    {
+        ArchitectureKind.Floor => 80f,
+        ArchitectureKind.Path => 70f,
+        ArchitectureKind.Wall => 180f,
+        ArchitectureKind.Door => 100f,
+        ArchitectureKind.Conduit => 65f,
+        _ => 0f
+    };
+
+    private static float ObjectMaxHealth(PlaceableKind kind) => kind switch
+    {
+        PlaceableKind.Habitat => 500f,
+        PlaceableKind.Stockpile => 450f,
+        PlaceableKind.Workbench => 220f,
+        PlaceableKind.SleepingPod => 130f,
+        PlaceableKind.StorageRack => 150f,
+        PlaceableKind.Generator => 280f,
+        PlaceableKind.Garden => 100f,
+        PlaceableKind.DiningTable => 110f,
+        PlaceableKind.Lamp => 60f,
+        PlaceableKind.ComfortBench => 100f,
+        _ => 100f
+    };
+
     private static void CheckCell(int x, int y, string label)
     {
         if (x < 0 || y < 0 || x >= ColonySimulation.Width || y >= ColonySimulation.Height)
@@ -321,6 +360,8 @@ internal sealed class TileSnapshot
     public int WaterLevel { get; set; }
     public int MagmaLevel { get; set; }
     public float TemperatureCelsius { get; set; } = 20f;
+    public float Health { get; set; }
+    public bool IsBlightInfected { get; set; }
 }
 internal sealed class ExcavationOrderSnapshot
 {
@@ -355,6 +396,8 @@ internal sealed class PlaceableObjectSnapshot
     public float WorkDone { get; set; }
     public int WorkRequired { get; set; }
     public int Priority { get; set; } = 3;
+    public float Health { get; set; }
+    public bool IsBlightInfected { get; set; }
 }
 internal sealed class ResourceDepositSnapshot
 {

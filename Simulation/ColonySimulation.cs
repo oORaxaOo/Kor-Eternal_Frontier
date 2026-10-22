@@ -22,6 +22,17 @@ internal sealed class TileCell
     public int WaterLevel { get; internal set; }
     public int MagmaLevel { get; internal set; }
     public float TemperatureCelsius { get; internal set; } = 20f;
+    public float Health { get; internal set; }
+    public bool IsBlightInfected { get; internal set; }
+    public float MaxHealth => Architecture switch
+    {
+        ArchitectureKind.Floor => 80f,
+        ArchitectureKind.Path => 70f,
+        ArchitectureKind.Wall => 180f,
+        ArchitectureKind.Door => 100f,
+        ArchitectureKind.Conduit => 65f,
+        _ => 0f
+    };
 }
 
 internal sealed class TileConstructionOrder(int id, CellPosition cell, ArchitectureKind target, int workRequired)
@@ -46,19 +57,50 @@ internal sealed class ExcavationOrder(int id, CellPosition cell, int workRequire
     public int WorkRequired { get; } = workRequired;
 }
 
-internal sealed class PlaceableObjectState(int id, PlaceableKind kind, CellPosition origin, int width, int height,
-    int workRequired, ConstructionStatus status)
+internal sealed class PlaceableObjectState
 {
-    public int Id { get; } = id;
-    public PlaceableKind Kind { get; } = kind;
+    public PlaceableObjectState(int id, PlaceableKind kind, CellPosition origin, int width, int height,
+        int workRequired, ConstructionStatus status)
+    {
+        Id = id;
+        Kind = kind;
+        Origin = origin;
+        Width = width;
+        Height = height;
+        WorkRequired = workRequired;
+        Status = status;
+        Health = status == ConstructionStatus.Complete ? MaxHealth : 0f;
+    }
+
+    public int Id { get; }
+    public PlaceableKind Kind { get; }
     public int Priority { get; set; } = 3;
-    public CellPosition Origin { get; } = origin;
-    public int Width { get; } = width;
-    public int Height { get; } = height;
-    public ConstructionStatus Status { get; internal set; } = status;
+    public CellPosition Origin { get; }
+    public int Width { get; }
+    public int Height { get; }
+    public ConstructionStatus Status { get; internal set; }
     public float WorkDone { get; internal set; }
-    public int WorkRequired { get; } = workRequired;
-    public bool IsBuilt => Status == ConstructionStatus.Complete;
+    public int WorkRequired { get; }
+    public float Health { get; internal set; }
+    public bool IsBlightInfected { get; internal set; }
+    public bool IsCriticalInfrastructure => Kind is PlaceableKind.Habitat or PlaceableKind.Stockpile;
+    public bool IsDestroyed => Status == ConstructionStatus.Complete && Health <= 0f && !IsCriticalInfrastructure;
+    // Habitat and stockpile can be crippled by siege, but never become irrecoverable softlocks.
+    public bool IsBuilt => Status == ConstructionStatus.Complete && (Health > 0f || IsCriticalInfrastructure);
+    public float MaxHealth => Kind switch
+    {
+        PlaceableKind.Habitat => 500f,
+        PlaceableKind.Stockpile => 450f,
+        PlaceableKind.Workbench => 220f,
+        PlaceableKind.SleepingPod => 130f,
+        PlaceableKind.StorageRack => 150f,
+        PlaceableKind.Generator => 280f,
+        PlaceableKind.Garden => 100f,
+        PlaceableKind.DiningTable => 110f,
+        PlaceableKind.Lamp => 60f,
+        PlaceableKind.ComfortBench => 100f,
+        _ => 100f
+    };
 
     public bool Occupies(CellPosition cell) =>
         cell.X >= Origin.X && cell.X < Origin.X + Width &&
@@ -476,7 +518,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 8,
+            SchemaVersion = 9,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -511,7 +553,8 @@ internal sealed class ColonySimulation
                 X = x, Y = y, Terrain = tile.Terrain, Architecture = tile.Architecture,
                 ConstructionOrderId = tile.ConstructionOrderId,
                 WaterLevel = tile.WaterLevel, MagmaLevel = tile.MagmaLevel,
-                TemperatureCelsius = tile.TemperatureCelsius
+                TemperatureCelsius = tile.TemperatureCelsius, Health = tile.Health,
+                IsBlightInfected = tile.IsBlightInfected
             });
         }
 
@@ -529,7 +572,8 @@ internal sealed class ColonySimulation
         {
             Id = item.Id, Kind = item.Kind, X = item.Origin.X, Y = item.Origin.Y,
             Width = item.Width, Height = item.Height, Status = item.Status,
-            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, Priority = item.Priority
+            WorkDone = item.WorkDone, WorkRequired = item.WorkRequired, Priority = item.Priority,
+            Health = item.Health, IsBlightInfected = item.IsBlightInfected
         }));
         snapshot.Deposits.AddRange(_deposits.Select(deposit => new ResourceDepositSnapshot
         {
@@ -579,6 +623,10 @@ internal sealed class ColonySimulation
             tile.WaterLevel = tileState.WaterLevel;
             tile.MagmaLevel = tileState.MagmaLevel;
             tile.TemperatureCelsius = tileState.TemperatureCelsius;
+            tile.Health = snapshot.SchemaVersion >= 9
+                ? tileState.Health
+                : tileState.Architecture == ArchitectureKind.None ? 0f : tile.MaxHealth;
+            tile.IsBlightInfected = snapshot.SchemaVersion >= 9 && tileState.IsBlightInfected;
         }
 
         simulation._excavationOrders.Clear();
@@ -595,9 +643,18 @@ internal sealed class ColonySimulation
         }));
 
         simulation._objects.Clear();
-        simulation._objects.AddRange(snapshot.Objects.Select(item => new PlaceableObjectState(
-            item.Id, item.Kind, new CellPosition(item.X, item.Y), item.Width, item.Height,
-            item.WorkRequired, item.Status) { WorkDone = item.WorkDone, Priority = item.Priority }));
+        simulation._objects.AddRange(snapshot.Objects.Select(item =>
+        {
+            var restored = new PlaceableObjectState(item.Id, item.Kind, new CellPosition(item.X, item.Y),
+                item.Width, item.Height, item.WorkRequired, item.Status)
+            { WorkDone = item.WorkDone, Priority = item.Priority };
+            if (snapshot.SchemaVersion >= 9)
+            {
+                restored.Health = item.Health;
+                restored.IsBlightInfected = item.IsBlightInfected;
+            }
+            return restored;
+        }));
 
         simulation._deposits.Clear();
         simulation._deposits.AddRange(snapshot.Deposits.Select(deposit => new ResourceDeposit(
@@ -1120,7 +1177,7 @@ internal sealed class ColonySimulation
         _deposits.FirstOrDefault(d => d.Cell.X == x && d.Cell.Y == y && d.Amount > 0);
 
     public PlaceableObjectState? ObjectAt(int x, int y) =>
-        _objects.FirstOrDefault(o => o.Occupies(new CellPosition(x, y)));
+        _objects.FirstOrDefault(o => !o.IsDestroyed && o.Occupies(new CellPosition(x, y)));
 
     public TileConstructionOrder? TileOrderAt(int x, int y) =>
         _tileOrders.FirstOrDefault(o => o.Cell.X == x && o.Cell.Y == y &&
@@ -1572,9 +1629,177 @@ internal sealed class ColonySimulation
         }
 
         tile.Architecture = ArchitectureKind.None;
+        tile.Health = 0f;
+        tile.IsBlightInfected = false;
         InvalidatePathCache();
         Message = $"Architecture at ({x}, {y}) demolished.";
         return true;
+    }
+
+    /// <summary>Applies a tactical siege hit to the built object or architecture at a local grid cell.</summary>
+    public bool DamageStructureAt(int x, int y, float damage, bool blightAttack = false)
+    {
+        if (!InBounds(x, y)) return false;
+        if (!float.IsFinite(damage) || damage <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(damage), "Structure damage must be finite and positive.");
+
+        var item = ObjectAt(x, y);
+        if (item is not null)
+        {
+            if (!item.IsBuilt) return false;
+            if (blightAttack) item.IsBlightInfected = true;
+            item.Health = Math.Max(0f, item.Health - damage);
+            if (item.Health <= 0f && item.IsCriticalInfrastructure)
+            {
+                Message = $"{item.Kind} at ({item.Origin.X}, {item.Origin.Y}) is critically damaged; repair it before the settlement's core infrastructure fails.";
+            }
+            else if (item.Health <= 0f)
+            {
+                item.IsBlightInfected = false;
+                if (_gardenJobsByObject.Remove(item.Id, out int gardenJobId))
+                    _ecosystem.RemoveWorkplace(gardenJobId);
+                _storageZonesByObject.Remove(item.Id);
+                InvalidatePathCache();
+                Message = $"{item.Kind} at ({item.Origin.X}, {item.Origin.Y}) was destroyed by the siege.";
+            }
+            else
+            {
+                Message = blightAttack
+                    ? $"{item.Kind} damaged and infected ({item.Health:0}/{item.MaxHealth:0} integrity)."
+                    : $"{item.Kind} took siege damage ({item.Health:0}/{item.MaxHealth:0} integrity).";
+            }
+            RefreshWealthMetrics();
+            return true;
+        }
+
+        var tile = _tiles[x, y];
+        if (tile.Architecture == ArchitectureKind.None) return false;
+        var architecture = tile.Architecture;
+        if (blightAttack) tile.IsBlightInfected = true;
+        tile.Health = Math.Max(0f, tile.Health - damage);
+        if (tile.Health <= 0f)
+        {
+            tile.Architecture = ArchitectureKind.None;
+            tile.Health = 0f;
+            tile.IsBlightInfected = false;
+            InvalidatePathCache();
+            Message = $"{architecture} at ({x}, {y}) collapsed under siege.";
+        }
+        else
+        {
+            Message = blightAttack
+                ? $"{architecture} at ({x}, {y}) is damaged and Blight-infected ({tile.Health:0}/{tile.MaxHealth:0} integrity)."
+                : $"{architecture} at ({x}, {y}) took siege damage ({tile.Health:0}/{tile.MaxHealth:0} integrity).";
+        }
+        RefreshWealthMetrics();
+        return true;
+    }
+
+    /// <summary>
+    /// Repairs a built, damaged or infected structure. Components are required to cleanse Blight;
+    /// the base material is consumed through the same authoritative colony/world inventory adapter.
+    /// Destroyed structures must be rebuilt rather than repaired from zero integrity.
+    /// </summary>
+    public bool RepairStructureAt(int x, int y)
+    {
+        if (!InBounds(x, y)) return false;
+        var item = ObjectAt(x, y);
+        if (item is not null)
+        {
+            if (!item.IsBuilt || (item.Health >= item.MaxHealth && !item.IsBlightInfected)) return false;
+            var costs = item.Kind is PlaceableKind.Workbench or PlaceableKind.Generator
+                ? new Dictionary<ResourceKind, int> { [ResourceKind.Alloy] = 1 }
+                : new Dictionary<ResourceKind, int> { [ResourceKind.Wood] = 1 };
+            if (item.IsBlightInfected) costs[ResourceKind.Components] = 1;
+            if (!TryConsume(costs)) return false;
+            item.Health = Math.Min(item.MaxHealth, item.Health + Math.Max(25f, item.MaxHealth * 0.4f));
+            item.IsBlightInfected = false;
+            Message = $"{item.Kind} repaired and its Blight contamination cleansed.";
+            RefreshWealthMetrics();
+            return true;
+        }
+
+        var tile = _tiles[x, y];
+        if (tile.Architecture == ArchitectureKind.None ||
+            (tile.Health >= tile.MaxHealth && !tile.IsBlightInfected)) return false;
+        var tileCosts = tile.Architecture switch
+        {
+            ArchitectureKind.Conduit => new Dictionary<ResourceKind, int> { [ResourceKind.Alloy] = 1 },
+            ArchitectureKind.Wall or ArchitectureKind.Path => new Dictionary<ResourceKind, int> { [ResourceKind.Stone] = 1 },
+            _ => new Dictionary<ResourceKind, int> { [ResourceKind.Wood] = 1 }
+        };
+        if (tile.IsBlightInfected) tileCosts[ResourceKind.Components] = 1;
+        if (!TryConsume(tileCosts)) return false;
+        tile.Health = Math.Min(tile.MaxHealth, tile.Health + Math.Max(20f, tile.MaxHealth * 0.4f));
+        tile.IsBlightInfected = false;
+        Message = $"{tile.Architecture} at ({x}, {y}) repaired and cleansed.";
+        RefreshWealthMetrics();
+        return true;
+    }
+
+    public int RepairAllDamagedStructures()
+    {
+        int repaired = 0;
+        foreach (var item in _objects.Where(item => item.IsBuilt &&
+                     (item.Health < item.MaxHealth || item.IsBlightInfected)).OrderBy(item => item.Id).ToArray())
+            if (RepairStructureAt(item.Origin.X, item.Origin.Y)) repaired++;
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            var tile = _tiles[x, y];
+            if (tile.Architecture == ArchitectureKind.None || ObjectAt(x, y) is not null ||
+                (tile.Health >= tile.MaxHealth && !tile.IsBlightInfected)) continue;
+            if (RepairStructureAt(x, y)) repaired++;
+        }
+        Message = repaired > 0
+            ? $"Repaired or cleansed {repaired} structures using colony materials."
+            : "No repair completed: structures may be healthy, destroyed, or missing repair materials.";
+        return repaired;
+    }
+
+    /// <summary>Applies a bounded, deterministic recurring damage tick to structures left infected by Blight.</summary>
+    public int ApplyBlightInfectionTick(float damagePerStructure = 2f)
+    {
+        if (!float.IsFinite(damagePerStructure) || damagePerStructure <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(damagePerStructure));
+        int affected = 0;
+        foreach (var item in _objects.Where(item => item.IsBuilt && item.IsBlightInfected).OrderBy(item => item.Id).ToArray())
+        {
+            item.Health = Math.Max(0f, item.Health - damagePerStructure);
+            affected++;
+            if (item.Health <= 0f && !item.IsCriticalInfrastructure)
+            {
+                item.IsBlightInfected = false;
+                if (_gardenJobsByObject.Remove(item.Id, out int gardenJobId))
+                    _ecosystem.RemoveWorkplace(gardenJobId);
+                _storageZonesByObject.Remove(item.Id);
+                InvalidatePathCache();
+            }
+        }
+
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            var tile = _tiles[x, y];
+            if (!tile.IsBlightInfected || tile.Architecture == ArchitectureKind.None) continue;
+            tile.Health = Math.Max(0f, tile.Health - damagePerStructure);
+            affected++;
+            if (tile.Health <= 0f)
+            {
+                tile.Architecture = ArchitectureKind.None;
+                tile.Health = 0f;
+                tile.IsBlightInfected = false;
+                InvalidatePathCache();
+            }
+        }
+
+        if (affected > 0)
+        {
+            RefreshWealthMetrics();
+            Message = $"Blight infection damaged {affected} structure(s). Use WAR ROOM → REPAIR ALL with wood/stone/alloy and components to stop the decay.";
+        }
+        return affected;
     }
 
     public bool PrepareWorkerForCombat(int workerId)
@@ -2343,6 +2568,8 @@ internal sealed class ColonySimulation
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
         tile.Architecture = order.Target;
+        tile.Health = tile.MaxHealth;
+        tile.IsBlightInfected = false;
         tile.ConstructionOrderId = null;
         InvalidatePathCache();
         order.Status = ConstructionStatus.Complete;
@@ -2363,6 +2590,8 @@ internal sealed class ColonySimulation
         item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
         if (item.WorkDone < item.WorkRequired) return;
         item.Status = ConstructionStatus.Complete;
+        item.Health = item.MaxHealth;
+        item.IsBlightInfected = false;
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"{item.Kind} completed and is now operational.";
