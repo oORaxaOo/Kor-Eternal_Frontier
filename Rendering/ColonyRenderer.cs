@@ -1185,7 +1185,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText(worldView ? "WORLD ECOLOGY" : simulation.SelectedWorkOrderId.HasValue ? "WORK ORDER INSPECTOR" : "POPULATION", 790, 356, SKTextAlign.Left, _smallFont, _text);
+        canvas.DrawText(worldView ? "WORLD ECOLOGY" : simulation.SelectedWorkOrderId.HasValue ? "WORK ORDER INSPECTOR" : simulation.SelectedObjectId.HasValue ? "OBJECT INSPECTOR" : "POPULATION", 790, 356, SKTextAlign.Left, _smallFont, _text);
         if (worldView)
         {
             int animalCount = spatialWorld.Ecology.Herds.Sum(herd => herd.Population);
@@ -1210,6 +1210,16 @@ internal sealed class ColonyRenderer : IDisposable
             DrawButton(canvas, "CANCEL ORDER", 904, 425, 182, 22);
             _muted.Color = MutedColor;
             canvas.DrawText(simulation.SelectedWorkOrderDiagnostic, 790, 462, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else if (simulation.SelectedObjectId.HasValue && simulation.SelectedObject is { } selectedObject)
+        {
+            _text.Color = TextColor;
+            canvas.DrawText(simulation.SelectedObjectSummary, 790, 376, SKTextAlign.Left, _smallFont, _text);
+            _text.Color = Gold;
+            canvas.DrawText($"Status {selectedObject.Status} · Condition {selectedObject.Health:0}/{selectedObject.MaxHealth:0}", 790, 397, SKTextAlign.Left, _smallFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText($"Footprint {selectedObject.Width}×{selectedObject.Height} · Position {selectedObject.Origin.X}, {selectedObject.Origin.Y}", 790, 416, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText(simulation.SelectedObjectDiagnostic, 790, 435, SKTextAlign.Left, _smallFont, _muted);
         }
         else
         {
