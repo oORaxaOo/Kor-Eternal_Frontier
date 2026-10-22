@@ -56,6 +56,16 @@ internal static class ColonyChecks
         Check((previewValidation.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0) == diningTablePreviewValid,
             "placement preview validity must use the same footprint rules as actual blueprint placement");
 
+        var objectInspection = new ColonySimulation();
+        int inspectionRackId = objectInspection.PlaceObjectBlueprint(PlaceableKind.StorageRack, 8, 8);
+        var inspectionRack = objectInspection.Objects.Single(item => item.Id == inspectionRackId);
+        inspectionRack.Status = ConstructionStatus.Complete;
+        inspectionRack.Health = inspectionRack.MaxHealth;
+        Check(objectInspection.SelectWorkOrderAt(8.5f, 8.5f) &&
+              objectInspection.Message.Contains("Storage rack inspected", StringComparison.Ordinal) &&
+              objectInspection.Message.Contains(ColonySimulation.StorageRackCapacity.ToString(), StringComparison.Ordinal),
+            "clicking a completed storage rack must inspect it and expose its actual capacity");
+
         var environment = new ColonySimulation();
         var furnitureChecks = new ColonySimulation();
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0, "dining table should accept a blueprint");
