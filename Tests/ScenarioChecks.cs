@@ -22,6 +22,7 @@ internal static class ScenarioChecks
             CombatSystemsChecks.Run();
             CombatIntegrationChecks.Run();
             VerifyMapViewportInputBounds();
+            VerifyColonistRosterHitBounds();
             MacroWorldChecks.Run();
             Console.WriteLine("Kor checks passed: pawn utility AI, colony construction and logistics, bounded stockpile reservations, citizen needs and movement, job-broker capacity, continuous world movement and queries, shared settlement ledger, unified clock, session persistence, deterministic bounded simulation events, data-driven colony storyteller events and cooldowns, resident social relationships and incident milestones, and indexed world-space radius queries, deterministic regional biomes and local-map seeds, seeded faction strategy, diplomatic relationship matrices and persistent threat intelligence, deterministic 100x100 macro cells, daily macro economy, bounded supply-demand prices, data-driven research and generated item definitions, colonist work matrices, target reservations, strategic routes, macro-faction actions, wealth valuation and threat-scaled storyteller incidents, deterministic tactical combat, cover, faction loadouts, research-gated production, vehicle assembly, persistent nemesis titles, and cross-system combat/workshop/research/save integration.");
             return 0;
@@ -31,6 +32,18 @@ internal static class ScenarioChecks
             Console.Error.WriteLine(ex);
             return 1;
         }
+    }
+
+    private static void VerifyColonistRosterHitBounds()
+    {
+        if (KorTheBlight.Rendering.ColonyRosterLayout.HitTest(155f, 8f) != 0 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(234f, 20f) != 1 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(315f, 20f) != 2 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(231f, 20f) != -1 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(154.9f, 20f) != -1 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(160f, 35f) != -1 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(395f, 20f) != -1)
+            throw new InvalidOperationException("Colonist roster hit-test bounds do not match the rendered buttons.");
     }
 
     private static void VerifyMapViewportInputBounds()
