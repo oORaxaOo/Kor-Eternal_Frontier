@@ -23,6 +23,16 @@ internal static class Program
             try { return ScenarioChecks.Run(); }
             catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 1; }
         }
+        var captureArgument = args.FirstOrDefault(arg => arg.StartsWith("--capture-ui-screenshots=", StringComparison.Ordinal));
+        if (captureArgument is not null)
+        {
+            try
+            {
+                CaptureUiScreenshots(captureArgument["--capture-ui-screenshots=".Length..]);
+                return 0;
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"UI screenshot capture failed: {ex}"); return 1; }
+        }
         IntPtr window = IntPtr.Zero, rendererHandle = IntPtr.Zero;
         SdlAdapter? adapter = null;
         ColonyRenderer? painter = null;
@@ -33,7 +43,8 @@ internal static class Program
         {
             if (Sdl.SDL_Init(Sdl.InitVideo) < 0) throw new InvalidOperationException(Sdl.Error());
             sdlInitialized = true;
-            window = Sdl.SDL_CreateWindow("KOR-ETERNAL FRONTIER", 1100, 720, Sdl.WindowResizable);
+            var (windowWidth, windowHeight) = RequestedWindowSize(args);
+            window = Sdl.SDL_CreateWindow("KOR-ETERNAL FRONTIER", windowWidth, windowHeight, Sdl.WindowResizable);
             if (window == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
             rendererHandle = Sdl.SDL_CreateRenderer(window, IntPtr.Zero);
             if (rendererHandle == IntPtr.Zero) throw new InvalidOperationException(Sdl.Error());
@@ -44,6 +55,7 @@ internal static class Program
             bool gameStarted = false, settingsMenu = false, startPaused = false;
             string menuMessage = string.Empty;
             adapter = new SdlAdapter(rendererHandle, 1100, 720);
+            adapter.Resize(windowWidth, windowHeight);
             painter = new ColonyRenderer();
             menuPainter = new MainMenuRenderer();
             using var host = new RenderSurfaceHost<BitmapBackbuffer>(adapter);
@@ -617,33 +629,75 @@ internal static class Program
                         else if (worldView && Hit(mx, my, 958, 566, 1012, 588)) { selectedShipmentResource = WorldResourceKind.Alloy; simulation.SetMessage("Cargo selected: Alloy. Select a caravan, then click a destination settlement."); }
                         else if (worldView && Hit(mx, my, 1016, 566, 1070, 588)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
                         else if (worldView && Hit(mx, my, 784, 593, 1086, 615)) { selectedShipmentResource = null; simulation.SetMessage("Shipment selection cleared."); }
-                        else if (!worldView && Hit(mx, my, 784, 566, 829, 588)) { architectureMode = ArchitectureKind.Wall; placingObject = false; excavationMode = false; }
-                        else if (!worldView && Hit(mx, my, 834, 566, 879, 588)) { architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 884, 566, 929, 588)) { architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 934, 566, 979, 588)) { architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 984, 566, 1029, 588)) { architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 1034, 566, 1079, 588)) { architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; demolitionMode = false; simulation.SetMessage("Excavation mode: click solid rock to designate mining."); }
-                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615) && buildMenuPage == 0) { objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615) && buildMenuPage == 0) { objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615) && buildMenuPage == 0) { objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615) && buildMenuPage == 0) { objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615) && buildMenuPage == 0) { buildMenuPage = 1; architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = false; demolitionMode = false; simulation.SetMessage("Build menu: comfort and recreation."); }
-                        else if (!worldView && Hit(mx, my, 784, 593, 831, 615) && buildMenuPage == 1) { objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 835, 593, 882, 615) && buildMenuPage == 1) { objectType = PlaceableKind.DiningTable; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 886, 593, 933, 615) && buildMenuPage == 1) { objectType = PlaceableKind.Lamp; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 937, 593, 984, 615) && buildMenuPage == 1) { objectType = PlaceableKind.ComfortBench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false; }
-                        else if (!worldView && Hit(mx, my, 988, 593, 1035, 615) && buildMenuPage == 1) { buildMenuPage = 0; architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = false; demolitionMode = false; simulation.SetMessage("Build menu: work and infrastructure."); }
-                        else if (!worldView && Hit(mx, my, 1039, 593, 1086, 615))
+                        else if (!worldView && BuildPaletteLayout.HitCategory(mx, my) is int selectedCategory && selectedCategory >= 0)
                         {
+                            buildMenuPage = selectedCategory;
                             architectureMode = ArchitectureKind.None;
                             placingObject = false;
                             excavationMode = false;
-                            demolitionMode = !demolitionMode;
-                            simulation.SetMessage(demolitionMode ? "Demolition mode: click a completed structure or built tile." : "Demolition mode disabled.");
+                            demolitionMode = false;
+                            architectureDragActive = false;
+                            simulation.SetMessage($"Architect category: {BuildPaletteLayout.CategoryLabel(selectedCategory)}.");
                         }
-                    }
-                }
-                // While dragging, walls are connected as straight grid segments. Floors are
+                        else if (!worldView && BuildPaletteLayout.HitItem(mx, my) is int paletteSlot && paletteSlot >= 0)
+                        {
+                            switch (BuildPaletteLayout.ActionAt(buildMenuPage, paletteSlot))
+                            {
+                                case BuildPaletteAction.Wall:
+                                    architectureMode = ArchitectureKind.Wall; placingObject = false; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Floor:
+                                    architectureMode = ArchitectureKind.Floor; placingObject = false; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Path:
+                                    architectureMode = ArchitectureKind.Path; placingObject = false; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Door:
+                                    architectureMode = ArchitectureKind.Door; placingObject = false; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Conduit:
+                                    architectureMode = ArchitectureKind.Conduit; placingObject = false; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Dig:
+                                    architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = true; demolitionMode = false;
+                                    simulation.SetMessage("Excavation mode: click solid rock to designate mining.");
+                                    break;
+                                case BuildPaletteAction.Remove:
+                                    architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = false;
+                                    demolitionMode = true;
+                                    simulation.SetMessage("Demolition mode: click a completed structure or built tile.");
+                                    break;
+                                case BuildPaletteAction.Cancel:
+                                    architectureMode = ArchitectureKind.None; placingObject = false; excavationMode = false; demolitionMode = false;
+                                    architectureDragActive = false;
+                                    simulation.SetMessage("Current map tool cancelled.");
+                                    break;
+                                case BuildPaletteAction.SleepingPod:
+                                    objectType = PlaceableKind.SleepingPod; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.DiningTable:
+                                    objectType = PlaceableKind.DiningTable; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.ComfortBench:
+                                    objectType = PlaceableKind.ComfortBench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Lamp:
+                                    objectType = PlaceableKind.Lamp; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Workbench:
+                                    objectType = PlaceableKind.Workbench; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Generator:
+                                    objectType = PlaceableKind.Generator; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.StorageRack:
+                                    objectType = PlaceableKind.StorageRack; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                                case BuildPaletteAction.Garden:
+                                    objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
+                                    break;
+                            }
+                        }, walls are connected as straight grid segments. Floors are
                 // filled as a rectangle on release, avoiding a dotted trail of individual tiles.
                 if (gameStarted && architectureDragActive && left && wasLeft && !worldView && inWorldView)
                 {
@@ -759,6 +813,56 @@ internal static class Program
 
     internal static bool IsMapViewport(float x, float y)
         => x >= 0 && x < 770 && y >= 62 && y < 650;
+
+    internal static bool TryParseWindowSize(string[] args, out int width, out int height)
+    {
+        width = 1100;
+        height = 720;
+        var argument = args.FirstOrDefault(value => value.StartsWith("--window-size=", StringComparison.Ordinal));
+        if (argument is null) return false;
+        var parts = argument["--window-size=".Length..].Split('x', 'X');
+        if (parts.Length != 2 ||
+            !int.TryParse(parts[0], out int parsedWidth) ||
+            !int.TryParse(parts[1], out int parsedHeight) ||
+            parsedWidth < 800 || parsedHeight < 600 || parsedWidth > 7680 || parsedHeight > 4320)
+            return false;
+        width = parsedWidth;
+        height = parsedHeight;
+        return true;
+    }
+
+    private static (int Width, int Height) RequestedWindowSize(string[] args)
+    {
+        if (TryParseWindowSize(args, out int width, out int height)) return (width, height);
+        return (1100, 720);
+    }
+
+    private static void CaptureUiScreenshots(string outputDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(outputDirectory))
+            throw new ArgumentException("A screenshot output directory is required.", nameof(outputDirectory));
+        System.IO.Directory.CreateDirectory(outputDirectory);
+        var world = new WorldSimulation(20261022);
+        using var renderer = new ColonyRenderer();
+        Capture(1280, 720, System.IO.Path.Combine(outputDirectory, "kor-ui-1280x720.png"));
+        Capture(1920, 1080, System.IO.Path.Combine(outputDirectory, "kor-ui-1920x1080.png"));
+
+        void Capture(int width, int height, string path)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(width, height))
+                ?? throw new InvalidOperationException($"Could not create {width}x{height} UI capture surface.");
+            var canvas = surface.Canvas;
+            canvas.Scale(width / 1100f, height / 720f);
+            renderer.Draw(canvas, world.Colony, 0, 0, 1f, ArchitectureKind.None, PlaceableKind.Workbench,
+                false, false, false, 0, false, 1f, world.SpatialWorld,
+                (float)(ContinuousWorldState.WorldExtent / 2), (float)(ContinuousWorldState.WorldExtent / 2),
+                null, null, null, 550, 360, false, "Kor", 0, false, 0, 0, world, false, 0, null);
+            using var image = surface.Snapshot();
+            using var png = image.Encode(SKEncodedImageFormat.Png, 100)
+                ?? throw new InvalidOperationException($"Could not encode {width}x{height} UI capture.");
+            System.IO.File.WriteAllBytes(path, png.ToArray());
+        }
+    }
 
     internal static bool ShouldCancelMapToolOnRightClick(bool worldView, bool placingObject,
         ArchitectureKind architectureMode, bool excavationMode, bool demolitionMode)
