@@ -318,6 +318,17 @@ internal sealed class ColonyRenderer : IDisposable
             };
             if (tile.Architecture != ArchitectureKind.None)
                 canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
+            if (tile.Architecture != ArchitectureKind.None && tile.IsBlightInfected)
+            {
+                _fill.Color = new SKColor(173, 28, 84, 72);
+                canvas.DrawRect(rect, _fill);
+            }
+            if (tile.Architecture != ArchitectureKind.None && tile.Health < tile.MaxHealth)
+            {
+                _line.Color = tile.IsBlightInfected ? new SKColor(220, 52, 112) : Gold;
+                _line.StrokeWidth = Math.Max(1.4f, zoom * 1.8f);
+                canvas.DrawRect(Inset(rect, size * 0.08f), _line);
+            }
 
             var order = simulation.TileOrderAt(x, y);
             if (order != null)
@@ -442,7 +453,7 @@ internal sealed class ColonyRenderer : IDisposable
             var rect = new SKRect(topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y);
             if (rect.Right < 0 || rect.Left > 770 || rect.Bottom < 62 || rect.Top > 650) continue;
 
-            _fill.Color = item.Kind switch
+            _fill.Color = item.IsDestroyed ? new SKColor(49, 21, 27) : item.Kind switch
             {
                 PlaceableKind.Habitat => new SKColor(72, 27, 36),
                 PlaceableKind.Stockpile => new SKColor(54, 60, 52),
@@ -456,18 +467,21 @@ internal sealed class ColonyRenderer : IDisposable
                 PlaceableKind.ComfortBench => new SKColor(65, 79, 74),
                 _ => new SKColor(48, 50, 50)
             };
+            if (item.IsBlightInfected)
+                _fill.Color = new SKColor(119, 25, 61, 190);
             canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
-            _line.Color = item.Status switch
-            {
-                ConstructionStatus.Complete => new SKColor(153, 168, 151),
-                ConstructionStatus.WaitingForMaterials => Crimson,
-                ConstructionStatus.Blocked => new SKColor(110, 73, 76),
-                _ => Gold
-            };
+            _line.Color = item.IsDestroyed || item.IsBlightInfected ? Crimson :
+                item.IsBuilt && item.Health < item.MaxHealth ? Gold : item.Status switch
+                {
+                    ConstructionStatus.Complete => new SKColor(153, 168, 151),
+                    ConstructionStatus.WaitingForMaterials => Crimson,
+                    ConstructionStatus.Blocked => new SKColor(110, 73, 76),
+                    _ => Gold
+                };
             _line.StrokeWidth = Math.Max(1f, zoom * 1.4f);
             canvas.DrawRect(Inset(rect, size * 0.07f), _line);
 
-            string label = item.Kind switch
+            string label = item.IsDestroyed ? "×" : item.Kind switch
             {
                 PlaceableKind.Habitat => "H",
                 PlaceableKind.Stockpile => "S",
@@ -481,9 +495,17 @@ internal sealed class ColonyRenderer : IDisposable
                 PlaceableKind.ComfortBench => "C",
                 _ => "?"
             };
+            _text.Color = item.IsDestroyed ? Crimson : item.IsBlightInfected ? new SKColor(255, 116, 169) : TextColor;
             canvas.DrawText(label, rect.MidX, rect.MidY + 4f * zoom, SKTextAlign.Center, _headingFont, _text);
+            if (item.IsBuilt && (item.Health < item.MaxHealth || item.IsBlightInfected) && zoom >= 0.8f)
+            {
+                _muted.Color = item.IsBlightInfected ? new SKColor(255, 116, 169) : Gold;
+                canvas.DrawText($"{item.Health / item.MaxHealth:P0}{(item.IsBlightInfected ? " !" : string.Empty)}",
+                    rect.MidX, rect.Bottom - 3f * zoom, SKTextAlign.Center, _smallFont, _muted);
+            }
+            _text.Color = TextColor;
 
-            if (!item.IsBuilt)
+            if (!item.IsBuilt && item.Status != ConstructionStatus.Complete)
             {
                 _text.Color = item.Status == ConstructionStatus.WaitingForMaterials ? Crimson : Gold;
                 string progress = item.Status == ConstructionStatus.WaitingForMaterials
@@ -661,7 +683,7 @@ internal sealed class ColonyRenderer : IDisposable
         {
             var entities = world.CombatEngine.Entities
                 .OrderBy(entity => entity.FactionId == 1 ? 0 : 1)
-                .ThenBy(entity => entity.Id).Take(12).ToArray();
+                .ThenBy(entity => entity.Id).Take(10).ToArray();
             int hostiles = entities.Count(entity => entity.FactionId != 1);
             int friendlies = entities.Length - hostiles;
             _text.Color = TextColor;
@@ -684,12 +706,15 @@ internal sealed class ColonyRenderer : IDisposable
                 canvas.DrawText($"{entity.Type}  HP {entity.Health:0.00}  {ammo}", 790, y + 17, SKTextAlign.Left, _smallFont, _muted);
                 y += 30;
             }
-            DrawButton(canvas, "DEPLOY COLONISTS", 140, 535, 180, 26);
+            DrawButton(canvas, "DEPLOY COLONISTS", 140, 490, 180, 26);
+            DrawButton(canvas, "REPAIR ALL", 330, 490, 180, 26);
             _muted.Color = MutedColor;
-            canvas.DrawText("Select a Kor unit, then click an enemy row to issue an attack order. Units without orders acquire nearby enemies automatically.",
-                142, 578, SKTextAlign.Left, _smallFont, _muted);
-            canvas.DrawText("Combat is fixed-step; cover comes from local walls, rock and completed objects. Defeated armies feed salvage into the shared settlement ledger.",
-                142, 588, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Select a Kor unit, then click an enemy row to issue an attack order. Unopposed hostiles besiege nearby structures.",
+                142, 544, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Blight attacks can infect buildings; infection deals recurring damage until repaired with shared supplies.",
+                142, 564, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Repairs spend wood, stone, alloy and components from the same settlement inventory used by crafting.",
+                142, 584, SKTextAlign.Left, _smallFont, _muted);
         }
         else if (tab == 1)
         {

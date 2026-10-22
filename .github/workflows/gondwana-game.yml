@@ -78,6 +78,9 @@ jobs:
           cp -a /tmp/sdl3-install/lib/libSDL3.so* artifacts/Kor-Eternal-Frontier/linux-x64/
           patchelf --set-rpath '$ORIGIN' artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
           test -f artifacts/Kor-Eternal-Frontier/linux-x64/libSDL3.so
+          cp launch-kor.sh artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh
+          cp README-LINUX.md artifacts/Kor-Eternal-Frontier/linux-x64/README-LINUX.md
+          chmod +x artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh
 
       - name: Verify published executable
         run: |

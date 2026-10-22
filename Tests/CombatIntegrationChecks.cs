@@ -10,6 +10,7 @@ internal static class CombatIntegrationChecks
     public static void Run()
     {
         VerifyResearchWorkshopCombatAndSaveShareOneSession();
+        VerifyStructureSiegeBlightInfectionRepairAndPersistence();
     }
 
     private static void VerifyResearchWorkshopCombatAndSaveShareOneSession()
@@ -101,6 +102,91 @@ internal static class CombatIntegrationChecks
         // Research is part of the canonical saved world, so the connection must remain live after restore.
         Check(restored.Workshop.IsResearchUnlocked("tech_industrial_weapons"),
             "completed research should remain visible to the restored workshop");
+    }
+
+
+    private static void VerifyStructureSiegeBlightInfectionRepairAndPersistence()
+    {
+        var world = new WorldSimulation(881002);
+        var home = world.SpatialWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+
+        // Keep this scenario isolated from randomly seeded strategic army encounters.
+        foreach (var entity in world.SpatialWorld.Entities
+                     .Where(entity => entity.Kind is WorldEntityKind.Army or WorldEntityKind.BlightFront)
+                     .ToArray())
+            world.SpatialWorld.RemoveEntity(entity.Id);
+        foreach (var entity in world.CombatEngine.Entities.ToArray())
+            world.CombatEngine.TryRemoveEntity(entity.Id);
+
+        var habitat = world.Colony.ObjectAt(15, 8)
+            ?? throw new InvalidOperationException("The starter habitat must exist for the siege test.");
+        float originalHealth = habitat.Health;
+        Check(originalHealth > 0f, "the starting habitat should have a valid structure-integrity pool");
+
+        var raider = new CombatEntity
+        {
+            FactionId = 2, Type = CombatEntityType.Human, X = 16.5f, Y = 9.5f,
+            Speed = 0f, Health = 1f, SharpArmor = 0.2f, BluntArmor = 0.2f,
+            EquippedWeapon = CombatWeaponType.TankCannon, CurrentAmmo = 12, MaxAmmo = 12,
+            DriverPawnId = -1, SourcePawnId = -1, KilledPawnId = -1
+        };
+        Check(world.CombatEngine.TrySpawn(raider, out int raiderId),
+            "an unopposed hostile should spawn for the local siege test");
+        for (int i = 0; i < 21 && habitat.Health >= originalHealth; i++) world.Step(0.1f);
+        Check(habitat.Health < originalHealth,
+            "a hostile without a living combat target should attack and damage nearby settlement structures");
+
+        world.CombatEngine.TryRemoveEntity(raiderId);
+        var blight = new CombatEntity
+        {
+            FactionId = 99, Type = CombatEntityType.BlightBeast, X = 16.5f, Y = 9.5f,
+            Speed = 0f, Health = 0.8f, SharpArmor = 0.05f, BluntArmor = 0f,
+            EquippedWeapon = CombatWeaponType.Melee, CurrentFuel = 0f,
+            HasBlightMutation = true, DriverPawnId = -1, SourcePawnId = -1, KilledPawnId = -1
+        };
+        Check(world.CombatEngine.TrySpawn(blight, out int blightId),
+            "a Blight attacker should spawn for the infection test");
+        float beforeInfectionHit = habitat.Health;
+        world.Step(0.1f);
+        Check(habitat.IsBlightInfected && habitat.Health < beforeInfectionHit,
+            "Blight siege hits should both damage structures and mark them infected");
+        world.CombatEngine.TryRemoveEntity(blightId);
+
+        float healthAfterHit = habitat.Health;
+        for (int i = 0; i < 110; i++) world.Step(0.1f);
+        Check(habitat.Health < healthAfterHit && habitat.IsBlightInfected,
+            "infection should apply recurring structure damage on the shared simulation clock");
+
+        string infectedSave = GameSessionService.Serialize(world);
+        var loaded = GameSessionService.Deserialize(infectedSave);
+        var restored = new WorldSimulation(1);
+        restored.Restore(loaded);
+        var restoredHabitat = restored.Colony.Objects.Single(item => item.Id == habitat.Id);
+        Check(restoredHabitat.IsBlightInfected &&
+              Math.Abs(restoredHabitat.Health - habitat.Health) < 0.001f,
+            "unified save/load should preserve structure health and Blight infection state");
+        Check(restored.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Components) > 0 &&
+              restored.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood) > 0,
+            "the shared settlement ledger should fund repair and infection cleansing");
+
+        double woodBeforeRepair = restored.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood);
+        double componentsBeforeRepair = restored.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Components);
+        float healthBeforeRepair = restoredHabitat.Health;
+        int repaired = restored.RepairDamagedStructures();
+        Check(repaired > 0 && !restoredHabitat.IsBlightInfected && restoredHabitat.Health > healthBeforeRepair,
+            "repair controls should restore integrity and cleanse Blight infection");
+        Check(restored.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood) == woodBeforeRepair - 1 &&
+              restored.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Components) == componentsBeforeRepair - 1,
+            "repairs and cleansing must debit the canonical wood/components inventory exactly once");
+
+        string repairedSave = GameSessionService.Serialize(restored);
+        var repairedReload = new WorldSimulation(2);
+        repairedReload.Restore(GameSessionService.Deserialize(repairedSave));
+        var finalHabitat = repairedReload.Colony.Objects.Single(item => item.Id == habitat.Id);
+        Check(!finalHabitat.IsBlightInfected &&
+              Math.Abs(finalHabitat.Health - restoredHabitat.Health) < 0.001f,
+            "repaired structure state should remain consistent after a second save/load round-trip");
     }
 
     private static void Check(bool condition, string reason)

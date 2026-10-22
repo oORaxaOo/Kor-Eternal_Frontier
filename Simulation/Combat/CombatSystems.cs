@@ -16,7 +16,7 @@ internal struct CombatEntity
     public float X, Y, Speed, Health, SharpArmor, BluntArmor;
     public CombatWeaponType EquippedWeapon;
     public int CurrentAmmo, MaxAmmo, TargetEntityId;
-    public float AttackCooldown, CurrentFuel;
+    public float AttackCooldown, StructureAttackCooldown, CurrentFuel;
     public int DriverPawnId, PassengerCount, NameSeed;
     public long SourceWorldEntityId;
     public int SourcePawnId;
@@ -61,7 +61,7 @@ internal readonly record struct CombatDeath(CombatEntity Entity, int KillerId);
 internal sealed record CombatEngineSnapshot(int NextEntityId, long Tick, List<CombatEntity> Entities, byte[] CoverSnapshot);
 internal sealed record PendingCombatLoot(string ItemId, int Amount, int SourceEntityId);
 internal sealed record CombatRuntimeSnapshot(CombatEngineSnapshot Engine, WorkbenchSnapshot Workshop,
-    List<NemesisRecord> Nemeses, List<PendingCombatLoot> PendingLoot);
+    List<NemesisRecord> Nemeses, List<PendingCombatLoot> PendingLoot, float BlightInfectionAccumulatorSeconds);
 
 /// <summary>
 /// Deterministic, fixed-step local combat. Entity updates and damage resolution are deliberately
@@ -99,6 +99,8 @@ internal sealed class CombatEngine
         entity.SharpArmor = Math.Clamp(entity.SharpArmor, 0f, 0.95f);
         entity.BluntArmor = Math.Clamp(entity.BluntArmor, 0f, 0.95f);
         entity.TargetEntityId = -1;
+        entity.AttackCooldown = MathF.Max(0f, float.IsFinite(entity.AttackCooldown) ? entity.AttackCooldown : 0f);
+        entity.StructureAttackCooldown = MathF.Max(0f, float.IsFinite(entity.StructureAttackCooldown) ? entity.StructureAttackCooldown : 0f);
         _entities[slot] = entity;
         _slotById[entity.Id] = slot;
         entityId = entity.Id;
@@ -118,6 +120,24 @@ internal sealed class CombatEngine
         int slot = FindSlot(entityId);
         if (slot < 0 || (targetEntityId != -1 && FindSlot(targetEntityId) < 0)) return false;
         _entities[slot].TargetEntityId = targetEntityId;
+        return true;
+    }
+
+    public bool TrySetStructureAttackCooldown(int id, float seconds)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0 || !float.IsFinite(seconds) || seconds < 0f) return false;
+        _entities[slot].StructureAttackCooldown = seconds;
+        return true;
+    }
+
+    public bool TryConsumeAmmo(int id, int amount = 1)
+    {
+        if (amount <= 0) return false;
+        int slot = FindSlot(id);
+        if (slot < 0 || _entities[slot].EquippedWeapon == CombatWeaponType.Melee ||
+            _entities[slot].CurrentAmmo < amount) return false;
+        _entities[slot].CurrentAmmo -= amount;
         return true;
     }
 
@@ -172,7 +192,8 @@ internal sealed class CombatEngine
                 !float.IsFinite(saved.Speed) || saved.Speed < 0 || saved.Speed > 20 ||
                 saved.CurrentAmmo < 0 || saved.MaxAmmo < 0 || saved.CurrentAmmo > saved.MaxAmmo ||
                 !float.IsFinite(saved.SharpArmor) || saved.SharpArmor is < 0 or > 0.95f ||
-                !float.IsFinite(saved.BluntArmor) || saved.BluntArmor is < 0 or > 0.95f)
+                !float.IsFinite(saved.BluntArmor) || saved.BluntArmor is < 0 or > 0.95f ||
+                !float.IsFinite(saved.StructureAttackCooldown) || saved.StructureAttackCooldown < 0f)
                 throw new InvalidDataException($"Combat entity {saved.Id} is invalid.");
             _entities[slot] = saved;
             _slotById.Add(saved.Id, slot);
@@ -206,6 +227,7 @@ internal sealed class CombatEngine
             ref var entity = ref _entities[i];
             if (!entity.IsActive || entity.Health <= 0f) continue;
             entity.AttackCooldown = MathF.Max(0f, entity.AttackCooldown - deltaSeconds);
+            entity.StructureAttackCooldown = MathF.Max(0f, entity.StructureAttackCooldown - deltaSeconds);
             if (entity.TargetEntityId < 0 || !IsEnemyAlive(entity.FactionId, entity.TargetEntityId))
                 entity.TargetEntityId = FindNearestEnemy(i, entity, cover);
             if (entity.TargetEntityId < 0) continue;

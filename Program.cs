@@ -260,18 +260,24 @@ internal static class Program
                         else if (Hit(mx, my, 140, 116, 252, 144)) systemsTab = 0;
                         else if (Hit(mx, my, 262, 116, 374, 144)) systemsTab = 1;
                         else if (Hit(mx, my, 384, 116, 496, 144)) systemsTab = 2;
-                        else if (systemsTab == 0 && Hit(mx, my, 140, 535, 320, 561))
+                        else if (systemsTab == 0 && Hit(mx, my, 140, 490, 320, 516))
                         {
                             int deployed = world.TryDeployColonists();
                             simulation.SetMessage(deployed > 0
                                 ? $"{deployed} colonists deployed to defend the settlement."
                                 : "Deployment unavailable: no eligible residents or no room in the combat roster.");
                         }
+                        else if (systemsTab == 0 && Hit(mx, my, 330, 490, 510, 516))
+                        {
+                            int repaired = world.RepairDamagedStructures();
+                            if (repaired == 0)
+                                simulation.SetMessage("No structures repaired. Damage/infection may be absent, or repair materials/components are missing.");
+                        }
                         else if (systemsTab == 0)
                         {
                             var listed = world.CombatEngine.Entities
                                 .OrderBy(entity => entity.FactionId == 1 ? 0 : 1)
-                                .ThenBy(entity => entity.Id).Take(12).ToArray();
+                                .ThenBy(entity => entity.Id).Take(10).ToArray();
                             for (int i = 0; i < listed.Length; i++)
                             {
                                 float rowTop = 180 + i * 30;
