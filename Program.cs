@@ -697,7 +697,10 @@ internal static class Program
                                     objectType = PlaceableKind.Garden; placingObject = true; architectureMode = ArchitectureKind.None; excavationMode = false; demolitionMode = false;
                                     break;
                             }
-                        }, walls are connected as straight grid segments. Floors are
+                        }
+                    }
+                }
+                // While dragging, walls are connected as straight grid segments. Floors are
                 // filled as a rectangle on release, avoiding a dotted trail of individual tiles.
                 if (gameStarted && architectureDragActive && left && wasLeft && !worldView && inWorldView)
                 {
