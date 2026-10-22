@@ -55,6 +55,7 @@ internal sealed class WorldSimulation
             // The world and colony consume the exact same fixed interval. Macro cells are separately
             // timesliced inside SpatialWorld.Step so no daily world turn monopolizes this loop.
             SpatialWorld.Step(FixedStepSeconds);
+            ProcessBlightPressureThreats();
             ProcessMacroArrivals();
             _simulationAccumulator -= FixedStepSeconds;
             fixedSteps++;
@@ -157,6 +158,54 @@ internal sealed class WorldSimulation
             }
             Colony.SetMessage($"STORYTELLER RAID: {units} hostile units generated from {incident.ThreatPoints} threat points and advancing toward Kor.");
         }
+    }
+
+    /// <summary>
+    /// Runs an independent Blight escalation check at fixed strategic-tick intervals. Wealth is
+    /// only a scarcity input: it never scales Blight aggression down when the colony is damaged.
+    /// The incident key is encoded in world entities so saves naturally preserve cooldown state.
+    /// </summary>
+    private void ProcessBlightPressureThreats()
+    {
+        var home = SpatialWorld.Entities.FirstOrDefault(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        if (home == null) return;
+
+        long worldTicks = (long)Math.Floor(SpatialWorld.ClockSeconds * TickManager.TicksPerSecond + 1e-6);
+        const long incidentIntervalTicks = 6_000;
+        long incidentIndex = worldTicks / incidentIntervalTicks;
+        if (incidentIndex <= 0 || worldTicks % incidentIntervalTicks > 6) return;
+
+        string prefix = $"Kor Blight Raid {incidentIndex}";
+        if (SpatialWorld.Entities.Any(entity => entity.Name.StartsWith(prefix, StringComparison.Ordinal))) return;
+
+        double localPressure = SpatialWorld.Ecology.EnvironmentalPressureAt(home.X, home.Y);
+        int macroX = Math.Clamp((int)(home.X / MacroWorldState.WorldCellSize), 0, MacroWorldState.Columns - 1);
+        int macroY = Math.Clamp((int)(home.Y / MacroWorldState.WorldCellSize), 0, MacroWorldState.Rows - 1);
+        double macroPressure = Math.Clamp(SpatialWorld.MacroWorld.GetCell(macroX, macroY).BlightPresence, 0d, 1d);
+        var assessment = BlightThreatModel.Assess(localPressure, macroPressure, Colony.Wealth.TotalWealth);
+        if (!assessment.ShouldTrigger) return;
+
+        int units = Math.Clamp((assessment.ThreatPoints + 24) / 25, 1, 10);
+        var random = new Random(unchecked(SpatialWorld.Seed * 7919 ^ (int)incidentIndex * 104729));
+        for (int i = 0; i < units; i++)
+        {
+            double x = Math.Clamp(home.X + random.Next(-5_000, 5_001), 0, ContinuousWorldState.WorldExtent);
+            double y = Math.Clamp(home.Y + random.Next(-5_000, 5_001), 0, ContinuousWorldState.WorldExtent);
+            if (Math.Abs(x - home.X) + Math.Abs(y - home.Y) < 1_500)
+                x = Math.Clamp(x + 2_000, 0, ContinuousWorldState.WorldExtent);
+
+            var blightRaid = SpatialWorld.AddEntity(
+                WorldEntityKind.Army, $"{prefix} / Unit {i + 1}", "Blight", x, y);
+            var route = WorldRoutePlanner.FindRoute(SpatialWorld, x, y, home.X, home.Y, 40);
+            double straightDistance = Math.Sqrt(Math.Pow(home.X - x, 2) + Math.Pow(home.Y - y, 2));
+            double speed = straightDistance / Math.Max(1, route.EstimatedSeconds);
+            SpatialWorld.OrderMove(blightRaid.Id, home.X, home.Y, Math.Max(1, speed));
+        }
+
+        Colony.SetMessage(
+            $"BLIGHT PRESSURE {assessment.Pressure:P0}: {units} hostile units advancing toward Kor " +
+            $"({assessment.ThreatPoints} pressure points; independent of colony wealth).");
     }
 
     public void SetSpeed(float multiplier)
