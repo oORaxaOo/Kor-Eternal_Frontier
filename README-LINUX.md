@@ -1,42 +1,32 @@
 # KOR Eternal Frontier — Linux x86_64
 
-## Start the game
+## So startest du das Spiel
 
-1. Extract the complete ZIP archive into a folder you can write to.
-2. Open a terminal in that folder and run:
+**Im fertigen Download:** ZIP vollständig in einen normalen Benutzerordner entpacken und `start-kor.sh` doppelklicken. Falls dein Dateimanager Skripte nicht direkt ausführt, im entpackten Ordner ein Terminal öffnen und `./start-kor.sh` eingeben. Kein .NET-SDK und keine Administratorrechte nötig.
 
-   `./start-kor.sh`
+**Aus dem Git-Quellcode:** .NET 8 SDK und SDL3 installieren, im Projektordner `./launch-kor.sh` ausführen. Der Starter verwendet automatisch ein bereits gebautes `artifacts/linux-x64/GondwanaGame`; wenn noch kein fertiges Programm vorliegt, versucht er den Quellcode direkt mit .NET zu starten.
 
-   If the executable bit was not preserved by your file manager, run
-   `chmod +x start-kor.sh` once and then start it again.
+## Diagnose
 
-The package contains the self-contained .NET runtime and the SDL3 shared library
-used by this build; a separate .NET SDK installation is not required. It targets
-Linux x86_64 and expects a desktop graphics session with X11, or XWayland when
-running from a Wayland desktop.
+Die automatisierten Simulations- und Integrationsprüfungen laufen ohne Spielfenster:
 
-## Diagnostics
+```bash
+./GondwanaGame --self-test
+```
 
-Run the built-in deterministic simulation/integration tests without opening the
-game window:
+Für einen vollständigen lokalen Linux-Build:
 
-`./GondwanaGame --self-test`
+```bash
+./build-linux.sh
+./launch-kor.sh
+```
 
-The normal launcher forwards additional arguments to the game, but most players
-should start it without arguments.
+Das portable Paket enthält die .NET-Laufzeit und die SDL3-Bibliothek. Benötigt wird eine normale Linux-Desktop-Sitzung unter X11 oder Wayland mit XWayland-Unterstützung.
 
-## Saves and data
+## Spielstände
 
-Game session saves are stored at:
+Der Spielstand liegt hier:
 
 `~/.local/share/kor-eternal-frontier/session.json`
 
-The bundled `data/` directory contains the game's research and item definitions.
-Keep it alongside the executable.
-
-## Package notes
-
-This is a portable Linux x86_64 package, not a distribution-specific installer.
-No root privileges are required to extract or run it. The SDL3 library is bundled
-with the game; the desktop's normal graphics/system libraries must still be
-available.
+Bitte den Ordner `data/` im Paket neben der ausführbaren Datei belassen.
