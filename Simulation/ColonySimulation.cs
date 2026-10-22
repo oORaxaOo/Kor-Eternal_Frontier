@@ -1585,7 +1585,8 @@ internal sealed class ColonySimulation
 
         if (worker.CarriedResource.HasValue && worker.CarriedAmount > 0)
         {
-            if (!TryAdd(worker.CarriedResource.Value, worker.CarriedAmount)) return false;
+            if (InventoryFreeCapacity < worker.CarriedAmount) return false;
+            AdjustResource(worker.CarriedResource.Value, worker.CarriedAmount);
             worker.CarriedResource = null;
             worker.CarriedAmount = 0;
         }
@@ -1642,8 +1643,8 @@ internal sealed class ColonySimulation
         }
         worker.Task = null;
         worker.IsCombatDeployed = true;
-        if (_citizensByWorker.TryGetValue(worker.Id, out var citizenId))
-            _ecosystem.SetCombatDeployment(citizenId, true);
+        if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
+            _ecosystem.SetCombatDeployment(citizen.Id, true);
         Message = $"{worker.Name} deployed to local defense; hauling and colony work are suspended until their return.";
         return true;
     }
@@ -1654,14 +1655,10 @@ internal sealed class ColonySimulation
         if (worker is null || !worker.IsCombatDeployed || !float.IsFinite(x) || !float.IsFinite(y)) return false;
         worker.X = Math.Clamp(x, 0.01f, Width - 0.01f);
         worker.Y = Math.Clamp(y, 0.01f, Height - 0.01f);
-        if (_citizensByWorker.TryGetValue(worker.Id, out var citizenId))
-        {
-            var citizen = _ecosystem.Citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
-            if (citizen is not null)
-                citizen.Position = new CellPosition(
-                    Math.Clamp((int)worker.X, 0, Width - 1),
-                    Math.Clamp((int)worker.Y, 0, Height - 1));
-        }
+        if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
+            citizen.Position = new CellPosition(
+                Math.Clamp((int)worker.X, 0, Width - 1),
+                Math.Clamp((int)worker.Y, 0, Height - 1));
         return true;
     }
 
@@ -1671,8 +1668,8 @@ internal sealed class ColonySimulation
         if (worker is null || !worker.IsCombatDeployed) return false;
         if (worker.Task?.Kind == ColonyTaskKind.Gather)
             _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
-        if (_citizensByWorker.Remove(worker.Id, out var citizenId))
-            _ecosystem.RemoveCitizen(citizenId);
+        if (_citizensByWorker.Remove(worker.Id, out var citizen))
+            _ecosystem.RemoveCitizen(citizen.Id);
         _socialRelationships.RemoveResident(worker.Id);
         _incidentManager.RemoveResident(worker.Id);
         _workers.Remove(worker);

@@ -663,7 +663,7 @@ internal sealed class ColonyRenderer : IDisposable
                 .OrderBy(entity => entity.FactionId == 1 ? 0 : 1)
                 .ThenBy(entity => entity.Id).Take(12).ToArray();
             int hostiles = entities.Count(entity => entity.FactionId != 1);
-            int friendlies = entities.Count - hostiles;
+            int friendlies = entities.Length - hostiles;
             _text.Color = TextColor;
             canvas.DrawText($"LOCAL ENGAGEMENT · {friendlies} KOR · {hostiles} HOSTILE · {world.PendingCombatLoot.Count} LOOT STACKS WAITING FOR STORAGE",
                 142, 164, SKTextAlign.Left, _smallFont, _text);
