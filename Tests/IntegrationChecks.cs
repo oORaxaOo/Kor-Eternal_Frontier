@@ -96,7 +96,7 @@ internal static class IntegrationChecks
             "powered sensors must account for their energy demand");
         Check(safety.Step(1f, availablePower: 2f, [fire]).Count == 0,
             "a persistent hazard must not spam duplicate alarms each tick");
-        Check(safety.Step(1f, availablePower: 0f, [new ColonyHazard(11,
+        Check(safety.Step(1f, availablePower: 0f, [fire, new ColonyHazard(11,
                 ColonyHazardKind.StructuralInstability, new CellPosition(4, 5), 40f)]).Count == 0,
             "a sensor without its required power must not report a new hazard");
         Check(safety.MaintainSensor(2, 10f) && sensor.Condition > 99f,
