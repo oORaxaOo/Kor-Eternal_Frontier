@@ -1081,6 +1081,27 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawRoundRect(new SKRect(x, y, x + width * Math.Clamp(value, 0, 100) / 100f, y + 14), 3, 3, _fill);
     }
 
+    private void DrawColonistRoster(SKCanvas canvas, ColonySimulation simulation)
+    {
+        var roster = simulation.Workers.Take(ColonyRosterLayout.VisibleSlots).ToArray();
+        for (int i = 0; i < roster.Length; i++)
+        {
+            var worker = roster[i];
+            float x = ColonyRosterLayout.Left + i * ColonyRosterLayout.Step;
+            bool selected = simulation.SelectedWorkerId == worker.Id;
+            string label = worker.Name.Length > 9 ? worker.Name[..8] + "…" : worker.Name;
+            DrawButton(canvas, label, x, ColonyRosterLayout.Top, ColonyRosterLayout.ButtonWidth,
+                ColonyRosterLayout.ButtonHeight, selected);
+        }
+
+        if (simulation.Workers.Count > ColonyRosterLayout.VisibleSlots)
+        {
+            _muted.Color = MutedColor;
+            canvas.DrawText($"+{simulation.Workers.Count - ColonyRosterLayout.VisibleSlots}",
+                394, 25, SKTextAlign.Left, _smallFont, _muted);
+        }
+    }
+
     private void DrawHud(SKCanvas canvas, ColonySimulation simulation, ArchitectureKind architectureMode,
         PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier, bool worldView,
         ContinuousWorldState spatialWorld, long? selectedWorldEntityId, WorldResourceKind? selectedShipmentResource)
@@ -1097,9 +1118,10 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawLine(0, 650, 1100, 650, _line);
 
         _text.Color = Crimson;
-        canvas.DrawText("KOR ETERNAL FRONTIER", 18, 27, SKTextAlign.Left, _titleFont, _text);
+        canvas.DrawText("KOR FRONTIER", 18, 27, SKTextAlign.Left, _headingFont, _text);
         _muted.Color = MutedColor;
-        canvas.DrawText(worldView ? "CONTINUOUS WORLD / SINGLE SIMULATION" : "SYMBOLIC COLONY GRID / LIVE SIMULATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? "WORLD / LIVE SIMULATION" : "COLONY / LIVE SIMULATION", 19, 47, SKTextAlign.Left, _smallFont, _muted);
+        DrawColonistRoster(canvas, simulation);
 
         DrawFactionButton(canvas, false);
         _fill.Color = new SKColor(28, 35, 32);
