@@ -217,6 +217,22 @@ internal static class Program
                         else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
                         else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
                     }
+                    else if (ColonyRosterLayout.HitTest(logicalMouse.X, logicalMouse.Y) is int rosterSlot && rosterSlot >= 0)
+                    {
+                        var roster = simulation.Workers.Take(ColonyRosterLayout.VisibleSlots).ToArray();
+                        if (rosterSlot < roster.Length)
+                        {
+                            var worker = roster[rosterSlot];
+                            simulation.SelectWorkerAt(worker.X, worker.Y);
+                            selectedWorldEntityId = null;
+                            selectedMacroCellId = null;
+                            if (zoom < .65f) zoom = .85f;
+                            float tileScale = OrthogonalGridProjection.TileSize * Math.Clamp(zoom, .25f, 4f);
+                            cameraX = Math.Clamp(-(worker.X - ColonySimulation.Width / 2f) * tileScale, -500f, 500f);
+                            cameraY = Math.Clamp(-(worker.Y - ColonySimulation.Height / 2f) * tileScale, -400f, 400f);
+                            simulation.SetMessage($"Selected colonist: {worker.Name}.");
+                        }
+                    }
                     else if (Hit(logicalMouse.X, logicalMouse.Y, 12, 38, 1088, 59))
                     {
                         var latest = world.SpatialWorld.MacroWorld.Notifications.LastOrDefault();
@@ -655,7 +671,16 @@ internal static class Program
 
                 if (gameStarted && inWorldView && right && !wasRight)
                 {
-                    if (worldView && selectedWorldEntityId.HasValue && !world.SpatialWorld.Shipments.Any(shipment => shipment.CarrierEntityId == selectedWorldEntityId.Value && shipment.Status == WorldShipmentStatus.InTransit) && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
+                    if (ShouldCancelMapToolOnRightClick(worldView, placingObject, architectureMode, excavationMode, demolitionMode))
+                    {
+                        architectureMode = ArchitectureKind.None;
+                        placingObject = false;
+                        excavationMode = false;
+                        demolitionMode = false;
+                        architectureDragActive = false;
+                        simulation.SetMessage("Current map tool cancelled.");
+                    }
+                    else if (worldView && selectedWorldEntityId.HasValue && !world.SpatialWorld.Shipments.Any(shipment => shipment.CarrierEntityId == selectedWorldEntityId.Value && shipment.Status == WorldShipmentStatus.InTransit) && world.SpatialWorld.Entities.Any(entity => entity.Id == selectedWorldEntityId.Value && entity.Kind is WorldEntityKind.Army or WorldEntityKind.Caravan))
                     {
                         world.SpatialWorld.OrderMove(selectedWorldEntityId.Value, worldMouse.X, worldMouse.Y, 240d);
                         simulation.SetMessage("World movement order issued.");
@@ -734,6 +759,10 @@ internal static class Program
 
     internal static bool IsMapViewport(float x, float y)
         => x >= 0 && x < 770 && y >= 62 && y < 650;
+
+    internal static bool ShouldCancelMapToolOnRightClick(bool worldView, bool placingObject,
+        ArchitectureKind architectureMode, bool excavationMode, bool demolitionMode)
+        => !worldView && (placingObject || architectureMode != ArchitectureKind.None || excavationMode || demolitionMode);
 
     private static bool Hit(float x, float y, float left, float top, float right, float bottom)
         => x >= left && x <= right && y >= top && y <= bottom;
