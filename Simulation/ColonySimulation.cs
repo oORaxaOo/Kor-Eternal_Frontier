@@ -1229,19 +1229,33 @@ internal sealed class ColonySimulation
         }
 
         var builtObject = ObjectAt(x, y);
-        if (builtObject?.Kind == PlaceableKind.Workbench && builtObject.IsBuilt)
+        if (builtObject is { IsBuilt: true })
         {
-            var production = _productionOrders
-                .Where(order => order.WorkstationId == builtObject.Id && !order.Complete)
-                .OrderByDescending(order => order.Priority)
-                .ThenBy(order => order.Id)
-                .FirstOrDefault();
-            if (production != null)
+            if (builtObject.Kind == PlaceableKind.Workbench)
             {
-                SelectWorkOrder(WorkOrderKind.Production, production.Id);
-                Message = $"Selected component production order. Priority {production.Priority}/5.";
-                return true;
+                var production = _productionOrders
+                    .Where(order => order.WorkstationId == builtObject.Id && !order.Complete)
+                    .OrderByDescending(order => order.Priority)
+                    .ThenBy(order => order.Id)
+                    .FirstOrDefault();
+                if (production != null)
+                {
+                    SelectWorkOrder(WorkOrderKind.Production, production.Id);
+                    Message = $"Selected component production order. Priority {production.Priority}/5.";
+                    return true;
+                }
             }
+
+            Message = builtObject.Kind switch
+            {
+                PlaceableKind.StorageRack => $"Storage rack inspected at ({builtObject.Origin.X}, {builtObject.Origin.Y}). Capacity: {StorageRackCapacity} units. Stored resources remain subject to the colony inventory limits.",
+                PlaceableKind.Workbench => $"Workbench inspected at ({builtObject.Origin.X}, {builtObject.Origin.Y}). Select it again when a production order is available to inspect that order.",
+                PlaceableKind.Garden => $"Garden inspected at ({builtObject.Origin.X}, {builtObject.Origin.Y}). A completed garden can provide food through the colony job system.",
+                PlaceableKind.Generator => $"Generator inspected at ({builtObject.Origin.X}, {builtObject.Origin.Y}). Structure condition: {builtObject.Health:0}/{builtObject.MaxHealth:0}.",
+                PlaceableKind.Lamp => $"Lamp inspected at ({builtObject.Origin.X}, {builtObject.Origin.Y}). Structure condition: {builtObject.Health:0}/{builtObject.MaxHealth:0}.",
+                _ => $"{builtObject.Kind} inspected at ({builtObject.Origin.X}, {builtObject.Origin.Y}). Structure condition: {builtObject.Health:0}/{builtObject.MaxHealth:0}."
+            };
+            return true;
         }
 
         return false;
