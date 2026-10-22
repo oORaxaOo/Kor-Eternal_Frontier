@@ -8,6 +8,8 @@ internal static class IntegrationChecks
 {
     public static void Run()
     {
+        CheckSafetySystem();
+
         var world = new WorldSimulation(70241);
         var home = world.SpatialWorld.Entities.Single(entity =>
             entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
@@ -75,6 +77,37 @@ internal static class IntegrationChecks
         {
             if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static void CheckSafetySystem()
+    {
+        var safety = new ColonySafetySystem();
+        var sensor = new SafetySensor(2, new CellPosition(4, 4), detectionRadius: 3,
+            powerPerSecond: 2f, woodCost: 3, componentCost: 1);
+        Check(safety.TryInstallSensor(sensor) && !safety.TryInstallSensor(sensor),
+            "safety sensors must have unique stable IDs");
+
+        var fire = new ColonyHazard(10, ColonyHazardKind.Fire, new CellPosition(6, 4), 75f);
+        var detected = safety.Step(1f, availablePower: 2f, [fire]);
+        Check(detected.Count == 1 && detected[0].SensorId == 2 &&
+              detected[0].HazardId == 10 && detected[0].Kind == ColonyHazardKind.Fire,
+            "a powered sensor must emit one alarm for an in-range hazard");
+        Check(Math.Abs(safety.PowerUsedLastStep - 2f) < 0.001f,
+            "powered sensors must account for their energy demand");
+        Check(safety.Step(1f, availablePower: 2f, [fire]).Count == 0,
+            "a persistent hazard must not spam duplicate alarms each tick");
+        Check(safety.Step(1f, availablePower: 0f, [fire, new ColonyHazard(11,
+                ColonyHazardKind.StructuralInstability, new CellPosition(4, 5), 40f)]).Count == 0,
+            "a sensor without its required power must not report a new hazard");
+        Check(safety.MaintainSensor(2, 10f) && sensor.Condition > 99f,
+            "maintenance must restore sensor condition without exceeding its maximum");
+        Check(safety.Step(1f, availablePower: 2f, [fire,
+                new ColonyHazard(11, ColonyHazardKind.StructuralInstability, new CellPosition(4, 5), 40f)]).Count == 1,
+            "a newly appearing hazard must produce a separate deterministic alarm");
+        Check(safety.Alarms.Count == 2 && safety.Tick == 4,
+            "the alarm history and fixed-step counter must remain consistent");
+        Check(!safety.MaintainSensor(999, 10f) && safety.RemoveSensor(2) && safety.Sensors.Count == 0,
+            "unknown sensor maintenance must fail safely and removal must clear the sensor");
     }
 
     private static void Check(bool condition, string reason)
