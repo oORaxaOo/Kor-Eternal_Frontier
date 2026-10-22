@@ -71,6 +71,11 @@ internal static class ColonyChecks
               objectInspection.Message.Contains(ColonySimulation.StorageRackCapacity.ToString(), StringComparison.Ordinal),
             "clicking a completed storage rack must inspect it and expose its actual capacity");
 
+        Check(objectInspection.SelectedObjectId == inspectionRackId &&
+              objectInspection.SelectedObjectSummary.Contains("StorageRack", StringComparison.Ordinal) &&
+              objectInspection.SelectedObjectDiagnostic.Contains(ColonySimulation.StorageRackCapacity.ToString(), StringComparison.Ordinal),
+            "completed storage rack selection must populate the object inspector with model-backed details");
+
         var environment = new ColonySimulation();
         var furnitureChecks = new ColonySimulation();
         Check(furnitureChecks.PlaceObjectBlueprint(PlaceableKind.DiningTable, 6, 6) > 0, "dining table should accept a blueprint");
