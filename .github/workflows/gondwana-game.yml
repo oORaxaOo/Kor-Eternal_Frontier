@@ -46,6 +46,9 @@ jobs:
       - name: Run simulation and unified-session checks
         run: dotnet run --project GondwanaGame.csproj --configuration Release --no-build -- --self-test
 
+      - name: Capture UI comparison images at 1280x720 and 1920x1080
+        run: dotnet run --project GondwanaGame.csproj --configuration Release --no-build -- --capture-ui-screenshots=artifacts/ui-screenshots
+
       - name: Install graphical test dependencies
         run: |
           sudo apt-get update
@@ -91,10 +94,23 @@ jobs:
           file artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
           ldd artifacts/Kor-Eternal-Frontier/linux-x64/libSDL3.so
 
-      - name: Smoke-test graphical startup, menu-to-game transition, and clean shutdown
+      - name: Smoke-test graphical startup at 1280x720
         env:
           SDL_VIDEODRIVER: x11
-        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh --smoke-test
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh --smoke-test --window-size=1280x720
+
+      - name: Smoke-test graphical startup at 1920x1080
+        env:
+          SDL_VIDEODRIVER: x11
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh --smoke-test --window-size=1920x1080
+
+      - name: Upload UI comparison screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kor-Eternal-Frontier-ui-comparison
+          path: artifacts/ui-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload downloadable Linux build
         uses: actions/upload-artifact@v4
