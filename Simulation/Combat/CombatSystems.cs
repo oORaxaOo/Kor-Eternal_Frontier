@@ -131,6 +131,20 @@ internal sealed class CombatEngine
         return true;
     }
 
+    public bool TrySetLoadout(int id, CombatWeaponType weapon, int ammunition)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0 || !Enum.IsDefined(weapon) || ammunition < 0 || ammunition > 500 ||
+            _entities[slot].FactionId != 1 || _entities[slot].Type != CombatEntityType.Human ||
+            (weapon == CombatWeaponType.Melee && ammunition != 0) ||
+            (weapon != CombatWeaponType.Melee && ammunition == 0)) return false;
+        _entities[slot].EquippedWeapon = weapon;
+        _entities[slot].CurrentAmmo = ammunition;
+        _entities[slot].MaxAmmo = ammunition;
+        _entities[slot].AttackCooldown = 0f;
+        return true;
+    }
+
     public bool TryConsumeAmmo(int id, int amount = 1)
     {
         if (amount <= 0) return false;

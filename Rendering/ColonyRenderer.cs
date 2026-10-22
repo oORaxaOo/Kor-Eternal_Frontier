@@ -677,6 +677,7 @@ internal sealed class ColonyRenderer : IDisposable
         DrawButton(canvas, "COMBAT", 140, 116, 112, 28, tab == 0);
         DrawButton(canvas, "WORKSHOP", 262, 116, 112, 28, tab == 1);
         DrawButton(canvas, "RESEARCH", 384, 116, 112, 28, tab == 2);
+        DrawButton(canvas, "LOADOUTS", 506, 116, 112, 28, tab == 3);
         DrawButton(canvas, "CLOSE ×", 862, 88, 94, 28);
 
         if (tab == 0)
@@ -758,7 +759,7 @@ internal sealed class ColonyRenderer : IDisposable
                 : "Place and finish a workbench in the colony before crafting. Resources and research are shared.",
                 142, 588, SKTextAlign.Left, _smallFont, _muted);
         }
-        else
+        else if (tab == 2)
         {
             var projects = world.ResearchManager.Database.ResearchDatabase.Values
                 .OrderBy(project => project.Name, StringComparer.Ordinal).Take(6).ToArray();
@@ -792,6 +793,44 @@ internal sealed class ColonyRenderer : IDisposable
             }
             _muted.Color = MutedColor;
             canvas.DrawText("Research unlocks the exact recipe IDs consumed by the connected workshop; save/load preserves completed and active research.",
+                142, 566, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            var inventory = world.Workshop.Inventory;
+            int riflesInStock = inventory.GetValueOrDefault(WorkbenchManager.InfantryRifle);
+            _text.Color = TextColor;
+            canvas.DrawText($"FINISHED RIFLES IN SHARED STOCK: {riflesInStock}", 142, 163, SKTextAlign.Left, _headingFont, _text);
+            _muted.Color = MutedColor;
+            canvas.DrawText("Select a deployed Kor infantry unit below, then equip one finished rifle from stock.",
+                142, 181, SKTextAlign.Left, _smallFont, _muted);
+            var units = world.CombatEngine.Entities.Where(entity => entity.FactionId == 1 &&
+                    entity.Type == CombatEntityType.Human && entity.SourcePawnId > 0)
+                .OrderBy(entity => entity.SourcePawnId).Take(9).ToArray();
+            for (int i = 0; i < units.Length; i++)
+            {
+                var unit = units[i];
+                int y = 196 + i * 31;
+                bool selected = selectedCombatEntityId == unit.Id;
+                _fill.Color = selected ? new SKColor(76, 55, 23, 190) : new SKColor(20, 28, 27, 225);
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 27), 3, 3, _fill);
+                _line.Color = selected ? Gold : Border;
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 27), 3, 3, _line);
+                _text.Color = TextColor;
+                canvas.DrawText($"{world.GetCombatantName(unit)}  ·  pawn #{unit.SourcePawnId}",
+                    151, y + 17, SKTextAlign.Left, _smallFont, _text);
+                _muted.Color = MutedColor;
+                string equipment = unit.EquippedWeapon == CombatWeaponType.Melee ? "MELEE" :
+                    $"{unit.EquippedWeapon}  {unit.CurrentAmmo}/{unit.MaxAmmo}";
+                canvas.DrawText(equipment, 650, y + 17, SKTextAlign.Left, _smallFont, _muted);
+            }
+            DrawButton(canvas, "EQUIP RIFLE", 140, 490, 180, 30, riflesInStock > 0 && selectedCombatEntityId.HasValue);
+            _muted.Color = MutedColor;
+            canvas.DrawText(units.Length == 0
+                ? "No deployed colonists yet. Open COMBAT and choose DEPLOY COLONISTS first."
+                : "Rifles are removed from the same stock used by crafting; equipment and ammunition persist in the combat save.",
+                142, 544, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("If stock is empty: build a completed workbench, unlock industrial weapons, craft a rifle, then return here.",
                 142, 566, SKTextAlign.Left, _smallFont, _muted);
         }
     }

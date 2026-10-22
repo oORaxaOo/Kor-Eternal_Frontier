@@ -10,6 +10,7 @@ internal static class CombatIntegrationChecks
     public static void Run()
     {
         VerifyResearchWorkshopCombatAndSaveShareOneSession();
+        VerifyFinishedRifleCanBeEquippedFromSharedStock();
         VerifyStructureSiegeBlightInfectionRepairAndPersistence();
     }
 
@@ -104,6 +105,27 @@ internal static class CombatIntegrationChecks
             "completed research should remain visible to the restored workshop");
     }
 
+
+    private static void VerifyFinishedRifleCanBeEquippedFromSharedStock()
+    {
+        var world = new WorldSimulation(881103);
+        int deployed = world.TryDeployColonists();
+        Check(deployed > 0, "colonists should be deployable before rifle equipment test");
+        var pawn = world.CombatEngine.Entities.First(entity => entity.FactionId == 1 && entity.SourcePawnId > 0);
+        Check(pawn.EquippedWeapon != CombatWeaponType.Rifle, "test setup should begin with no rifle stock available");
+        var home = world.SpatialWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        Check(world.SpatialWorld.TryAddItem(home.Id, WorkbenchManager.InfantryRifle, 1),
+            "finished rifle should fit in canonical settlement stock");
+        Check(world.TryEquipRifle(pawn.Id), "deployed colonist should be able to equip a finished stock rifle");
+        Check(world.SpatialWorld.ItemAmountAt(home.Id, WorkbenchManager.InfantryRifle) == 0,
+            "equipping must debit exactly one rifle from shared stock");
+        Check(world.CombatEngine.TryGetEntity(pawn.Id, out var equipped) &&
+              equipped.EquippedWeapon == CombatWeaponType.Rifle && equipped.CurrentAmmo == 30,
+            "the live combat entity should receive rifle and ammunition together");
+        string saved = world.SerializeCombatRuntime();
+        Check(saved.Contains("Rifle", StringComparison.Ordinal), "equipped loadout should be present in combat persistence");
+    }
 
     private static void VerifyStructureSiegeBlightInfectionRepairAndPersistence()
     {

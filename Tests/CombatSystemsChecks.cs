@@ -8,6 +8,7 @@ internal static class CombatSystemsChecks
     {
         VerifyCoverGridSnapshot();
         VerifyCombatDamageAndAmmo();
+        VerifyLoadoutChangesAreValidatedAndPersistable();
         VerifyFactionLoadoutsAreSeeded();
         VerifyResearchGatedProductionAndVehicleCosts();
         VerifyNemesisTitlesAreStableAndContextual();
@@ -44,6 +45,23 @@ internal static class CombatSystemsChecks
         Assert(engine.TryGetEntity(target, out var damaged) && damaged.Health < 1f, "in-range shot should apply damage");
         Assert(engine.TryGetEntity(shooter, out var afterShot) && afterShot.CurrentAmmo == 9, "shot should consume exactly one round");
         Assert(engine.Flashes.Count == 1 && engine.Flashes[0].AttackerId == shooter, "shot should emit a transient symbolic flash");
+    }
+
+    private static void VerifyLoadoutChangesAreValidatedAndPersistable()
+    {
+        var engine = new CombatEngine();
+        Assert(engine.TrySpawn(new CombatEntity
+        {
+            FactionId = 1, Type = CombatEntityType.Human, X = 3, Y = 3, Health = 1,
+            Speed = 1, SourcePawnId = 42, EquippedWeapon = CombatWeaponType.Pistol,
+            CurrentAmmo = 12, MaxAmmo = 12
+        }, out int pawn), "friendly infantry should spawn for loadout test");
+        Assert(engine.TrySetLoadout(pawn, CombatWeaponType.Rifle, 30), "friendly infantry should accept a rifle loadout");
+        Assert(engine.TryGetEntity(pawn, out var equipped) && equipped.EquippedWeapon == CombatWeaponType.Rifle &&
+            equipped.CurrentAmmo == 30 && equipped.MaxAmmo == 30, "equipped weapon and ammunition should update together");
+        Assert(!engine.TrySetLoadout(pawn, CombatWeaponType.TankCannon, 12), "infantry must not equip vehicle-only tank cannons");
+        Assert(engine.TryGetEntity(pawn, out var unchanged) && unchanged.EquippedWeapon == CombatWeaponType.Rifle &&
+            unchanged.CurrentAmmo == 30, "rejected loadout must leave the previous equipment unchanged");
     }
 
     private static void VerifyFactionLoadoutsAreSeeded()

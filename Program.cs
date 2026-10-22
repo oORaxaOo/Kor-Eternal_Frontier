@@ -261,6 +261,7 @@ internal static class Program
                         else if (Hit(mx, my, 140, 116, 252, 144)) systemsTab = 0;
                         else if (Hit(mx, my, 262, 116, 374, 144)) systemsTab = 1;
                         else if (Hit(mx, my, 384, 116, 496, 144)) systemsTab = 2;
+                        else if (Hit(mx, my, 506, 116, 618, 144)) systemsTab = 3;
                         else if (systemsTab == 0 && Hit(mx, my, 140, 490, 320, 516))
                         {
                             int deployed = world.TryDeployColonists();
@@ -321,6 +322,28 @@ internal static class Program
                                     simulation.SetMessage($"Heavy tank #{vehicleId} assembled from the settlement item ledger.");
                                 else
                                     simulation.SetMessage("Tank assembly unavailable: unlock armored-vehicle research, supply every part, and free storage/tile capacity.");
+                            }
+                        }
+                        else if (systemsTab == 3)
+                        {
+                            var units = world.CombatEngine.Entities.Where(entity => entity.FactionId == 1 &&
+                                    entity.Type == CombatEntityType.Human && entity.SourcePawnId > 0)
+                                .OrderBy(entity => entity.SourcePawnId).Take(9).ToArray();
+                            bool handled = false;
+                            for (int i = 0; i < units.Length; i++)
+                            {
+                                float rowTop = 196 + i * 31;
+                                if (!Hit(mx, my, 140, rowTop, 955, rowTop + 27)) continue;
+                                selectedCombatEntityId = units[i].Id;
+                                simulation.SetMessage($"Selected {world.GetCombatantName(units[i])}: {units[i].EquippedWeapon}, ammunition {units[i].CurrentAmmo}/{units[i].MaxAmmo}.");
+                                handled = true;
+                                break;
+                            }
+                            if (!handled && Hit(mx, my, 140, 490, 320, 520))
+                            {
+                                if (!selectedCombatEntityId.HasValue || !world.TryEquipRifle(selectedCombatEntityId.Value))
+                                    if (!selectedCombatEntityId.HasValue)
+                                        simulation.SetMessage("Select a deployed Kor colonist from the loadout list first.");
                             }
                         }
                         else if (systemsTab == 2)
