@@ -1167,25 +1167,25 @@ internal sealed class ColonyRenderer : IDisposable
         canvas.DrawText($"Storage {simulation.InventoryUsed}/{simulation.InventoryCapacity} | Wealth {simulation.Wealth.TotalWealth:0} | TP {simulation.Wealth.ThreatPoints}", 790, 263, SKTextAlign.Left, _smallFont, _text);
 
         _text.Color = Gold;
-        canvas.DrawText(worldView ? "WORLD ENTITY INSPECTOR" : "STRATEGIC FRONTIER", 790, 289, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText(worldView ? "WORLD ENTITY INSPECTOR" : "STRATEGIC FRONTIER", 790, 300, SKTextAlign.Left, _headingFont, _text);
         _text.Color = TextColor;
         if (worldView)
         {
             var selected = selectedWorldEntityId.HasValue ? spatialWorld.Entities.FirstOrDefault(entity => entity.Id == selectedWorldEntityId.Value) : null;
-            canvas.DrawText(selected == null ? "Click a symbol to inspect" : $"{selected.Name} / {selected.Kind}", 790, 309, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText(selected == null ? "Click a symbol to inspect" : $"{selected.Name} / {selected.Kind}", 790, 320, SKTextAlign.Left, _smallFont, _text);
             string inventorySummary = selected != null && spatialWorld.Inventories.TryGetValue(selected.Id, out var inventory)
                 ? $"W {inventory.GetValueOrDefault(WorldResourceKind.Wood):0} S {inventory.GetValueOrDefault(WorldResourceKind.Stone):0} F {inventory.GetValueOrDefault(WorldResourceKind.Food):0} A {inventory.GetValueOrDefault(WorldResourceKind.Alloy):0}"
                 : selected == null ? "Select army/caravan to move" : $"Faction: {selected.Faction}";
-            canvas.DrawText(inventorySummary, 790, 326, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText(inventorySummary, 790, 337, SKTextAlign.Left, _smallFont, _text);
         }
         else
         {
-            canvas.DrawText($"Settlements {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.Settlement)} | Caravans {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.Caravan)} | Cargo {spatialWorld.Shipments.Count(shipment => shipment.Status == WorldShipmentStatus.InTransit)}", 790, 309, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"World clock {spatialWorld.ClockSeconds / 60:0} min | Blight fronts {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront)}", 790, 326, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Settlements {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.Settlement)} | Caravans {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.Caravan)} | Cargo {spatialWorld.Shipments.Count(shipment => shipment.Status == WorldShipmentStatus.InTransit)}", 790, 320, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"World clock {spatialWorld.ClockSeconds / 60:0} min | Blight fronts {spatialWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront)}", 790, 337, SKTextAlign.Left, _smallFont, _text);
         }
 
         _text.Color = Gold;
-        canvas.DrawText(worldView ? "WORLD ECOLOGY" : simulation.SelectedWorkOrderId.HasValue ? "WORK ORDER INSPECTOR" : "POPULATION", 790, 350, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText(worldView ? "WORLD ECOLOGY" : simulation.SelectedWorkOrderId.HasValue ? "WORK ORDER INSPECTOR" : "POPULATION", 790, 356, SKTextAlign.Left, _smallFont, _text);
         if (worldView)
         {
             int animalCount = spatialWorld.Ecology.Herds.Sum(herd => herd.Population);
@@ -1244,7 +1244,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
 
         _text.Color = Gold;
-        canvas.DrawText("WORLD CONTROLS", 790, 493, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText("WORLD CONTROLS", 790, 495, SKTextAlign.Left, _smallFont, _text);
         DrawButton(canvas, paused ? "RESUME" : "PAUSE", 784, 501, 66, 22, paused);
         DrawButton(canvas, "SPEED -", 856, 501, 58, 22);
         DrawButton(canvas, "SPEED +", 920, 501, 58, 22);
@@ -1258,7 +1258,7 @@ internal sealed class ColonyRenderer : IDisposable
         DrawButton(canvas, "ZOOM +", 994, 527, 66, 22);
 
         _text.Color = Gold;
-        canvas.DrawText(worldView ? "TRADE & LOGISTICS" : "ARCHITECT", 790, 558, SKTextAlign.Left, _headingFont, _text);
+        canvas.DrawText(worldView ? "TRADE & LOGISTICS" : "ARCHITECT", 790, 558, SKTextAlign.Left, _smallFont, _text);
         if (worldView)
         {
             DrawButton(canvas, "WOOD", 784, 566, 54, 22, selectedShipmentResource == WorldResourceKind.Wood);
