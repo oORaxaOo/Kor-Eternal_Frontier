@@ -115,6 +115,10 @@ internal static class CombatIntegrationChecks
         Check(pawn.EquippedWeapon != CombatWeaponType.Rifle, "test setup should begin with no rifle stock available");
         var home = world.SpatialWorld.Entities.Single(entity =>
             entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        Check(!world.TryEquipRifle(pawn.Id),
+            "equipping must fail cleanly when the canonical settlement stock has no finished rifle");
+        Check(world.SpatialWorld.ItemAmountAt(home.Id, WorkbenchManager.InfantryRifle) == 0,
+            "failed equipment attempts must not create or debit stock items");
         Check(world.SpatialWorld.TryAddItem(home.Id, WorkbenchManager.InfantryRifle, 1),
             "finished rifle should fit in canonical settlement stock");
         Check(world.TryEquipRifle(pawn.Id), "deployed colonist should be able to equip a finished stock rifle");
@@ -123,6 +127,10 @@ internal static class CombatIntegrationChecks
         Check(world.CombatEngine.TryGetEntity(pawn.Id, out var equipped) &&
               equipped.EquippedWeapon == CombatWeaponType.Rifle && equipped.CurrentAmmo == 30,
             "the live combat entity should receive rifle and ammunition together");
+        Check(world.TryEquipRifle(pawn.Id),
+            "repeating the same equip action should be idempotent for an already-equipped pawn");
+        Check(world.SpatialWorld.ItemAmountAt(home.Id, WorkbenchManager.InfantryRifle) == 0,
+            "repeating an equip action must not consume a second rifle");
         string saved = world.SerializeCombatRuntime();
         Check(saved.Contains("\"EquippedWeapon\": 2", StringComparison.Ordinal), "equipped loadout should be present in combat persistence");
     }
