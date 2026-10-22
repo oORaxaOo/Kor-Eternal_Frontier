@@ -82,6 +82,9 @@ jobs:
           cp README-LINUX.md artifacts/Kor-Eternal-Frontier/linux-x64/README-LINUX.md
           chmod +x artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh
 
+      - name: Validate Linux launch scripts
+        run: bash -n launch-kor.sh build-linux.sh artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh
+
       - name: Verify published executable
         run: |
           test -f artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame
@@ -91,7 +94,7 @@ jobs:
       - name: Smoke-test graphical startup, menu-to-game transition, and clean shutdown
         env:
           SDL_VIDEODRIVER: x11
-        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame --smoke-test
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1280x800x24' artifacts/Kor-Eternal-Frontier/linux-x64/start-kor.sh --smoke-test
 
       - name: Upload downloadable Linux build
         uses: actions/upload-artifact@v4
