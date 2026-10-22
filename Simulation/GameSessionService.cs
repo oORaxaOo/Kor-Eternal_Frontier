@@ -21,9 +21,17 @@ internal static class GameSessionService
     public static string Serialize(WorldSimulation world)
     {
         ArgumentNullException.ThrowIfNull(world);
-        return Serialize(world.Colony, world.SpatialWorld);
+        return JsonSerializer.Serialize(new SessionEnvelope
+        {
+            SchemaVersion = 2,
+            ColonyJson = ColonySaveService.Serialize(world.Colony),
+            ContinuousWorldJson = ContinuousWorldState.Serialize(world.SpatialWorld),
+            CombatRuntimeJson = world.SerializeCombatRuntime()
+        }, JsonOptions);
     }
 
+    // Kept for focused tests/tools that intentionally serialize only the two pre-combat layers.
+    // Production save/load always uses Serialize(WorldSimulation), which includes combat/workshop state.
     public static string Serialize(ColonySimulation colony, ContinuousWorldState continuousWorld)
     {
         ArgumentNullException.ThrowIfNull(colony);
@@ -32,7 +40,8 @@ internal static class GameSessionService
         {
             SchemaVersion = 1,
             ColonyJson = ColonySaveService.Serialize(colony),
-            ContinuousWorldJson = ContinuousWorldState.Serialize(continuousWorld)
+            ContinuousWorldJson = ContinuousWorldState.Serialize(continuousWorld),
+            CombatRuntimeJson = string.Empty
         }, JsonOptions);
     }
 
@@ -50,7 +59,7 @@ internal static class GameSessionService
             throw new InvalidDataException($"Game session save is not valid JSON: {error.Message}", error);
         }
 
-        if (envelope.SchemaVersion != 1)
+        if (envelope.SchemaVersion is not (1 or 2))
             throw new InvalidDataException($"Unsupported game session schema version: {envelope.SchemaVersion}.");
         if (string.IsNullOrWhiteSpace(envelope.ColonyJson) || string.IsNullOrWhiteSpace(envelope.ContinuousWorldJson))
             throw new InvalidDataException("Game session is missing its colony or continuous world state.");
@@ -60,7 +69,9 @@ internal static class GameSessionService
         var home = continuousWorld.Entities.Single(entity =>
             entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
         colony.BindWorldInventory(continuousWorld, home.Id);
-        return new LoadedGameSession(colony, continuousWorld);
+        if (envelope.SchemaVersion == 2 && string.IsNullOrWhiteSpace(envelope.CombatRuntimeJson))
+            throw new InvalidDataException("Version 2 session is missing its combat/workshop runtime state.");
+        return new LoadedGameSession(colony, continuousWorld, envelope.CombatRuntimeJson);
     }
 
     public static void Save(WorldSimulation world, string? path = null)
@@ -99,9 +110,11 @@ internal static class GameSessionService
         public int SchemaVersion { get; set; } = 1;
         public string ColonyJson { get; set; } = string.Empty;
         public string ContinuousWorldJson { get; set; } = string.Empty;
+        public string CombatRuntimeJson { get; set; } = string.Empty;
     }
 }
 
 internal sealed record LoadedGameSession(
     ColonySimulation Colony,
-    ContinuousWorldState ContinuousWorld);
+    ContinuousWorldState ContinuousWorld,
+    string? CombatRuntimeJson = null);

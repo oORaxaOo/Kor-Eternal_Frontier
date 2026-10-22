@@ -7,6 +7,7 @@ using Gondwana.Rendering.Backbuffers;
 using Gondwana.Scenes;
 using KorTheBlight.Rendering;
 using KorTheBlight.Simulation;
+using KorTheBlight.Simulation.Combat;
 using KorTheBlight.Tests;
 using KorTheBlight.WorldModel;
 using SkiaSharp;
@@ -63,13 +64,16 @@ internal static class Program
             bool workMatrixOpen = false;
             int workerInspectorTab = 0;
             int workMatrixPage = 0;
+            bool systemsPanelOpen = false;
+            int systemsTab = 0;
+            int? selectedCombatEntityId = null;
             ArchitectureKind architectureMode = ArchitectureKind.None;
             PlaceableKind objectType = PlaceableKind.Workbench;
             bool placingObject = false, excavationMode = false, demolitionMode = false, paused = false;
             int buildMenuPage = 0;
             host.RenderBackbufferPostScene += canvas =>
             {
-                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedMacroCellId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage);
+                if (gameStarted) painter.Draw(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, world.SpeedMultiplier, world.SpatialWorld, worldCameraX, worldCameraY, selectedWorldEntityId, selectedMacroCellId, selectedShipmentResource, previewMouseX, previewMouseY, factionDashboardOpen, selectedFactionName, factionTab, workMatrixOpen, workerInspectorTab, workMatrixPage, world, systemsPanelOpen, systemsTab, selectedCombatEntityId);
                 else menuPainter.Draw(canvas, settingsMenu, startPaused, menuMessage);
             };
             engine = Engine.Instance;
@@ -246,6 +250,93 @@ internal static class Program
                             WorkMatrixClickHandled:;
                         }
                     }
+                    else if (systemsPanelOpen)
+                    {
+                        float mx = logicalMouse.X, my = logicalMouse.Y;
+                        if (Hit(mx, my, 862, 88, 956, 116))
+                        {
+                            systemsPanelOpen = false;
+                        }
+                        else if (Hit(mx, my, 140, 116, 252, 144)) systemsTab = 0;
+                        else if (Hit(mx, my, 262, 116, 374, 144)) systemsTab = 1;
+                        else if (Hit(mx, my, 384, 116, 496, 144)) systemsTab = 2;
+                        else if (systemsTab == 0 && Hit(mx, my, 140, 535, 320, 561))
+                        {
+                            int deployed = world.TryDeployColonists();
+                            simulation.SetMessage(deployed > 0
+                                ? $"{deployed} colonists deployed to defend the settlement."
+                                : "Deployment unavailable: no eligible residents or no room in the combat roster.");
+                        }
+                        else if (systemsTab == 0)
+                        {
+                            var listed = world.CombatEngine.Entities
+                                .OrderBy(entity => entity.FactionId == 1 ? 0 : 1)
+                                .ThenBy(entity => entity.Id).Take(12).ToArray();
+                            for (int i = 0; i < listed.Length; i++)
+                            {
+                                float rowTop = 180 + i * 30;
+                                if (!Hit(mx, my, 140, rowTop, 955, rowTop + 26)) continue;
+                                var clicked = listed[i];
+                                if (selectedCombatEntityId.HasValue &&
+                                    world.CombatEngine.TryGetEntity(selectedCombatEntityId.Value, out var selected) &&
+                                    selected.FactionId == 1 && clicked.FactionId != 1)
+                                {
+                                    world.CombatEngine.TrySetTarget(selected.Id, clicked.Id);
+                                    simulation.SetMessage($"Attack order: {world.GetCombatantName(selected)} -> {world.GetCombatantName(clicked)}.");
+                                }
+                                else
+                                {
+                                    selectedCombatEntityId = clicked.Id;
+                                    simulation.SetMessage($"Selected combatant: {world.GetCombatantName(clicked)}.");
+                                }
+                                break;
+                            }
+                        }
+                        else if (systemsTab == 1)
+                        {
+                            var recipes = world.Workshop.Recipes.OrderBy(recipe => recipe.Id, StringComparer.Ordinal).Take(5).ToArray();
+                            bool handled = false;
+                            for (int i = 0; i < recipes.Length; i++)
+                            {
+                                float rowTop = 174 + i * 44;
+                                if (!Hit(mx, my, 820, rowTop + 5, 944, rowTop + 33)) continue;
+                                var recipe = recipes[i];
+                                if (world.TryStartCraft(recipe.Id, out long jobId))
+                                    simulation.SetMessage($"Workshop job #{jobId} started: {recipe.ResultItemId}. Inputs reserved from the settlement ledger.");
+                                else
+                                    simulation.SetMessage($"Cannot start {recipe.ResultItemId}: build a workbench, unlock the required research, and stock the settlement ledger.");
+                                handled = true;
+                                break;
+                            }
+                            if (!handled && Hit(mx, my, 142, 512, 362, 544))
+                            {
+                                if (world.TryBuildVehicle(out int vehicleId))
+                                    simulation.SetMessage($"Heavy tank #{vehicleId} assembled from the settlement item ledger.");
+                                else
+                                    simulation.SetMessage("Tank assembly unavailable: unlock armored-vehicle research, supply every part, and free storage/tile capacity.");
+                            }
+                        }
+                        else if (systemsTab == 2)
+                        {
+                            var projects = world.ResearchManager.Database.ResearchDatabase.Values
+                                .OrderBy(project => project.Name, StringComparer.Ordinal).Take(6).ToArray();
+                            for (int i = 0; i < projects.Length; i++)
+                            {
+                                float rowTop = 174 + i * 56;
+                                if (!Hit(mx, my, 820, rowTop + 9, 944, rowTop + 37)) continue;
+                                var project = projects[i];
+                                if (world.ResearchManager.State.CompletedResearchIds.Contains(project.Id))
+                                    simulation.SetMessage($"{project.Name} is already complete.");
+                                else if (world.ResearchManager.State.CurrentResearchId == project.Id)
+                                    simulation.SetMessage($"{project.Name} is already in progress.");
+                                else if (world.ResearchManager.Start(project.Id))
+                                    simulation.SetMessage($"Research started: {project.Name}. Work advances under the unified world clock.");
+                                else
+                                    simulation.SetMessage($"Research locked: complete all prerequisites for {project.Name} first.");
+                                break;
+                            }
+                        }
+                    }
                     else if (factionDashboardOpen)
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
@@ -268,10 +359,18 @@ internal static class Program
                             }
                         }
                     }
+                    else if (Hit(logicalMouse.X, logicalMouse.Y, 855, 8, 950, 35))
+                    {
+                        systemsPanelOpen = true;
+                        systemsTab = 0;
+                        workMatrixOpen = false;
+                        factionDashboardOpen = false;
+                    }
                     else if (Hit(logicalMouse.X, logicalMouse.Y, 1008, 8, 1085, 35))
                     {
                         workMatrixOpen = true;
                         factionDashboardOpen = false;
+                        systemsPanelOpen = false;
                     }
                     else if (!worldView && simulation.SelectedWorkerId.HasValue && Hit(logicalMouse.X, logicalMouse.Y, 14, 476, 374, 646))
                     {
@@ -353,7 +452,28 @@ internal static class Program
                     else if (inWorldView)
                     {
                         int tileX = (int)MathF.Floor(worldMouse.X), tileY = (int)MathF.Floor(worldMouse.Y);
-                        if (demolitionMode) simulation.DemolishAt(tileX, tileY);
+                        var clickedCombat = world.CombatEngine.Entities
+                            .Select(entity => (Entity: entity,
+                                Distance: MathF.Sqrt(MathF.Pow(entity.X - worldMouse.X, 2) + MathF.Pow(entity.Y - worldMouse.Y, 2))))
+                            .Where(item => item.Distance <= 1.0f)
+                            .OrderBy(item => item.Distance).ThenBy(item => item.Entity.Id)
+                            .Select(item => item.Entity).FirstOrDefault();
+                        if (clickedCombat.Id > 0)
+                        {
+                            if (selectedCombatEntityId.HasValue &&
+                                world.CombatEngine.TryGetEntity(selectedCombatEntityId.Value, out var selectedCombat) &&
+                                selectedCombat.FactionId == 1 && clickedCombat.FactionId != 1)
+                            {
+                                world.CombatEngine.TrySetTarget(selectedCombat.Id, clickedCombat.Id);
+                                simulation.SetMessage($"Attack order: {world.GetCombatantName(selectedCombat)} -> {world.GetCombatantName(clickedCombat)}.");
+                            }
+                            else
+                            {
+                                selectedCombatEntityId = clickedCombat.Id;
+                                simulation.SetMessage($"Selected combatant: {world.GetCombatantName(clickedCombat)}. Right-click an enemy or use WAR ROOM.");
+                            }
+                        }
+                        else if (demolitionMode) simulation.DemolishAt(tileX, tileY);
                         else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                         else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
                         else if (architectureMode != ArchitectureKind.None)
@@ -421,6 +541,7 @@ internal static class Program
                                 var loaded = GameSessionService.Load();
                                 world.Restore(loaded);
                                 simulation = world.Colony;
+                                selectedCombatEntityId = null;
                                 simulation.SetMessage("World session loaded.");
                             }
                             catch (Exception ex) { simulation.SetMessage($"Load failed: {ex.Message}"); }
@@ -501,6 +622,22 @@ internal static class Program
                     {
                         world.SpatialWorld.OrderMove(selectedWorldEntityId.Value, worldMouse.X, worldMouse.Y, 240d);
                         simulation.SetMessage("World movement order issued.");
+                    }
+                    else if (!worldView && selectedCombatEntityId.HasValue &&
+                             world.CombatEngine.TryGetEntity(selectedCombatEntityId.Value, out var selectedCombat) &&
+                             selectedCombat.FactionId == 1)
+                    {
+                        var targetCombat = world.CombatEngine.Entities
+                            .Where(entity => entity.FactionId != 1)
+                            .Select(entity => (Entity: entity,
+                                Distance: MathF.Sqrt(MathF.Pow(entity.X - worldMouse.X, 2) + MathF.Pow(entity.Y - worldMouse.Y, 2))))
+                            .Where(item => item.Distance <= 2.5f)
+                            .OrderBy(item => item.Distance).ThenBy(item => item.Entity.Id)
+                            .Select(item => item.Entity).FirstOrDefault();
+                        if (targetCombat.Id > 0 && world.CombatEngine.TrySetTarget(selectedCombat.Id, targetCombat.Id))
+                            simulation.SetMessage($"Attack order: {world.GetCombatantName(selectedCombat)} -> {world.GetCombatantName(targetCombat)}.");
+                        else
+                            simulation.SetMessage("No hostile combatant close to that order position. Select an enemy in WAR ROOM or right-click beside a visible enemy.");
                     }
                     else if (!worldView) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
                 }

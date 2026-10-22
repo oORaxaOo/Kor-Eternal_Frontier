@@ -64,6 +64,7 @@ internal static class CombatSystemsChecks
         workshop.AddInventory(WorkbenchManager.Components, 3);
         Assert(!workshop.TryStartCraft("weapon_rifle_industrial", out _), "locked recipe must not start");
         workshop.AddResearch("tech_industrial_weapons");
+        workshop.AddResearch("tech_armored_vehicles");
         Assert(workshop.TryStartCraft("weapon_rifle_industrial", out _), "unlocked and funded recipe should start");
         Assert(workshop.Inventory[WorkbenchManager.Alloy] == 0, "craft inputs should be committed at job start");
         workshop.Advance(399);

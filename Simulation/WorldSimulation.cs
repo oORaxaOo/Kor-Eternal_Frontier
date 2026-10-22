@@ -1,5 +1,7 @@
+using System.Text.Json;
 using KorTheBlight.WorldModel;
 using KorTheBlight.Simulation.Research;
+using KorTheBlight.Simulation.Combat;
 
 namespace KorTheBlight.Simulation;
 
@@ -19,6 +21,15 @@ internal sealed class WorldSimulation
     public bool IsPaused { get; set; }
     public float SpeedMultiplier { get; private set; } = 1f;
     public ResearchManager ResearchManager { get; private set; } = null!;
+    public CombatEngine CombatEngine { get; private set; } = null!;
+    public CombatCoverGrid CombatCover { get; private set; } = null!;
+    public WorkbenchManager Workshop { get; private set; } = null!;
+    public IReadOnlyDictionary<int, NemesisRecord> Nemeses => _nemeses;
+    public IReadOnlyList<PendingCombatLoot> PendingCombatLoot => _pendingCombatLoot.AsReadOnly();
+
+    private readonly Dictionary<long, int> _combatByWorldEntity = [];
+    private readonly Dictionary<int, NemesisRecord> _nemeses = [];
+    private readonly List<PendingCombatLoot> _pendingCombatLoot = [];
 
     public WorldSimulation(int seed)
     {
@@ -30,6 +41,7 @@ internal sealed class WorldSimulation
         if (!Directory.Exists(dataDirectory)) dataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "data");
         database.LoadOrGenerate(dataDirectory);
         ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
+        InitializeCombatSystems();
     }
 
     /// <summary>Advances the unified simulation clock. deltaSeconds is real elapsed time.</summary>
@@ -57,6 +69,14 @@ internal sealed class WorldSimulation
             SpatialWorld.Step(FixedStepSeconds);
             ProcessBlightPressureThreats();
             ProcessMacroArrivals();
+            SyncCombatCoverFromColony();
+            MaterializeNearbyArmies();
+            CombatEngine.Step(FixedStepSeconds, CombatCover);
+            ApplyCombatConsequences();
+            SyncCombatantPawnPositions();
+            Workshop.Advance(1);
+            ResearchManager.AddProgress(1f);
+            FlushPendingCombatLoot();
             _simulationAccumulator -= FixedStepSeconds;
             fixedSteps++;
         }
@@ -218,6 +238,310 @@ internal sealed class WorldSimulation
     private static long KorSettlementId(ContinuousWorldState world)
         => world.Entities.Single(entity => entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor").Id;
 
+    private void InitializeCombatSystems()
+    {
+        CombatEngine = new CombatEngine();
+        CombatCover = new CombatCoverGrid();
+        long homeId = KorSettlementId(SpatialWorld);
+        Workshop = new WorkbenchManager(
+            new WorldWorkbenchInventory(SpatialWorld, homeId),
+            researchId => ResearchManager.State.CompletedResearchIds.Contains(researchId));
+        SyncCombatCoverFromColony();
+    }
+
+    private void SyncCombatCoverFromColony()
+    {
+        CombatCover.Clear();
+        for (int y = 0; y < ColonySimulation.Height; y++)
+        for (int x = 0; x < ColonySimulation.Width; x++)
+        {
+            var tile = Colony.TileAt(x, y);
+            if (tile is null) continue;
+            CoverType cover = tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall
+                ? CoverType.High
+                : tile.Architecture == ArchitectureKind.Door ? CoverType.Low
+                : CoverType.None;
+            if (cover == CoverType.None && Colony.Objects.Any(item => item.IsBuilt && item.Occupies(new CellPosition(x, y))))
+                cover = CoverType.Low;
+            CombatCover[x, y] = cover;
+        }
+    }
+
+    private void MaterializeNearbyArmies()
+    {
+        var home = SpatialWorld.Entities.FirstOrDefault(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        if (home is null) return;
+
+        foreach (var army in SpatialWorld.Entities
+                     .Where(entity => entity.Kind is WorldEntityKind.Army or WorldEntityKind.BlightFront)
+                     .OrderBy(entity => entity.Id).ToArray())
+        {
+            double dx = army.X - home.X, dy = army.Y - home.Y;
+            if (dx * dx + dy * dy > 3_000d * 3_000d) continue;
+            if (_combatByWorldEntity.TryGetValue(army.Id, out int linkedId) &&
+                CombatEngine.TryGetEntity(linkedId, out _)) continue;
+
+            int factionId = army.Faction == "Kor" ? 1 :
+                army.Faction.Equals("Blight", StringComparison.OrdinalIgnoreCase) || army.Kind == WorldEntityKind.BlightFront ? 99 : 2;
+            int seed = unchecked(SpatialWorld.Seed ^ (int)(army.Id * 397L));
+            var combatant = FactionLoadoutGenerator.Create(factionId, seed);
+            // Use seeded positions within a short, bounded engagement area so incoming world forces
+            // become a visible local encounter instead of remaining permanently outside local target acquisition.
+            if (factionId == 1)
+            {
+                combatant.X = 18.0f + (seed & 3) * 0.35f;
+                combatant.Y = 10.0f + ((seed >> 3) & 7) * 0.55f;
+            }
+            else
+            {
+                combatant.X = 12.0f + (seed & 3) * 0.30f;
+                combatant.Y = 10.0f + ((seed >> 3) & 7) * 0.55f;
+            }
+            combatant.SourceWorldEntityId = army.Id;
+            combatant.SourcePawnId = -1;
+            combatant.NameSeed = seed;
+            combatant.KilledPawnId = -1;
+            if (!CombatEngine.TrySpawn(combatant, out int combatId)) continue;
+
+            _combatByWorldEntity[army.Id] = combatId;
+            if (factionId != 1 && !_nemeses.ContainsKey(combatId))
+            {
+                int power = combatant.Type == CombatEntityType.BlightTitan ? 10 :
+                    combatant.Type == CombatEntityType.HeavyTank ? 7 :
+                    combatant.Type == CombatEntityType.BlightBeast ? 4 : 2;
+                _nemeses[combatId] = new NemesisRecord(combatId, seed, factionId, power, -1,
+                    combatant.HasBlightMutation, combatant.LostEye, combatant.Type);
+                Colony.SetMessage($"CONTACT: {NemesisNameGenerator.GenerateFullTitle(_nemeses[combatId])} entered local combat.");
+            }
+            else if (factionId == 1)
+                Colony.SetMessage($"Kor Vanguard materialized as a local combatant for army #{army.Id}.");
+        }
+
+        // A world entity may have been removed by combat or a previous load; release its stale link.
+        foreach (long worldId in _combatByWorldEntity.Keys.Where(id =>
+                     SpatialWorld.Entities.All(entity => entity.Id != id)).ToArray())
+            _combatByWorldEntity.Remove(worldId);
+    }
+
+    private void ApplyCombatConsequences()
+    {
+        foreach (var death in CombatEngine.Deaths)
+        {
+            if (death.Entity.SourcePawnId > 0)
+                Colony.RemoveCombatCasualty(death.Entity.SourcePawnId);
+
+            if (death.KillerId > 0 && _nemeses.TryGetValue(death.KillerId, out var nemesis))
+            {
+                int kills = nemesis.KillCount + 1;
+                _nemeses[death.KillerId] = nemesis with
+                {
+                    KillCount = kills,
+                    PowerLevel = Math.Min(20, nemesis.PowerLevel + 1),
+                    KilledPawnId = death.Entity.SourcePawnId > 0 ? death.Entity.SourcePawnId : nemesis.KilledPawnId,
+                    LostEye = nemesis.LostEye || (kills >= 3 && (nemesis.NameSeed & 1) == 0)
+                };
+            }
+
+            if (death.Entity.SourceWorldEntityId > 0)
+            {
+                long worldId = death.Entity.SourceWorldEntityId;
+                bool wasHostile = death.Entity.FactionId != 1;
+                SpatialWorld.RemoveEntity(worldId);
+                _combatByWorldEntity.Remove(worldId);
+                string title = _nemeses.TryGetValue(death.Entity.Id, out var record)
+                    ? NemesisNameGenerator.GenerateFullTitle(record)
+                    : $"{death.Entity.Type} #{death.Entity.Id}";
+                Colony.SetMessage(wasHostile ? $"THREAT DEFEATED: {title}." : $"Kor combat unit #{death.Entity.Id} was lost.");
+            }
+        }
+
+        foreach (var drop in CombatEngine.DeathDrops)
+        {
+            if (drop.Amount > 0)
+                _pendingCombatLoot.Add(new PendingCombatLoot(drop.ItemId, drop.Amount, drop.EntityId));
+        }
+    }
+
+    private void FlushPendingCombatLoot()
+    {
+        long homeId = KorSettlementId(SpatialWorld);
+        int index = 0;
+        while (index < _pendingCombatLoot.Count)
+        {
+            var loot = _pendingCombatLoot[index];
+            bool stored = loot.ItemId switch
+            {
+                WorkbenchManager.Alloy => SpatialWorld.TryAddInventory(homeId, WorldResourceKind.Alloy, loot.Amount),
+                WorkbenchManager.Components => SpatialWorld.TryAddInventory(homeId, WorldResourceKind.Components, loot.Amount),
+                _ => SpatialWorld.TryAddItem(homeId, loot.ItemId, loot.Amount)
+            };
+            if (stored) _pendingCombatLoot.RemoveAt(index);
+            else index++;
+        }
+    }
+
+    public int TryDeployColonists()
+    {
+        int deployed = 0;
+        long homeId = KorSettlementId(SpatialWorld);
+        foreach (var worker in Colony.Workers.Where(worker => !worker.IsExternalVisitor && !worker.IsLeaving)
+                     .OrderBy(worker => worker.Id).ToArray())
+        {
+            if (CombatEngine.Entities.Any(entity => entity.SourcePawnId == worker.Id)) continue;
+            bool hasRifle = SpatialWorld.ItemAmountAt(homeId, WorkbenchManager.InfantryRifle) > 0;
+            if (hasRifle && !SpatialWorld.TryTakeItem(homeId, WorkbenchManager.InfantryRifle, 1)) hasRifle = false;
+
+            var combatant = FactionLoadoutGenerator.Create(1, unchecked(SpatialWorld.Seed ^ worker.Id * 104729));
+            combatant.X = Math.Clamp(worker.X, 0.01f, CombatCoverGrid.Width - 0.01f);
+            combatant.Y = Math.Clamp(worker.Y, 0.01f, CombatCoverGrid.Height - 0.01f);
+            combatant.SourcePawnId = worker.Id;
+            combatant.SourceWorldEntityId = 0;
+            combatant.KilledPawnId = -1;
+            if (!hasRifle)
+            {
+                combatant.EquippedWeapon = CombatWeaponType.Pistol;
+                combatant.MaxAmmo = combatant.CurrentAmmo = 12;
+            }
+            if (!CombatEngine.TrySpawn(combatant, out int combatId))
+            {
+                if (hasRifle) SpatialWorld.TryAddItem(homeId, WorkbenchManager.InfantryRifle, 1);
+                break;
+            }
+            if (!Colony.PrepareWorkerForCombat(worker.Id))
+            {
+                CombatEngine.TryRemoveEntity(combatId);
+                if (hasRifle) SpatialWorld.TryAddItem(homeId, WorkbenchManager.InfantryRifle, 1);
+                continue;
+            }
+            deployed++;
+        }
+        Colony.SetMessage(deployed > 0
+            ? $"{deployed} colonists deployed as local defenders; equipped rifles were drawn from settlement inventory."
+            : "No eligible colonists could be deployed.");
+        return deployed;
+    }
+
+    private void SyncCombatantPawnPositions()
+    {
+        foreach (var entity in CombatEngine.Entities)
+            if (entity.SourcePawnId > 0)
+                Colony.SetWorkerCombatPosition(entity.SourcePawnId, entity.X, entity.Y);
+    }
+
+    public string GetCombatantName(CombatEntity entity)
+        => _nemeses.TryGetValue(entity.Id, out var nemesis)
+            ? NemesisNameGenerator.GenerateFullTitle(nemesis)
+            : entity.Type switch
+            {
+                CombatEntityType.HeavyTank => "Kor Heavy Tank",
+                CombatEntityType.Vehicle => "Combat Vehicle",
+                CombatEntityType.BlightTitan => "Blight Titan",
+                CombatEntityType.BlightBeast => "Blight Beast",
+                _ => entity.FactionId == 1 ? "Kor Vanguard" : "Hostile Trooper"
+            };
+
+    public bool TryStartCraft(string recipeId, out long jobId)
+    {
+        jobId = 0;
+        if (!Colony.Objects.Any(item => item.Kind == PlaceableKind.Workbench && item.IsBuilt))
+        {
+            Colony.SetMessage("Crafting requires a completed workbench in the colony.");
+            return false;
+        }
+        if (!Workshop.TryStartCraft(recipeId, out jobId))
+        {
+            Colony.SetMessage($"Cannot start recipe '{recipeId}': research or settlement materials are missing.");
+            return false;
+        }
+        Colony.SetMessage($"Workshop job #{jobId} started: {recipeId}. Materials were deducted from the settlement ledger.");
+        return true;
+    }
+
+    public bool TryBuildVehicle(out int entityId)
+    {
+        entityId = -1;
+        if (!Colony.Objects.Any(item => item.Kind == PlaceableKind.Workbench && item.IsBuilt) ||
+            !Workshop.IsResearchUnlocked("tech_armored_vehicles")) return false;
+        var occupied = CombatEngine.Entities
+            .Select(entity => ((int)entity.X, (int)entity.Y)).ToHashSet();
+        for (int i = 0; i < CombatCoverGrid.CellCount; i++)
+        {
+            int x = i % CombatCoverGrid.Width, y = i / CombatCoverGrid.Width;
+            var tile = Colony.TileAt(x, y);
+            var cell = new CellPosition(x, y);
+            if (tile is null || tile.Terrain != TerrainKind.Ground || tile.Architecture == ArchitectureKind.Wall ||
+                occupied.Contains((x, y)) || Colony.Objects.Any(item => item.IsBuilt && item.Occupies(cell)) ||
+                Colony.Deposits.Any(deposit => deposit.Cell == cell && deposit.Amount > 0) ||
+                Colony.Workers.Any(worker => (int)worker.X == x && (int)worker.Y == y)) continue;
+            if (Workshop.TryBuildVehicle(CombatEngine, i, out entityId)) return true;
+        }
+        return false;
+    }
+
+    public string SerializeCombatRuntime()
+    {
+        var snapshot = new CombatRuntimeSnapshot(
+            CombatEngine.Snapshot(CombatCover),
+            Workshop.SnapshotState(),
+            _nemeses.Values.OrderBy(record => record.Id).ToList(),
+            _pendingCombatLoot.ToList());
+        return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
+    }
+
+    private void RestoreCombatRuntime(string? json)
+    {
+        _combatByWorldEntity.Clear();
+        _nemeses.Clear();
+        _pendingCombatLoot.Clear();
+        if (string.IsNullOrWhiteSpace(json)) return;
+        CombatRuntimeSnapshot snapshot;
+        try
+        {
+            snapshot = JsonSerializer.Deserialize<CombatRuntimeSnapshot>(json,
+                new JsonSerializerOptions { IncludeFields = true })
+                ?? throw new InvalidDataException("Combat runtime save is empty.");
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException($"Combat runtime save is invalid JSON: {error.Message}", error);
+        }
+        CombatEngine.Restore(snapshot.Engine, CombatCover);
+        Workshop.RestoreState(snapshot.Workshop);
+        foreach (var record in snapshot.Nemeses ?? [])
+        {
+            if (record.Id <= 0 || record.PowerLevel < 0 || record.KillCount < 0 ||
+                !Enum.IsDefined(record.EntityType) || !_nemeses.TryAdd((int)record.Id, record))
+                throw new InvalidDataException("Combat runtime contains an invalid or duplicate Nemesis record.");
+        }
+        foreach (var loot in snapshot.PendingLoot ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(loot.ItemId) || loot.Amount <= 0)
+                throw new InvalidDataException("Combat runtime contains invalid pending loot.");
+            _pendingCombatLoot.Add(loot);
+        }
+        foreach (var entity in CombatEngine.Entities)
+        {
+            if (entity.SourceWorldEntityId > 0 &&
+                SpatialWorld.Entities.Any(worldEntity => worldEntity.Id == entity.SourceWorldEntityId))
+                _combatByWorldEntity[entity.SourceWorldEntityId] = entity.Id;
+            if (entity.SourcePawnId > 0 && Colony.Workers.Any(worker => worker.Id == entity.SourcePawnId))
+                Colony.PrepareWorkerForCombat(entity.SourcePawnId);
+        }
+        SyncCombatCoverFromColony();
+    }
+
+    private void InitializeCombatSystems()
+    {
+        CombatEngine = new CombatEngine();
+        CombatCover = new CombatCoverGrid();
+        long homeId = KorSettlementId(SpatialWorld);
+        Workshop = new WorkbenchManager(
+            new WorldWorkbenchInventory(SpatialWorld, homeId),
+            researchId => ResearchManager.State.CompletedResearchIds.Contains(researchId));
+        SyncCombatCoverFromColony();
+    }
+
     public void Restore(LoadedGameSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -229,6 +553,8 @@ internal sealed class WorldSimulation
         if (!Directory.Exists(dataDirectory)) dataDirectory = Path.Combine(Directory.GetCurrentDirectory(), "data");
         database.LoadOrGenerate(dataDirectory);
         ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
+        InitializeCombatSystems();
+        RestoreCombatRuntime(session.CombatRuntimeJson);
         ElapsedSeconds = SpatialWorld.ClockSeconds;
         _simulationAccumulator = 0f;
     }

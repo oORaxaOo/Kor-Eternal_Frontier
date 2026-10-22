@@ -89,6 +89,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public string Faction { get; internal set; } = "Kor";
     public bool IsExternalVisitor { get; internal set; }
     public bool IsLeaving { get; internal set; }
+    public bool IsCombatDeployed { get; internal set; }
     public Dictionary<ResourceKind, int> TradeCargo { get; internal set; } = [];
 }
 
@@ -1576,6 +1577,109 @@ internal sealed class ColonySimulation
         return true;
     }
 
+    public bool PrepareWorkerForCombat(int workerId)
+    {
+        var worker = _workers.FirstOrDefault(candidate => candidate.Id == workerId);
+        if (worker is null || worker.IsExternalVisitor || worker.IsLeaving) return false;
+        if (worker.IsCombatDeployed) return true;
+
+        if (worker.CarriedResource.HasValue && worker.CarriedAmount > 0)
+        {
+            if (!TryAdd(worker.CarriedResource.Value, worker.CarriedAmount)) return false;
+            worker.CarriedResource = null;
+            worker.CarriedAmount = 0;
+        }
+        if (worker.Task is { } task)
+        {
+            switch (task.Kind)
+            {
+                case ColonyTaskKind.Gather:
+                    _reservations.Release($"deposit:{task.DepositId}", worker.Id);
+                    break;
+                case ColonyTaskKind.BuildObject:
+                {
+                    var item = _objects.FirstOrDefault(candidate => candidate.Id == task.TargetId);
+                    if (item is not null && !item.IsBuilt)
+                    {
+                        AddMany(ObjectCost(item.Kind));
+                        item.Status = ConstructionStatus.Planned;
+                        item.WorkDone = 0f;
+                    }
+                    _reservations.Release($"object-order:{task.TargetId}", worker.Id);
+                    break;
+                }
+                case ColonyTaskKind.BuildTile:
+                {
+                    var order = _tileOrders.FirstOrDefault(candidate => candidate.Id == task.TargetId);
+                    if (order is not null && order.Status != ConstructionStatus.Complete)
+                    {
+                        AddMany(TileCost(order.Target));
+                        order.Status = ConstructionStatus.Planned;
+                        order.WorkDone = 0f;
+                    }
+                    _reservations.Release($"tile-order:{task.TargetId}", worker.Id);
+                    break;
+                }
+                case ColonyTaskKind.Mine:
+                {
+                    var order = _excavationOrders.FirstOrDefault(candidate => candidate.Id == task.TargetId);
+                    if (order is not null && order.Status != ConstructionStatus.Complete)
+                    {
+                        order.Status = ConstructionStatus.Planned;
+                        order.WorkDone = 0f;
+                    }
+                    _reservations.Release($"excavation:{task.TargetId}", worker.Id);
+                    break;
+                }
+                case ColonyTaskKind.Produce:
+                {
+                    var order = _productionOrders.FirstOrDefault(candidate => candidate.Id == task.TargetId);
+                    if (order is not null && !order.Complete) order.Assigned = false;
+                    _reservations.Release($"production-order:{task.TargetId}", worker.Id);
+                    break;
+                }
+            }
+        }
+        worker.Task = null;
+        worker.IsCombatDeployed = true;
+        if (_citizensByWorker.TryGetValue(worker.Id, out var citizenId))
+            _ecosystem.SetCombatDeployment(citizenId, true);
+        Message = $"{worker.Name} deployed to local defense; hauling and colony work are suspended until their return.";
+        return true;
+    }
+
+    public bool SetWorkerCombatPosition(int workerId, float x, float y)
+    {
+        var worker = _workers.FirstOrDefault(candidate => candidate.Id == workerId);
+        if (worker is null || !worker.IsCombatDeployed || !float.IsFinite(x) || !float.IsFinite(y)) return false;
+        worker.X = Math.Clamp(x, 0.01f, Width - 0.01f);
+        worker.Y = Math.Clamp(y, 0.01f, Height - 0.01f);
+        if (_citizensByWorker.TryGetValue(worker.Id, out var citizenId))
+        {
+            var citizen = _ecosystem.Citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
+            if (citizen is not null)
+                citizen.Position = new CellPosition(
+                    Math.Clamp((int)worker.X, 0, Width - 1),
+                    Math.Clamp((int)worker.Y, 0, Height - 1));
+        }
+        return true;
+    }
+
+    public bool RemoveCombatCasualty(int workerId)
+    {
+        var worker = _workers.FirstOrDefault(candidate => candidate.Id == workerId);
+        if (worker is null || !worker.IsCombatDeployed) return false;
+        if (worker.Task?.Kind == ColonyTaskKind.Gather)
+            _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
+        if (_citizensByWorker.Remove(worker.Id, out var citizenId))
+            _ecosystem.RemoveCitizen(citizenId);
+        _workers.Remove(worker);
+        _workPriorities.RemoveWorker(worker.Id);
+        if (SelectedWorkerId == worker.Id) SelectedWorkerId = null;
+        Message = $"Colony roster updated after combat loss: {worker.Name} is no longer available.";
+        return true;
+    }
+
     public bool SelectWorkerAt(float worldX, float worldY)
     {
         // A linear nearest-resident scan avoids sorting the entire population on every click.
@@ -1857,7 +1961,7 @@ internal sealed class ColonySimulation
     {
         foreach (var worker in _workers)
         {
-            if (worker.IsExternalVisitor || worker.Task != null) continue;
+            if (worker.IsExternalVisitor || worker.IsCombatDeployed || worker.Task != null) continue;
             if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
             {
                 if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working or CitizenState.MentalBreak)

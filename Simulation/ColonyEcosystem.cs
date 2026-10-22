@@ -609,6 +609,34 @@ internal sealed class ColonyEcosystem
         return citizen;
     }
 
+    public bool SetCombatDeployment(int citizenId, bool deployed)
+    {
+        var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
+        if (citizen is null) return false;
+        if (deployed)
+        {
+            ReleaseAssignment(citizen);
+            citizen.CanReceiveJob = false;
+            citizen.State = CitizenState.Idle;
+        }
+        else
+        {
+            citizen.CanReceiveJob = true;
+            citizen.State = CitizenState.Idle;
+        }
+        return true;
+    }
+
+    public bool RemoveCitizen(int citizenId)
+    {
+        var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
+        if (citizen is null) return false;
+        ReleaseAssignment(citizen);
+        _citizens.Remove(citizen);
+        LastEvent = $"Citizen {citizen.Name} is no longer part of the active colony roster.";
+        return true;
+    }
+
     /// <summary>
     /// Returns a read-only, actionable snapshot for the selected citizen.
     /// The reason is derived from the same live state that drives autonomous behavior.
