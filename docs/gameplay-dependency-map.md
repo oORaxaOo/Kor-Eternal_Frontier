@@ -91,3 +91,36 @@ A faction is not complete when a colored symbol appears on the world map. A comp
 ## Completion standard
 
 A feature is **implemented** only when its model behavior, resource/workflow connections, UI access, failure cases, persistence and tests agree. Otherwise label it partial or planned. Never confuse a visible object, a class, an enum member, a menu entry, or a successful compile with a functioning gameplay system.
+
+## Runtime audit: meal/social loop (2026-10-22)
+
+This section records code-level observations from `Simulation/ColonySimulation.cs`, `Simulation/ColonyEcosystem.cs`, `Simulation/SocialRelationshipNetwork.cs`, and their checks. It is intentionally more specific than the feature roadmap.
+
+### Verified in source
+
+- `ColonySimulation.StepEcosystem` mirrors the settlement's food ledger into the ecosystem grid, runs the ecosystem, then reconciles food consumption and production back to the settlement inventory.
+- Completed gardens register a workplace with one worker, one food per completed work cycle, and an eight-second work duration. The job is only registered while the inventory has room relative to existing reservations.
+- The ecosystem reserves output capacity before work and commits that reservation only after the work duration. Food need interrupts work/travel and releases the worker assignment and output reservation.
+- A hungry citizen can path to the nearest food stockpile, consume one real food unit, and restore hunger. Existing checks cover this path, storage reservations, job release, and resource accounting.
+- `StepSocialRelationships` forms stable resident pairs from nearby worker positions and records encounters with stress, hunger, rest need and mental-break state. The relationship network bounds affinity/trust/tension and history, emits threshold events, and supports snapshot restore.
+- The main branch workflow run for commit `7fdc11eee617b385b58fcac21a7e3cad09aa3661` completed successfully on 2026-10-22.
+
+### Still not verified as one complete loop
+
+- The ecosystem's citizen and the legacy colony worker are mirrored representations; food consumption is reconciled between their grids/ledgers rather than owned by one unified all-resource inventory.
+- The garden job is a production workplace, but its code does not demonstrate a dedicated hauling job that moves harvested food from a garden footprint to a distinct stockpile. Do not describe that transport step as implemented.
+- `DiningTable` exists as a placeable kind, but the inspected runtime path does not route hungry/free residents to a table, reserve seats, or require a table for eating.
+- Social encounters currently depend on proximity between workers; the inspected method does not require free time, a reachable dining table, or reserved seating. The network's relationship math is implemented, but a table-caused social encounter is not.
+- No source evidence in this audit proves that table interactions change resident mood or work effectiveness as a consequence of a completed meal/social encounter.
+
+### Next implementation slice and acceptance criteria
+
+Implement the meal/social loop only after extending the existing canonical state and persistence paths—not by adding a second parallel citizen system. A slice is ready to be called complete only when:
+
+1. A resident can leave work according to need/availability arbitration and path to a reachable dining location.
+2. Each table seat is a capacity-limited reservation with deterministic acquire/release on arrival, interruption, destruction and save/load.
+3. A meal consumes exactly one food unit from the canonical inventory and updates the resident's hunger exactly once; failure to reach a seat or obtain food consumes nothing.
+4. Social relationship updates happen only for eligible residents actually co-present during a valid interaction; proximity elsewhere does not count as dining.
+5. Relationship/mood effects feed back into existing resident state and the existing work scheduler, with no presentation-only bonus.
+6. Tests cover no food, unreachable table, full seats, interrupted journey, destroyed/removed table, simultaneous diners, resource conservation, stable repeated runs and a save/load round trip.
+7. Build, full simulation checks and the graphical smoke tests pass before merging.
