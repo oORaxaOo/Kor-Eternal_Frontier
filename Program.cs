@@ -115,7 +115,7 @@ internal static class Program
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
                 previewMouseX = logicalMouse.X;
                 previewMouseY = logicalMouse.Y;
-                bool pointerOverMap = logicalMouse.X < 770 && logicalMouse.Y >= 62 && logicalMouse.Y < 650;
+                bool pointerOverMap = IsMapViewport(logicalMouse.X, logicalMouse.Y);
                 if (pendingWheelY != 0 && gameStarted && pointerOverMap)
                 {
                     float oldZoom = zoom;
@@ -731,6 +731,9 @@ internal static class Program
                 simulation.DesignTileConstruction(x, y, kind);
         simulation.SetMessage($"Rectangular {kind.ToString().ToLowerInvariant()} area designated: {right-left+1} × {bottom-top+1} tiles.");
     }
+
+    internal static bool IsMapViewport(float x, float y)
+        => x >= 0 && x < 770 && y >= 62 && y < 650;
 
     private static bool Hit(float x, float y, float left, float top, float right, float bottom)
         => x >= left && x <= right && y >= top && y <= bottom;
