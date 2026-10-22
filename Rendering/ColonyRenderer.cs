@@ -1124,23 +1124,19 @@ internal sealed class ColonyRenderer : IDisposable
         DrawColonistRoster(canvas, simulation);
 
         DrawFactionButton(canvas, false);
-        _fill.Color = new SKColor(28, 35, 32);
-        canvas.DrawRoundRect(new SKRect(1010, 10, 1084, 31), 3, 3, _fill);
-        _text.Color = new SKColor(125, 220, 155);
-        canvas.DrawText(paused ? "PAUSED" : "LIVE", 1047, 25, SKTextAlign.Center, _smallFont, _text);
 
-        int x = 405;
+        int resourceIndex = 0;
         foreach (var resource in Enum.GetValues<ResourceKind>())
         {
+            float x = ColonyHudLayout.ResourceX(resourceIndex++);
             _fill.Color = new SKColor(24, 31, 29);
-            canvas.DrawRoundRect(new SKRect(x, 10, x + 104, 32), 3, 3, _fill);
+            canvas.DrawRoundRect(new SKRect(x, 10, x + ColonyHudLayout.ResourceWidth, 32), 3, 3, _fill);
             _line.Color = Border;
-            canvas.DrawRoundRect(new SKRect(x, 10, x + 104, 32), 3, 3, _line);
+            canvas.DrawRoundRect(new SKRect(x, 10, x + ColonyHudLayout.ResourceWidth, 32), 3, 3, _line);
             _muted.Color = MutedColor;
-            canvas.DrawText(resource.ToString().ToUpperInvariant(), x + 6, 24, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText(ColonyHudLayout.ResourceLabel(resource), x + 5, 24, SKTextAlign.Left, _smallFont, _muted);
             _text.Color = resource == ResourceKind.Components ? Gold : TextColor;
-            canvas.DrawText(simulation.ResourceCount(resource).ToString(), x + 98, 24, SKTextAlign.Right, _smallFont, _text);
-            x += 110;
+            canvas.DrawText(simulation.ResourceCount(resource).ToString(), x + ColonyHudLayout.ResourceWidth - 5, 24, SKTextAlign.Right, _smallFont, _text);
         }
 
         // The side cockpit is split into three restrained modules; all displayed values come
@@ -1239,7 +1235,7 @@ internal sealed class ColonyRenderer : IDisposable
             if (simulation.Workers.Count > 2)
             {
                 _muted.Color = MutedColor;
-                canvas.DrawText($"+ {simulation.Workers.Count - 2} more residents", 790, 466, SKTextAlign.Left, _smallFont, _muted);
+                canvas.DrawText($"+ {simulation.Workers.Count - 2} more residents", 790, 478, SKTextAlign.Left, _smallFont, _muted);
             }
         }
 
@@ -1320,7 +1316,6 @@ internal sealed class ColonyRenderer : IDisposable
                        actionHint.Contains("WAITING:", StringComparison.Ordinal)
             ? Crimson : MutedColor;
         canvas.DrawText(actionHint, 790, 640, SKTextAlign.Left, _smallFont, _muted);
-        canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 648, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = demolitionMode ? "DEMOLITION MODE" : placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             excavationMode ? "EXCAVATION DESIGNATION" :
