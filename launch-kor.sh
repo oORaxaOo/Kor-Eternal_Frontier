@@ -1,39 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# The local build script and GitHub Actions currently use different output paths.
-# Accept both layouts so the launcher works with either package.
-CANDIDATES=(
-  "$SCRIPT_DIR/artifacts/linux-x64/GondwanaGame"
-  "$SCRIPT_DIR/artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame"
-)
-
-GAME=""
-for candidate in "${CANDIDATES[@]}"; do
-  if [[ -f "$candidate" && -x "$candidate" ]]; then
-    GAME="$candidate"
-    break
-  fi
-done
-
-if [[ -z "$GAME" ]]; then
-  printf '%s\n' \
-    "KOR-ETERNAL FRONTIER could not find its Linux executable." \
-    "Checked:" \
-    "  - $SCRIPT_DIR/artifacts/linux-x64/GondwanaGame" \
-    "  - $SCRIPT_DIR/artifacts/Kor-Eternal-Frontier/linux-x64/GondwanaGame" \
-    "" \
-    "If you downloaded the source code, install the .NET 8 SDK and run:" \
-    "  $SCRIPT_DIR/build-linux.sh" >&2
-  exit 2
+if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+  echo "Kor Eternal Frontier's bundled launcher supports Linux x86_64." >&2
+  exit 1
 fi
 
-# Prefer bundled native libraries shipped by the CI artifact.
-GAME_DIR="$(dirname -- "$GAME")"
-if [[ -f "$GAME_DIR/libSDL3.so" ]]; then
-  export LD_LIBRARY_PATH="$GAME_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+if [[ ! -x "$ROOT/GondwanaGame" ]]; then
+  echo "GondwanaGame is missing or not executable in: $ROOT" >&2
+  echo "Extract the complete Linux x86_64 ZIP before starting the game." >&2
+  exit 1
 fi
 
-exec "$GAME" "$@"
+# The SDL3 shared library ships beside the game executable in this bundle.
+export LD_LIBRARY_PATH="$ROOT${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+cd "$ROOT"
+exec "$ROOT/GondwanaGame" "$@"
