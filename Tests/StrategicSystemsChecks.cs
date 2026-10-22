@@ -53,6 +53,16 @@ internal static class StrategicSystemsChecks
         restoredWealth.Restore(sampled);
         Check(restoredWealth.Current == sampled, "wealth metrics must survive restoration");
 
+        var richColonyBlight = BlightThreatModel.Assess(0.1, 0.1, 50_000);
+        var ruinedColonyBlight = BlightThreatModel.Assess(0.1, 0.1, 100);
+        Check(ruinedColonyBlight.Pressure > richColonyBlight.Pressure &&
+              ruinedColonyBlight.ThreatPoints > richColonyBlight.ThreatPoints,
+            "Blight pressure and aggression must increase as colony wealth collapses instead of scaling down with wealth");
+        var highlyContaminatedRichColony = BlightThreatModel.Assess(0.95, 0.9, 100_000);
+        Check(highlyContaminatedRichColony.ShouldTrigger &&
+              highlyContaminatedRichColony.ThreatPoints > richColonyBlight.ThreatPoints,
+            "strong local/regional Blight presence must remain an independent aggression source even for wealthy colonies");
+
         var storyteller = new ColonyStoryteller();
         var incidents = storyteller.Step(2_000, new StorytellerColonyState(
             3, 32, 0, 10, 10, 10_000, 160));
@@ -73,6 +83,13 @@ internal static class StrategicSystemsChecks
                 entity.Kind == WorldEntityKind.Army && entity.Faction == "Raiders" &&
                 entity.Name.StartsWith("Kor Wealth Raid ", StringComparison.Ordinal)),
             "a wealth-triggered storyteller budget must create a deterministic, moving raid force on the strategic map");
+
+        var blightWorld = new WorldSimulation(41023);
+        for (int frame = 0; frame < 126; frame++) blightWorld.Step(0.8f);
+        Check(blightWorld.SpatialWorld.Entities.Any(entity =>
+                entity.Kind == WorldEntityKind.Army && entity.Faction == "Blight" &&
+                entity.Name.StartsWith("Kor Blight Raid ", StringComparison.Ordinal)),
+            "low colony wealth must independently escalate into a deterministic Blight raid on the strategic map");
 
         var colony = new ColonySimulation();
         colony.WorkPriorities.SetPriority(1, WorkCategory.Construction, 0);
