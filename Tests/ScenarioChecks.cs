@@ -1,3 +1,5 @@
+using KorTheBlight.Rendering;
+
 namespace KorTheBlight.Tests;
 
 internal static class ScenarioChecks
