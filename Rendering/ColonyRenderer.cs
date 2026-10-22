@@ -505,7 +505,7 @@ internal sealed class ColonyRenderer : IDisposable
             }
             _text.Color = TextColor;
 
-            if (!item.IsBuilt)
+            if (!item.IsBuilt && item.Status != ConstructionStatus.Complete)
             {
                 _text.Color = item.Status == ConstructionStatus.WaitingForMaterials ? Crimson : Gold;
                 string progress = item.Status == ConstructionStatus.WaitingForMaterials
