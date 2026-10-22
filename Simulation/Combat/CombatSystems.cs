@@ -66,6 +66,7 @@ internal sealed class CombatEngine
     private readonly CombatEntity[] _entities = new CombatEntity[MaximumEntities];
     private readonly List<int>[] _cells = Enumerable.Range(0, CombatCoverGrid.CellCount).Select(_ => new List<int>()).ToArray();
     private readonly float[] _pendingDamage = new float[MaximumEntities];
+    private readonly Dictionary<int, int> _slotById = new();
     private readonly List<CombatFlash> _flashes = new();
     private readonly List<(int EntityId, string ItemId, int Amount)> _deathDrops = new();
     private int _nextEntityId = 1;
@@ -88,6 +89,7 @@ internal sealed class CombatEngine
         entity.BluntArmor = Math.Clamp(entity.BluntArmor, 0f, 0.95f);
         entity.TargetEntityId = -1;
         _entities[slot] = entity;
+        _slotById[entity.Id] = slot;
         entityId = entity.Id;
         return true;
     }
@@ -124,6 +126,7 @@ internal sealed class CombatEngine
         {
             ref var entity = ref _entities[i];
             if (!entity.IsActive || entity.Health <= 0f) continue;
+            entity.AttackCooldown = MathF.Max(0f, entity.AttackCooldown - deltaSeconds);
             if (entity.TargetEntityId < 0 || !IsEnemyAlive(entity.FactionId, entity.TargetEntityId))
                 entity.TargetEntityId = FindNearestEnemy(i, entity, cover);
             if (entity.TargetEntityId < 0) continue;
@@ -158,18 +161,17 @@ internal sealed class CombatEngine
             float distance = MathF.Sqrt(dx * dx + dy * dy);
             if (distance > WeaponRange(attacker.EquippedWeapon)) continue;
 
-            attacker.AttackCooldown = MathF.Max(0f, attacker.AttackCooldown - deltaSeconds);
             if (attacker.AttackCooldown > 0f) continue;
             if (attacker.EquippedWeapon != CombatWeaponType.Melee && attacker.CurrentAmmo <= 0) continue;
 
             float damage = WeaponDamage(attacker.EquippedWeapon);
+            CoverType pathCover = CheckLineOfSightCover(attacker.X, attacker.Y, target.X, target.Y, cover);
             float armor = attacker.EquippedWeapon == CombatWeaponType.Melee ? target.BluntArmor : target.SharpArmor;
             float penetration = WeaponArmorPenetration(attacker.EquippedWeapon);
             float effectiveArmor = Math.Clamp(armor - penetration, 0f, 0.95f);
-            if (CheckLineOfSightCover(attacker.X, attacker.Y, target.X, target.Y, cover) == CoverType.High &&
-                DeterministicRoll(attacker.Id, target.Id, _tick) < 0.75f)
+            if (pathCover == CoverType.High && DeterministicRoll(attacker.Id, target.Id, _tick) < 0.75d)
                 damage = 0f;
-            else if (CheckLineOfSightCover(attacker.X, attacker.Y, target.X, target.Y, cover) == CoverType.Low)
+            else if (pathCover == CoverType.Low)
                 damage *= 0.70f;
 
             _pendingDamage[targetSlot] += damage * (1f - effectiveArmor);
@@ -188,6 +190,7 @@ internal sealed class CombatEngine
             if (entity.Health > 0f) continue;
             entity.Health = 0f;
             entity.IsActive = false;
+            _slotById.Remove(entity.Id);
             if (entity.Type is CombatEntityType.Vehicle or CombatEntityType.HeavyTank)
                 _deathDrops.Add((entity.Id, "resource_alloy", 25));
             else if (entity.Type is CombatEntityType.BlightBeast or CombatEntityType.BlightTitan)
@@ -241,10 +244,8 @@ internal sealed class CombatEngine
 
     private int FindSlot(int id)
     {
-        if (id <= 0) return -1;
-        for (int i = 0; i < _entities.Length; i++)
-            if (_entities[i].IsActive && _entities[i].Id == id) return i;
-        return -1;
+        if (id <= 0 || !_slotById.TryGetValue(id, out int slot)) return -1;
+        return _entities[slot].IsActive && _entities[slot].Id == id ? slot : -1;
     }
 
     private static void MoveTowards(ref CombatEntity entity, float tx, float ty, float dt, CombatCoverGrid cover)
