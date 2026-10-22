@@ -57,7 +57,12 @@ internal static class ColonyChecks
             "placement preview validity must use the same footprint rules as actual blueprint placement");
 
         var objectInspection = new ColonySimulation();
-        int inspectionRackId = objectInspection.PlaceObjectBlueprint(PlaceableKind.StorageRack, 8, 8);
+        var inspectionCell = (from y in Enumerable.Range(1, ColonySimulation.Height - 2)
+                              from x in Enumerable.Range(1, ColonySimulation.Width - 2)
+                              where objectInspection.CanPlaceObjectAt(PlaceableKind.StorageRack, x, y)
+                              select new CellPosition(x, y)).First();
+        int inspectionRackId = objectInspection.PlaceObjectBlueprint(
+            PlaceableKind.StorageRack, inspectionCell.X, inspectionCell.Y);
         var inspectionRack = objectInspection.Objects.Single(item => item.Id == inspectionRackId);
         inspectionRack.Status = ConstructionStatus.Complete;
         inspectionRack.Health = inspectionRack.MaxHealth;
