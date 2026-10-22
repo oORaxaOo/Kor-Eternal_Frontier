@@ -531,16 +531,7 @@ internal sealed class WorldSimulation
         SyncCombatCoverFromColony();
     }
 
-    private void InitializeCombatSystems()
-    {
-        CombatEngine = new CombatEngine();
-        CombatCover = new CombatCoverGrid();
-        long homeId = KorSettlementId(SpatialWorld);
-        Workshop = new WorkbenchManager(
-            new WorldWorkbenchInventory(SpatialWorld, homeId),
-            researchId => ResearchManager.State.CompletedResearchIds.Contains(researchId));
-        SyncCombatCoverFromColony();
-    }
+
 
     public void Restore(LoadedGameSession session)
     {

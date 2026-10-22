@@ -18,6 +18,17 @@ internal sealed class IncidentManager
     public int Count => _incidents.Count;
     public IReadOnlyCollection<SimulationIncident> Incidents => _incidents.ToArray();
 
+    public void RemoveResident(int residentId)
+    {
+        if (residentId <= 0) return;
+        var retained = _incidents.Where(item => item.ResidentA != residentId && item.ResidentB != residentId).ToArray();
+        _incidents.Clear();
+        foreach (var item in retained) _incidents.Enqueue(item);
+        foreach (var key in _lastTriggeredTick.Keys
+                     .Where(key => key.ResidentA == residentId || key.ResidentB == residentId).ToArray())
+            _lastTriggeredTick.Remove(key);
+    }
+
     public void Consume(IEnumerable<SocialSimulationEvent> events)
     {
         ArgumentNullException.ThrowIfNull(events);

@@ -16,6 +16,17 @@ internal sealed class SocialRelationshipNetwork
     public int RelationshipCount => _relationships.Count;
     public int PendingEventCount => _events.Count;
 
+    public void RemoveResident(int residentId)
+    {
+        if (residentId <= 0) return;
+        foreach (var pair in _relationships.Keys
+                     .Where(pair => pair.ResidentA == residentId || pair.ResidentB == residentId).ToArray())
+            _relationships.Remove(pair);
+        var retained = _events.Where(item => item.ResidentA != residentId && item.ResidentB != residentId).ToArray();
+        _events.Clear();
+        foreach (var item in retained) _events.Enqueue(item);
+    }
+
     public SocialRelationship? Get(int residentA, int residentB)
     {
         if (residentA <= 0 || residentB <= 0 || residentA == residentB) return null;

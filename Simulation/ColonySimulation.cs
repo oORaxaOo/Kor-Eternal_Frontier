@@ -1673,6 +1673,8 @@ internal sealed class ColonySimulation
             _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
         if (_citizensByWorker.Remove(worker.Id, out var citizenId))
             _ecosystem.RemoveCitizen(citizenId);
+        _socialRelationships.RemoveResident(worker.Id);
+        _incidentManager.RemoveResident(worker.Id);
         _workers.Remove(worker);
         _workPriorities.RemoveWorker(worker.Id);
         if (SelectedWorkerId == worker.Id) SelectedWorkerId = null;
