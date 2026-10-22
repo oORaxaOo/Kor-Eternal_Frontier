@@ -1239,7 +1239,7 @@ internal sealed class ColonyRenderer : IDisposable
             if (simulation.Workers.Count > 2)
             {
                 _muted.Color = MutedColor;
-                canvas.DrawText($"+ {simulation.Workers.Count - 2} more residents", 790, 466, SKTextAlign.Left, _smallFont, _muted);
+                canvas.DrawText($"+ {simulation.Workers.Count - 2} more residents", 790, 478, SKTextAlign.Left, _smallFont, _muted);
             }
         }
 
@@ -1320,7 +1320,6 @@ internal sealed class ColonyRenderer : IDisposable
                        actionHint.Contains("WAITING:", StringComparison.Ordinal)
             ? Crimson : MutedColor;
         canvas.DrawText(actionHint, 790, 640, SKTextAlign.Left, _smallFont, _muted);
-        canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 648, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = demolitionMode ? "DEMOLITION MODE" : placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             excavationMode ? "EXCAVATION DESIGNATION" :
