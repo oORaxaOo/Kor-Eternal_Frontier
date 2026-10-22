@@ -274,7 +274,7 @@ internal sealed class CombatEngine
             if (twice < dx) { error += dx; y += sy; }
             if (x == endX && y == endY) break;
             if (x >= 0 && x < CombatCoverGrid.Width && y >= 0 && y < CombatCoverGrid.Height)
-                if (cover[x, y] > highest) highest = cover[x, y];
+                if ((byte)cover[x, y] > (byte)highest) highest = cover[x, y];
         }
         return highest;
     }
