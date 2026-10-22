@@ -214,6 +214,7 @@ internal sealed class ColonySimulation
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
     private WorkOrderKind? _selectedWorkOrderKind;
     private int? _selectedWorkOrderId;
+    private int? _selectedObjectId;
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
@@ -430,6 +431,21 @@ internal sealed class ColonySimulation
     }
     public int? SelectedWorkerId { get; private set; }
     public int? SelectedWorkOrderId => _selectedWorkOrderId;
+    public int? SelectedObjectId => _selectedObjectId;
+    public PlaceableObjectState? SelectedObject =>
+        _selectedObjectId.HasValue ? _objects.FirstOrDefault(item => item.Id == _selectedObjectId.Value && item.IsBuilt) : null;
+    public string SelectedObjectSummary => SelectedObject is { } item
+        ? $"{item.Kind} · {item.Width}×{item.Height} footprint"
+        : string.Empty;
+    public string SelectedObjectDiagnostic => SelectedObject is not { } item
+        ? string.Empty
+        : item.Kind switch
+        {
+            PlaceableKind.StorageRack => $"Storage capacity {StorageRackCapacity} units · inventory {InventoryUsed}/{InventoryCapacity}",
+            PlaceableKind.Workbench => $"Production station · condition {item.Health:0}/{item.MaxHealth:0}",
+            PlaceableKind.Garden => $"Food production structure · condition {item.Health:0}/{item.MaxHealth:0}",
+            _ => $"Condition {item.Health:0}/{item.MaxHealth:0} · placed at {item.Origin.X}, {item.Origin.Y}"
+        };
     public int SelectedWorkOrderPriority => GetSelectedWorkOrderPriority() ?? 3;
     public string SelectedWorkOrderSummary => GetSelectedWorkOrderSummary();
     public string SelectedWorkOrderDiagnostic => GetSelectedWorkOrderDiagnostic();
@@ -1192,6 +1208,7 @@ internal sealed class ColonySimulation
         int x = (int)MathF.Floor(worldX), y = (int)MathF.Floor(worldY);
         _selectedWorkOrderKind = null;
         _selectedWorkOrderId = null;
+        _selectedObjectId = null;
         if (!InBounds(x, y)) return false;
 
         var cell = new CellPosition(x, y);
@@ -1231,6 +1248,7 @@ internal sealed class ColonySimulation
         var builtObject = ObjectAt(x, y);
         if (builtObject is { IsBuilt: true })
         {
+            _selectedObjectId = builtObject.Id;
             if (builtObject.Kind == PlaceableKind.Workbench)
             {
                 var production = _productionOrders
@@ -1920,6 +1938,7 @@ internal sealed class ColonySimulation
 
     public bool SelectWorkerAt(float worldX, float worldY)
     {
+        _selectedObjectId = null;
         // A linear nearest-resident scan avoids sorting the entire population on every click.
         ColonyWorker? nearest = null;
         float nearestDistance = float.MaxValue;
