@@ -340,6 +340,12 @@ internal sealed class WorldSimulation
     /// </summary>
     private void ApplyCombatSiege(float deltaSeconds)
     {
+        // Avoid a full map scan/sort if every hostile still has a living combat target.
+        var attackers = CombatEngine.Entities
+            .Where(entity => entity.FactionId != 1 && entity.TargetEntityId < 0)
+            .OrderBy(entity => entity.Id).ToArray();
+        if (attackers.Length == 0) return;
+
         var targets = new List<(float X, float Y, int CellX, int CellY)>();
         foreach (var item in Colony.Objects.Where(item => item.IsBuilt).OrderBy(item => item.Id))
         {
@@ -358,24 +364,32 @@ internal sealed class WorldSimulation
         }
 
         if (targets.Count == 0) return;
-        foreach (var attacker in CombatEngine.Entities.OrderBy(entity => entity.Id))
+        foreach (var attacker in attackers)
         {
-            if (attacker.FactionId == 1 || attacker.TargetEntityId >= 0) continue;
-            var nearest = targets
-                .Select(target => (Target: target,
-                    Distance: MathF.Sqrt(MathF.Pow(target.X - attacker.X, 2) + MathF.Pow(target.Y - attacker.Y, 2))))
-                .OrderBy(item => item.Distance)
-                .ThenBy(item => item.Target.CellY)
-                .ThenBy(item => item.Target.CellX)
-                .First();
-
-            if (nearest.Distance > 1.25f)
+            var nearestTarget = targets[0];
+            float nearestDistanceSquared = float.PositiveInfinity;
+            foreach (var target in targets)
             {
-                float dx = nearest.Target.X - attacker.X;
-                float dy = nearest.Target.Y - attacker.Y;
-                float step = MathF.Min(nearest.Distance - 1f,
+                float dx = target.X - attacker.X;
+                float dy = target.Y - attacker.Y;
+                float distanceSquared = dx * dx + dy * dy;
+                // Targets have a stable order (object ID then row-major tile index), so the
+                // strict comparison also gives deterministic tie-breaking without per-attacker sorting.
+                if (distanceSquared < nearestDistanceSquared)
+                {
+                    nearestDistanceSquared = distanceSquared;
+                    nearestTarget = target;
+                }
+            }
+
+            float nearestDistance = MathF.Sqrt(nearestDistanceSquared);
+            if (nearestDistance > 1.25f)
+            {
+                float dx = nearestTarget.X - attacker.X;
+                float dy = nearestTarget.Y - attacker.Y;
+                float step = MathF.Min(nearestDistance - 1f,
                     MathF.Max(0.35f, attacker.Speed) * deltaSeconds);
-                float length = MathF.Max(0.001f, nearest.Distance);
+                float length = MathF.Max(0.001f, nearestDistance);
                 CombatEngine.TrySetPosition(attacker.Id,
                     Math.Clamp(attacker.X + dx / length * step, 0.01f, CombatCoverGrid.Width - 0.01f),
                     Math.Clamp(attacker.Y + dy / length * step, 0.01f, CombatCoverGrid.Height - 0.01f));
@@ -398,7 +412,7 @@ internal sealed class WorldSimulation
             if (!hasAmmunition) damage = 2f;
             bool blightAttack = attacker.FactionId == 99 ||
                 attacker.Type is CombatEntityType.BlightBeast or CombatEntityType.BlightTitan;
-            Colony.DamageStructureAt(nearest.Target.CellX, nearest.Target.CellY, damage, blightAttack);
+            Colony.DamageStructureAt(nearestTarget.CellX, nearestTarget.CellY, damage, blightAttack);
             CombatEngine.TrySetStructureAttackCooldown(attacker.Id,
                 attacker.Type == CombatEntityType.BlightTitan ? 1.5f : 2f);
         }
