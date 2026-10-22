@@ -21,10 +21,10 @@ internal static class BuildPaletteLayout
     public const float CategoryWidth = 57f;
     public const float CategoryGap = 4f;
     public const float ItemWidth = 72f;
-    public const float ItemHeight = 22f;
+    public const float ItemHeight = 19f;
     public const float ItemGap = 4f;
-    public const float FirstRowTop = 593f;
-    public const float SecondRowTop = 620f;
+    public const float FirstRowTop = 592f;
+    public const float SecondRowTop = 614f;
     public const int CategoryCount = 5;
     public const int ItemsPerRow = 4;
     public const int ItemCount = 8;
