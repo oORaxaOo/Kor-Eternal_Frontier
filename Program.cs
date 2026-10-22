@@ -115,7 +115,8 @@ internal static class Program
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
                 previewMouseX = logicalMouse.X;
                 previewMouseY = logicalMouse.Y;
-                if (pendingWheelY != 0 && gameStarted)
+                bool pointerOverMap = IsMapViewport(logicalMouse.X, logicalMouse.Y);
+                if (pendingWheelY != 0 && gameStarted && pointerOverMap)
                 {
                     float oldZoom = zoom;
                     bool wasWorldView = oldZoom < .65f;
@@ -141,6 +142,12 @@ internal static class Program
                             cameraY = Math.Clamp(logicalMouse.Y - 350f - (anchor.Y - ColonySimulation.Height / 2f) * scale, -400f, 400f);
                         }
                     }
+                    pendingWheelY = 0;
+                }
+                else if (pendingWheelY != 0)
+                {
+                    // Scrolling menus or the inspector must not zoom the map later when the
+                    // pointer returns to it; discard wheel input outside the visible map.
                     pendingWheelY = 0;
                 }
                 bool worldView = zoom < .65f;
@@ -261,6 +268,7 @@ internal static class Program
                         else if (Hit(mx, my, 140, 116, 252, 144)) systemsTab = 0;
                         else if (Hit(mx, my, 262, 116, 374, 144)) systemsTab = 1;
                         else if (Hit(mx, my, 384, 116, 496, 144)) systemsTab = 2;
+                        else if (Hit(mx, my, 506, 116, 618, 144)) systemsTab = 3;
                         else if (systemsTab == 0 && Hit(mx, my, 140, 490, 320, 516))
                         {
                             int deployed = world.TryDeployColonists();
@@ -321,6 +329,28 @@ internal static class Program
                                     simulation.SetMessage($"Heavy tank #{vehicleId} assembled from the settlement item ledger.");
                                 else
                                     simulation.SetMessage("Tank assembly unavailable: unlock armored-vehicle research, supply every part, and free storage/tile capacity.");
+                            }
+                        }
+                        else if (systemsTab == 3)
+                        {
+                            var units = world.CombatEngine.Entities.Where(entity => entity.FactionId == 1 &&
+                                    entity.Type == CombatEntityType.Human && entity.SourcePawnId > 0)
+                                .OrderBy(entity => entity.SourcePawnId).Take(9).ToArray();
+                            bool handled = false;
+                            for (int i = 0; i < units.Length; i++)
+                            {
+                                float rowTop = 196 + i * 31;
+                                if (!Hit(mx, my, 140, rowTop, 955, rowTop + 27)) continue;
+                                selectedCombatEntityId = units[i].Id;
+                                simulation.SetMessage($"Selected {world.GetCombatantName(units[i])}: {units[i].EquippedWeapon}, ammunition {units[i].CurrentAmmo}/{units[i].MaxAmmo}.");
+                                handled = true;
+                                break;
+                            }
+                            if (!handled && Hit(mx, my, 140, 490, 320, 520))
+                            {
+                                if (!selectedCombatEntityId.HasValue || !world.TryEquipRifle(selectedCombatEntityId.Value))
+                                    if (!selectedCombatEntityId.HasValue)
+                                        simulation.SetMessage("Select a deployed Kor colonist from the loadout list first.");
                             }
                         }
                         else if (systemsTab == 2)
@@ -701,6 +731,9 @@ internal static class Program
                 simulation.DesignTileConstruction(x, y, kind);
         simulation.SetMessage($"Rectangular {kind.ToString().ToLowerInvariant()} area designated: {right-left+1} × {bottom-top+1} tiles.");
     }
+
+    internal static bool IsMapViewport(float x, float y)
+        => x >= 0 && x < 770 && y >= 62 && y < 650;
 
     private static bool Hit(float x, float y, float left, float top, float right, float bottom)
         => x >= left && x <= right && y >= top && y <= bottom;

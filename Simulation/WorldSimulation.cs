@@ -523,6 +523,36 @@ internal sealed class WorldSimulation
         return deployed;
     }
 
+    public bool TryEquipRifle(int combatEntityId)
+    {
+        if (!CombatEngine.TryGetEntity(combatEntityId, out var entity) || entity.FactionId != 1 ||
+            entity.Type != CombatEntityType.Human || entity.SourcePawnId <= 0)
+        {
+            Colony.SetMessage("Select a deployed Kor colonist first; vehicles and non-colony units cannot use infantry rifles.");
+            return false;
+        }
+        if (entity.EquippedWeapon == CombatWeaponType.Rifle)
+        {
+            Colony.SetMessage($"{GetCombatantName(entity)} already has a rifle equipped.");
+            return true;
+        }
+
+        long homeId = KorSettlementId(SpatialWorld);
+        if (!SpatialWorld.TryTakeItem(homeId, WorkbenchManager.InfantryRifle, 1))
+        {
+            Colony.SetMessage("No finished rifle in Kor stock. Complete weapon_rifle_industrial in the WORKSHOP first.");
+            return false;
+        }
+        if (!CombatEngine.TrySetLoadout(combatEntityId, CombatWeaponType.Rifle, 30))
+        {
+            SpatialWorld.TryAddItem(homeId, WorkbenchManager.InfantryRifle, 1);
+            Colony.SetMessage("Loadout change failed; the rifle was returned to stock.");
+            return false;
+        }
+        Colony.SetMessage($"{GetCombatantName(entity)} equipped with a rifle (30 rounds). One rifle was consumed from the shared settlement stock.");
+        return true;
+    }
+
     private void SyncCombatantPawnPositions()
     {
         foreach (var entity in CombatEngine.Entities)
