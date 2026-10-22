@@ -92,9 +92,9 @@ internal static class CombatSystemsChecks
             "nemesis title should be stable and reflect persistent scars");
         var mutated = baseNemesis with { HasBlightMutation = true };
         string mutationTitle = NemesisNameGenerator.GenerateFullTitle(mutated);
-        Assert(mutationTitle != first && mutationTitle.Contains("Fäulnis", StringComparison.Ordinal) ||
+        Assert(mutationTitle != first && (mutationTitle.Contains("Fäulnis", StringComparison.Ordinal) ||
             mutationTitle.Contains("Sporen", StringComparison.Ordinal) || mutationTitle.Contains("Pestauge", StringComparison.Ordinal) ||
-            mutationTitle.Contains("Verseuchte", StringComparison.Ordinal),
+            mutationTitle.Contains("Verseuchte", StringComparison.Ordinal)),
             "Blight mutation should select a contextual title");
     }
 
