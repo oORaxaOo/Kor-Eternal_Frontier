@@ -217,6 +217,22 @@ internal static class Program
                         else if (Hit(mx, my, 370, 392, 730, 444)) settingsMenu = true;
                         else if (Hit(mx, my, 370, 458, 730, 510)) running = false;
                     }
+                    else if (ColonyRosterLayout.HitTest(logicalMouse.X, logicalMouse.Y) is int rosterSlot && rosterSlot >= 0)
+                    {
+                        var roster = simulation.Workers.Take(ColonyRosterLayout.VisibleSlots).ToArray();
+                        if (rosterSlot < roster.Length)
+                        {
+                            var worker = roster[rosterSlot];
+                            simulation.SelectWorkerAt(worker.X, worker.Y);
+                            selectedWorldEntityId = null;
+                            selectedMacroCellId = null;
+                            if (zoom < .65f) zoom = .85f;
+                            float tileScale = OrthogonalGridProjection.TileSize * Math.Clamp(zoom, .25f, 4f);
+                            cameraX = Math.Clamp(-(worker.X - ColonySimulation.Width / 2f) * tileScale, -500f, 500f);
+                            cameraY = Math.Clamp(-(worker.Y - ColonySimulation.Height / 2f) * tileScale, -400f, 400f);
+                            simulation.SetMessage($"Selected colonist: {worker.Name}.");
+                        }
+                    }
                     else if (Hit(logicalMouse.X, logicalMouse.Y, 12, 38, 1088, 59))
                     {
                         var latest = world.SpatialWorld.MacroWorld.Notifications.LastOrDefault();
