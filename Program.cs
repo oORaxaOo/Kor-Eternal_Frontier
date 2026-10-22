@@ -185,7 +185,8 @@ internal static class Program
                         }
                         else if (Hit(mx, my, 370, 260, 730, 312))
                         {
-                            world = new WorldSimulation(70241);
+                            // Generate a fresh world for each new-game action; reusing a fixed seed made every new session identical.
+                            world = new WorldSimulation(Random.Shared.Next(1, int.MaxValue));
                             simulation = world.Colony;
                             paused = startPaused;
                             world.IsPaused = paused;
