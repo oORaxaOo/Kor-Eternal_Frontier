@@ -127,3 +127,12 @@ The colony simulation uses a fixed-step `TickManager` at **60 simulation ticks p
 - **Thing grid:** pawns, buildings, resource deposits and architecture are indexed by stable identity and map cell, with cell lookup, nearest-match queries, movement and removal. This is a migration bridge to a single authoritative entity model; existing simulation domain records still own their data during this stage.
 
 These systems use original KOR project code and broad colony-simulation design patterns rather than copying proprietary implementation code or assets.
+
+
+## Tactical combat and vehicle-production foundation
+
+The combat prototype now lives in `Simulation/Combat/CombatSystems.cs` and uses a fixed-capacity array of value-type combat entities, a 40×26 cover grid, spatial cell buckets, deterministic faction loadouts, fixed-step cooldowns, accumulated damage resolution, and bounded symbolic shot-flash/death-drop events. Infantry, heavy vehicles, and Blight creatures share the same entity layout while retaining type-specific stats. High cover uses a deterministic block roll; low cover reduces damage. Combat mutation is single-writer and deterministic rather than using `Parallel.For` over shared mutable entities, which would introduce data races when two units attack the same target.
+
+The same module defines a research-gated workbench recipe catalogue, atomic input commitment at job start, output commitment only when work completes, vehicle assembly from consumed parts, and stable contextual Nemesis titles based on persisted record fields. The subsystem is covered by the unified `--self-test` suite.
+
+**Integration boundary:** this is a tested simulation subsystem, not yet a complete player-facing combat feature. The colony renderer/input flow does not yet expose combat orders, the existing strategic raid entities are not automatically materialized into local combatants, and combat/vehicle/Nemesis state is not yet included in the versioned game-session save. Research IDs and the local workshop inventory are currently passed/managed by this subsystem rather than connected to the canonical colony ledger. These are explicit follow-up integration tasks; no claim is made that combat is already playable from the main UI.
