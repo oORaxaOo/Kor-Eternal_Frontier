@@ -1273,14 +1273,14 @@ internal sealed class ColonyRenderer : IDisposable
         {
             for (int category = 0; category < BuildPaletteLayout.CategoryCount; category++)
             {
-                float x = BuildPaletteLayout.Left + category * (BuildPaletteLayout.CategoryWidth + BuildPaletteLayout.CategoryGap);
-                DrawButton(canvas, BuildPaletteLayout.CategoryLabel(category), x, BuildPaletteLayout.CategoryTop,
+                float categoryX = BuildPaletteLayout.Left + category * (BuildPaletteLayout.CategoryWidth + BuildPaletteLayout.CategoryGap);
+                DrawButton(canvas, BuildPaletteLayout.CategoryLabel(category), categoryX, BuildPaletteLayout.CategoryTop,
                     BuildPaletteLayout.CategoryWidth, BuildPaletteLayout.CategoryHeight, buildMenuPage == category);
             }
 
             for (int slot = 0; slot < BuildPaletteLayout.ItemCount; slot++)
             {
-                float x = BuildPaletteLayout.Left + (slot % BuildPaletteLayout.ItemsPerRow) * (BuildPaletteLayout.ItemWidth + BuildPaletteLayout.ItemGap);
+                float itemX = BuildPaletteLayout.Left + (slot % BuildPaletteLayout.ItemsPerRow) * (BuildPaletteLayout.ItemWidth + BuildPaletteLayout.ItemGap);
                 float y = slot < BuildPaletteLayout.ItemsPerRow ? BuildPaletteLayout.FirstRowTop : BuildPaletteLayout.SecondRowTop;
                 var action = BuildPaletteLayout.ActionAt(buildMenuPage, slot);
                 bool active = action switch
@@ -1302,7 +1302,7 @@ internal sealed class ColonyRenderer : IDisposable
                     BuildPaletteAction.Garden => placingObject && objectType == PlaceableKind.Garden,
                     _ => false
                 };
-                DrawButton(canvas, BuildPaletteLayout.ItemLabel(buildMenuPage, slot), x, y,
+                DrawButton(canvas, BuildPaletteLayout.ItemLabel(buildMenuPage, slot), itemX, y,
                     BuildPaletteLayout.ItemWidth, BuildPaletteLayout.ItemHeight, active);
             }
         }
