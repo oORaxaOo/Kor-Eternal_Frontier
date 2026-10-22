@@ -1302,8 +1302,9 @@ internal sealed class ColonyRenderer : IDisposable
                     BuildPaletteAction.Garden => placingObject && objectType == PlaceableKind.Garden,
                     _ => false
                 };
-                DrawButton(canvas, BuildPaletteLayout.ItemLabel(buildMenuPage, slot), itemX, y,
-                    BuildPaletteLayout.ItemWidth, BuildPaletteLayout.ItemHeight, active);
+                if (action != BuildPaletteAction.None)
+                    DrawButton(canvas, BuildPaletteLayout.ItemLabel(buildMenuPage, slot), itemX, y,
+                        BuildPaletteLayout.ItemWidth, BuildPaletteLayout.ItemHeight, active);
             }
         }
 
