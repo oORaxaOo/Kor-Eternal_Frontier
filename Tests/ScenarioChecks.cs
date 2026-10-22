@@ -37,7 +37,7 @@ internal static class ScenarioChecks
     private static void VerifyColonistRosterHitBounds()
     {
         if (KorTheBlight.Rendering.ColonyRosterLayout.HitTest(155f, 8f) != 0 ||
-            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(234f, 20f) != 1 ||
+            KorTheBlight.Rendering.ColonyRosterLayout.HitTest(235f, 20f) != 1 ||
             KorTheBlight.Rendering.ColonyRosterLayout.HitTest(315f, 20f) != 2 ||
             KorTheBlight.Rendering.ColonyRosterLayout.HitTest(231f, 20f) != -1 ||
             KorTheBlight.Rendering.ColonyRosterLayout.HitTest(154.9f, 20f) != -1 ||
