@@ -124,7 +124,7 @@ internal static class CombatIntegrationChecks
               equipped.EquippedWeapon == CombatWeaponType.Rifle && equipped.CurrentAmmo == 30,
             "the live combat entity should receive rifle and ammunition together");
         string saved = world.SerializeCombatRuntime();
-        Check(saved.Contains("\"EquippedWeapon\":2", StringComparison.Ordinal), "equipped loadout should be present in combat persistence");
+        Check(saved.Contains("\"EquippedWeapon\": 2", StringComparison.Ordinal), "equipped loadout should be present in combat persistence");
     }
 
     private static void VerifyStructureSiegeBlightInfectionRepairAndPersistence()
