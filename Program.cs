@@ -115,7 +115,8 @@ internal static class Program
                 var logicalMouse = adapter.AdapterPxToScreenPx(new System.Drawing.PointF(mouseX, mouseY));
                 previewMouseX = logicalMouse.X;
                 previewMouseY = logicalMouse.Y;
-                if (pendingWheelY != 0 && gameStarted)
+                bool pointerOverMap = logicalMouse.X < 770 && logicalMouse.Y >= 62 && logicalMouse.Y < 650;
+                if (pendingWheelY != 0 && gameStarted && pointerOverMap)
                 {
                     float oldZoom = zoom;
                     bool wasWorldView = oldZoom < .65f;
@@ -141,6 +142,12 @@ internal static class Program
                             cameraY = Math.Clamp(logicalMouse.Y - 350f - (anchor.Y - ColonySimulation.Height / 2f) * scale, -400f, 400f);
                         }
                     }
+                    pendingWheelY = 0;
+                }
+                else if (pendingWheelY != 0)
+                {
+                    // Scrolling menus or the inspector must not zoom the map later when the
+                    // pointer returns to it; discard wheel input outside the visible map.
                     pendingWheelY = 0;
                 }
                 bool worldView = zoom < .65f;
