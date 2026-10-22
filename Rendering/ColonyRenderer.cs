@@ -829,7 +829,10 @@ internal sealed class ColonyRenderer : IDisposable
                     $"{unit.EquippedWeapon}  {unit.CurrentAmmo}/{unit.MaxAmmo}";
                 canvas.DrawText(equipment, 650, y + 17, SKTextAlign.Left, _smallFont, _muted);
             }
-            DrawButton(canvas, "EQUIP RIFLE", 140, 490, 180, 30, riflesInStock > 0 && selectedCombatEntityId.HasValue);
+            bool selectedEligibleInfantry = selectedCombatEntityId.HasValue &&
+                units.Any(unit => unit.Id == selectedCombatEntityId.Value);
+            DrawButton(canvas, "EQUIP RIFLE", 140, 490, 180, 30,
+                riflesInStock > 0 && selectedEligibleInfantry);
             _muted.Color = MutedColor;
             canvas.DrawText(units.Length == 0
                 ? "No deployed colonists yet. Open COMBAT and choose DEPLOY COLONISTS first."
