@@ -23,6 +23,7 @@ internal static class ScenarioChecks
             CombatIntegrationChecks.Run();
             VerifyMapViewportInputBounds();
             VerifyColonistRosterHitBounds();
+            VerifyRightClickCancelsActiveMapTools();
             MacroWorldChecks.Run();
             Console.WriteLine("Kor checks passed: pawn utility AI, colony construction and logistics, bounded stockpile reservations, citizen needs and movement, job-broker capacity, continuous world movement and queries, shared settlement ledger, unified clock, session persistence, deterministic bounded simulation events, data-driven colony storyteller events and cooldowns, resident social relationships and incident milestones, and indexed world-space radius queries, deterministic regional biomes and local-map seeds, seeded faction strategy, diplomatic relationship matrices and persistent threat intelligence, deterministic 100x100 macro cells, daily macro economy, bounded supply-demand prices, data-driven research and generated item definitions, colonist work matrices, target reservations, strategic routes, macro-faction actions, wealth valuation and threat-scaled storyteller incidents, deterministic tactical combat, cover, faction loadouts, research-gated production, vehicle assembly, persistent nemesis titles, and cross-system combat/workshop/research/save integration.");
             return 0;
@@ -32,6 +33,17 @@ internal static class ScenarioChecks
             Console.Error.WriteLine(ex);
             return 1;
         }
+    }
+
+    private static void VerifyRightClickCancelsActiveMapTools()
+    {
+        if (!Program.ShouldCancelMapToolOnRightClick(false, true, ArchitectureKind.None, false, false) ||
+            !Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.Wall, false, false) ||
+            !Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.None, true, false) ||
+            !Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.None, false, true) ||
+            Program.ShouldCancelMapToolOnRightClick(true, true, ArchitectureKind.None, false, false) ||
+            Program.ShouldCancelMapToolOnRightClick(false, false, ArchitectureKind.None, false, false))
+            throw new InvalidOperationException("Right-click map-tool cancellation rules are inconsistent.");
     }
 
     private static void VerifyColonistRosterHitBounds()
