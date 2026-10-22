@@ -18,6 +18,8 @@ internal struct CombatEntity
     public int CurrentAmmo, MaxAmmo, TargetEntityId;
     public float AttackCooldown, CurrentFuel;
     public int DriverPawnId, PassengerCount, NameSeed;
+    public long SourceWorldEntityId;
+    public int SourcePawnId;
     public bool HasBlightMutation, LostEye;
     public int KilledPawnId;
 }
@@ -41,6 +43,7 @@ internal sealed class CombatCoverGrid
         }
     }
 
+    public void Clear() => Array.Clear(_cover);
     public byte[] Snapshot() => (byte[])_cover.Clone();
     public void Restore(byte[] values)
     {
@@ -54,6 +57,11 @@ internal sealed class CombatCoverGrid
 }
 
 internal readonly record struct CombatFlash(int AttackerId, int TargetId, float FromX, float FromY, float ToX, float ToY, bool IsHeavy);
+internal readonly record struct CombatDeath(CombatEntity Entity, int KillerId);
+internal sealed record CombatEngineSnapshot(int NextEntityId, long Tick, List<CombatEntity> Entities, byte[] CoverSnapshot);
+internal sealed record PendingCombatLoot(string ItemId, int Amount, int SourceEntityId);
+internal sealed record CombatRuntimeSnapshot(CombatEngineSnapshot Engine, WorkbenchSnapshot Workshop,
+    List<NemesisRecord> Nemeses, List<PendingCombatLoot> PendingLoot);
 
 /// <summary>
 /// Deterministic, fixed-step local combat. Entity updates and damage resolution are deliberately
@@ -69,12 +77,15 @@ internal sealed class CombatEngine
     private readonly Dictionary<int, int> _slotById = new();
     private readonly List<CombatFlash> _flashes = new();
     private readonly List<(int EntityId, string ItemId, int Amount)> _deathDrops = new();
+    private readonly List<CombatDeath> _deaths = new();
+    private readonly int[] _lastAttackerByTargetSlot = new int[MaximumEntities];
     private int _nextEntityId = 1;
     private long _tick;
 
     public IReadOnlyList<CombatEntity> Entities => _entities.Where(e => e.IsActive).ToArray();
     public IReadOnlyList<CombatFlash> Flashes => _flashes;
     public IReadOnlyList<(int EntityId, string ItemId, int Amount)> DeathDrops => _deathDrops;
+    public IReadOnlyList<CombatDeath> Deaths => _deaths;
 
     public bool TrySpawn(CombatEntity entity, out int entityId)
     {
@@ -110,6 +121,72 @@ internal sealed class CombatEngine
         return true;
     }
 
+    public bool TryRemoveEntity(int id)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0) return false;
+        _entities[slot].IsActive = false;
+        _slotById.Remove(id);
+        return true;
+    }
+
+    public bool TrySetPosition(int id, float x, float y)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0 || !float.IsFinite(x) || !float.IsFinite(y) ||
+            x < 0 || y < 0 || x >= CombatCoverGrid.Width || y >= CombatCoverGrid.Height) return false;
+        _entities[slot].X = x;
+        _entities[slot].Y = y;
+        return true;
+    }
+
+    public CombatEngineSnapshot Snapshot(CombatCoverGrid cover)
+    {
+        ArgumentNullException.ThrowIfNull(cover);
+        return new CombatEngineSnapshot(_nextEntityId, _tick,
+            _entities.Where(entity => entity.IsActive).OrderBy(entity => entity.Id).ToList(),
+            cover.Snapshot());
+    }
+
+    public void Restore(CombatEngineSnapshot snapshot, CombatCoverGrid cover)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(cover);
+        if (snapshot.NextEntityId <= 0 || snapshot.Tick < 0 || snapshot.Entities is null ||
+            snapshot.Entities.Count > MaximumEntities || snapshot.Entities.Select(entity => entity.Id).Distinct().Count() != snapshot.Entities.Count)
+            throw new InvalidDataException("Combat snapshot contains invalid IDs, counters, or entity count.");
+        Array.Clear(_entities);
+        Array.Clear(_pendingDamage);
+        Array.Clear(_lastAttackerByTargetSlot);
+        _slotById.Clear();
+        _flashes.Clear();
+        _deathDrops.Clear();
+        _deaths.Clear();
+        int slot = 0, maxId = 0;
+        foreach (var saved in snapshot.Entities.OrderBy(entity => entity.Id))
+        {
+            if (saved.Id <= 0 || !saved.IsActive || !Enum.IsDefined(saved.Type) ||
+                !Enum.IsDefined(saved.EquippedWeapon) || !float.IsFinite(saved.X) || !float.IsFinite(saved.Y) ||
+                saved.X < 0 || saved.Y < 0 || saved.X >= CombatCoverGrid.Width || saved.Y >= CombatCoverGrid.Height ||
+                !float.IsFinite(saved.Health) || saved.Health <= 0 || saved.Health > 100 ||
+                !float.IsFinite(saved.Speed) || saved.Speed < 0 || saved.Speed > 20 ||
+                saved.CurrentAmmo < 0 || saved.MaxAmmo < 0 || saved.CurrentAmmo > saved.MaxAmmo ||
+                !float.IsFinite(saved.SharpArmor) || saved.SharpArmor is < 0 or > 0.95f ||
+                !float.IsFinite(saved.BluntArmor) || saved.BluntArmor is < 0 or > 0.95f)
+                throw new InvalidDataException($"Combat entity {saved.Id} is invalid.");
+            _entities[slot] = saved;
+            _slotById.Add(saved.Id, slot);
+            maxId = Math.Max(maxId, saved.Id);
+            slot++;
+        }
+        if (snapshot.NextEntityId <= maxId)
+            throw new InvalidDataException("Combat next entity ID must be ahead of saved IDs.");
+        _nextEntityId = snapshot.NextEntityId;
+        _tick = snapshot.Tick;
+        cover.Restore(snapshot.CoverSnapshot);
+        RebuildSpatialIndex();
+    }
+
     public void Step(float deltaSeconds, CombatCoverGrid cover)
     {
         ArgumentNullException.ThrowIfNull(cover);
@@ -118,7 +195,9 @@ internal sealed class CombatEngine
         _tick++;
         _flashes.Clear();
         _deathDrops.Clear();
+        _deaths.Clear();
         Array.Clear(_pendingDamage);
+        Array.Clear(_lastAttackerByTargetSlot);
         RebuildSpatialIndex();
 
         // Phase one: movement and target selection. No entity is removed or damaged in this phase.
@@ -175,6 +254,7 @@ internal sealed class CombatEngine
                 damage *= 0.70f;
 
             _pendingDamage[targetSlot] += damage * (1f - effectiveArmor);
+            _lastAttackerByTargetSlot[targetSlot] = attacker.Id;
             attacker.AttackCooldown = WeaponCooldown(attacker.EquippedWeapon);
             if (attacker.EquippedWeapon != CombatWeaponType.Melee) attacker.CurrentAmmo--;
             _flashes.Add(new CombatFlash(attacker.Id, target.Id, attacker.X, attacker.Y, target.X, target.Y,
@@ -189,6 +269,8 @@ internal sealed class CombatEngine
             entity.Health -= _pendingDamage[i];
             if (entity.Health > 0f) continue;
             entity.Health = 0f;
+            int killerId = _lastAttackerByTargetSlot[i];
+            _deaths.Add(new CombatDeath(entity, killerId));
             entity.IsActive = false;
             _slotById.Remove(entity.Id);
             if (entity.Type is CombatEntityType.Vehicle or CombatEntityType.HeavyTank)
@@ -310,7 +392,7 @@ internal static class FactionLoadoutGenerator
     public static CombatEntity Create(int factionId, int seed, int idHint = 0)
     {
         var random = new Random(seed);
-        var entity = new CombatEntity { FactionId = factionId, Health = 1f, Speed = 2f, CurrentFuel = 100f, DriverPawnId = -1, TargetEntityId = -1, NameSeed = seed };
+        var entity = new CombatEntity { FactionId = factionId, Health = 1f, Speed = 2f, CurrentFuel = 100f, DriverPawnId = -1, SourcePawnId = -1, TargetEntityId = -1, NameSeed = seed };
         switch (factionId)
         {
             case 1:
@@ -355,6 +437,41 @@ internal static class FactionLoadoutGenerator
 internal sealed record ProductionRecipe(string Id, string ResultItemId, string RequiredResearchId,
     IReadOnlyDictionary<string, int> InputCosts, int WorkTicksRequired);
 
+internal interface IWorkbenchInventory
+{
+    int GetAmount(string itemId);
+    bool TryAdd(string itemId, int amount);
+    bool TryTake(string itemId, int amount);
+    bool TryTakeMany(IReadOnlyDictionary<string, int> costs);
+    IReadOnlyDictionary<string, int> Snapshot();
+}
+
+internal sealed class LocalWorkbenchInventory : IWorkbenchInventory
+{
+    private readonly Dictionary<string, int> _items = new(StringComparer.Ordinal);
+    public int GetAmount(string itemId) => _items.GetValueOrDefault(itemId);
+    public bool TryAdd(string itemId, int amount)
+    {
+        if (string.IsNullOrWhiteSpace(itemId) || amount < 0) return false;
+        _items[itemId] = checked(_items.GetValueOrDefault(itemId) + amount);
+        return true;
+    }
+    public bool TryTake(string itemId, int amount)
+        => TryTakeMany(new Dictionary<string, int>(StringComparer.Ordinal) { [itemId] = amount });
+    public bool TryTakeMany(IReadOnlyDictionary<string, int> costs)
+    {
+        if (costs.Any(cost => string.IsNullOrWhiteSpace(cost.Key) || cost.Value < 0 ||
+                              _items.GetValueOrDefault(cost.Key) < cost.Value)) return false;
+        foreach (var cost in costs) _items[cost.Key] = _items.GetValueOrDefault(cost.Key) - cost.Value;
+        return true;
+    }
+    public IReadOnlyDictionary<string, int> Snapshot()
+        => new Dictionary<string, int>(_items, StringComparer.Ordinal);
+}
+
+internal sealed record WorkbenchJobSnapshot(long Id, string RecipeId, int WorkLeft);
+internal sealed record WorkbenchSnapshot(long NextJobId, List<WorkbenchJobSnapshot> Jobs);
+
 internal sealed class WorkbenchManager
 {
     public const string Alloy = "resource_alloy";
@@ -364,18 +481,22 @@ internal sealed class WorkbenchManager
     public const string HeavyArmorPlates = "part_armor_plates";
     public const string InfantryRifle = "weapon_rifle";
     public const string TankCannon = "weapon_tank_cannon";
+    public const string BlightBiomass = "resource_blight_biomass";
 
     private readonly Dictionary<string, ProductionRecipe> _recipes = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, int> _inventory = new(StringComparer.Ordinal);
     private readonly HashSet<string> _unlockedResearch = new(StringComparer.Ordinal);
     private readonly Dictionary<long, CraftJob> _jobs = new();
+    private readonly IWorkbenchInventory _inventory;
+    private readonly Func<string, bool>? _researchResolver;
     private long _nextJobId = 1;
-    public IReadOnlyDictionary<string, int> Inventory => _inventory;
-    public IReadOnlyCollection<ProductionRecipe> Recipes => _recipes.Values;
-    public IReadOnlyCollection<CraftJob> Jobs => _jobs.Values;
+    public IReadOnlyDictionary<string, int> Inventory => _inventory.Snapshot();
+    public IReadOnlyCollection<ProductionRecipe> Recipes => _recipes.Values.OrderBy(recipe => recipe.Id, StringComparer.Ordinal).ToArray();
+    public IReadOnlyCollection<CraftJob> Jobs => _jobs.Values.OrderBy(job => job.Id).ToArray();
 
-    public WorkbenchManager()
+    public WorkbenchManager(IWorkbenchInventory? inventory = null, Func<string, bool>? researchResolver = null)
     {
+        _inventory = inventory ?? new LocalWorkbenchInventory();
+        _researchResolver = researchResolver;
         AddRecipe(new("weapon_rifle_industrial", InfantryRifle, "tech_industrial_weapons",
             new Dictionary<string, int> { [Alloy] = 20, [Components] = 3 }, 400));
         AddRecipe(new("part_engine_automotive", CombustionEngine, "tech_automotive_basics",
@@ -388,6 +509,13 @@ internal sealed class WorkbenchManager
             new Dictionary<string, int> { [Alloy] = 60, [Components] = 12 }, 1000));
     }
 
+    public bool IsResearchUnlocked(string researchId)
+        => _unlockedResearch.Contains(researchId) || (_researchResolver?.Invoke(researchId) ?? false);
+
+    public bool CanStartCraft(string recipeId)
+        => _recipes.TryGetValue(recipeId, out var recipe) && IsResearchUnlocked(recipe.RequiredResearchId) &&
+           recipe.InputCosts.All(cost => _inventory.GetAmount(cost.Key) >= cost.Value);
+
     public void AddResearch(string researchId)
     {
         if (string.IsNullOrWhiteSpace(researchId)) throw new ArgumentException("Research ID is required.", nameof(researchId));
@@ -396,16 +524,17 @@ internal sealed class WorkbenchManager
 
     public void AddInventory(string itemId, int amount)
     {
-        if (string.IsNullOrWhiteSpace(itemId) || amount < 0) throw new ArgumentOutOfRangeException(nameof(amount));
-        _inventory[itemId] = checked(_inventory.GetValueOrDefault(itemId) + amount);
+        if (string.IsNullOrWhiteSpace(itemId) || amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount));
+        if (!_inventory.TryAdd(itemId, amount))
+            throw new InvalidOperationException($"Inventory could not accept {amount} '{itemId}'.");
     }
 
     public bool TryStartCraft(string recipeId, out long jobId)
     {
         jobId = 0;
-        if (!_recipes.TryGetValue(recipeId, out var recipe) || !_unlockedResearch.Contains(recipe.RequiredResearchId)) return false;
-        if (recipe.InputCosts.Any(c => _inventory.GetValueOrDefault(c.Key) < c.Value)) return false;
-        foreach (var cost in recipe.InputCosts) _inventory[cost.Key] -= cost.Value;
+        if (!_recipes.TryGetValue(recipeId, out var recipe) || !IsResearchUnlocked(recipe.RequiredResearchId) ||
+            !_inventory.TryTakeMany(recipe.InputCosts)) return false;
         jobId = _nextJobId++;
         _jobs.Add(jobId, new CraftJob(jobId, recipe, recipe.WorkTicksRequired));
         return true;
@@ -414,52 +543,84 @@ internal sealed class WorkbenchManager
     public void Advance(int workTicks)
     {
         if (workTicks < 0) throw new ArgumentOutOfRangeException(nameof(workTicks));
-        foreach (var job in _jobs.Values.ToArray())
+        foreach (var job in _jobs.Values.OrderBy(job => job.Id).ToArray())
         {
             int remaining = Math.Max(0, job.WorkLeft - workTicks);
             if (remaining == 0)
             {
-                AddInventory(job.Recipe.ResultItemId, 1);
-                _jobs.Remove(job.Id);
+                // Full storage delays completion without destroying either the job or its output.
+                if (_inventory.TryAdd(job.Recipe.ResultItemId, 1)) _jobs.Remove(job.Id);
+                else _jobs[job.Id] = job with { WorkLeft = 0 };
             }
             else _jobs[job.Id] = job with { WorkLeft = remaining };
         }
+    }
+
+    public WorkbenchSnapshot SnapshotState()
+        => new(_nextJobId, _jobs.Values.OrderBy(job => job.Id)
+            .Select(job => new WorkbenchJobSnapshot(job.Id, job.Recipe.Id, job.WorkLeft)).ToList());
+
+    public void RestoreState(WorkbenchSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.NextJobId <= 0 || snapshot.Jobs is null ||
+            snapshot.Jobs.Select(job => job.Id).Distinct().Count() != snapshot.Jobs.Count)
+            throw new InvalidDataException("Workbench snapshot contains invalid job IDs or counters.");
+        _jobs.Clear();
+        long maxId = 0;
+        foreach (var saved in snapshot.Jobs.OrderBy(job => job.Id))
+        {
+            if (saved.Id <= 0 || saved.WorkLeft < 0 || !_recipes.TryGetValue(saved.RecipeId, out var recipe) ||
+                saved.WorkLeft > recipe.WorkTicksRequired)
+                throw new InvalidDataException($"Workbench job {saved.Id} is invalid.");
+            _jobs.Add(saved.Id, new CraftJob(saved.Id, recipe, saved.WorkLeft));
+            maxId = Math.Max(maxId, saved.Id);
+        }
+        if (snapshot.NextJobId <= maxId)
+            throw new InvalidDataException("Workbench next job ID must be ahead of existing jobs.");
+        _nextJobId = snapshot.NextJobId;
     }
 
     public bool TryBuildVehicle(CombatEngine engine, int tileIndex, out int entityId)
     {
         ArgumentNullException.ThrowIfNull(engine);
         entityId = -1;
-        if (tileIndex < 0 || tileIndex >= CombatCoverGrid.CellCount) return false;
-        var costs = new Dictionary<string, int> { [TankChassis] = 1, [CombustionEngine] = 1, [HeavyArmorPlates] = 4, [TankCannon] = 1 };
-        if (costs.Any(c => _inventory.GetValueOrDefault(c.Key) < c.Value)) return false;
+        if (tileIndex < 0 || tileIndex >= CombatCoverGrid.CellCount ||
+            !IsResearchUnlocked("tech_armored_vehicles")) return false;
+        var costs = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            [TankChassis] = 1, [CombustionEngine] = 1, [HeavyArmorPlates] = 4, [TankCannon] = 1
+        };
+        if (costs.Any(cost => _inventory.GetAmount(cost.Key) < cost.Value)) return false;
         int x = tileIndex % CombatCoverGrid.Width, y = tileIndex / CombatCoverGrid.Width;
         var tank = new CombatEntity
         {
-            FactionId = 1, Type = CombatEntityType.HeavyTank, X = x, Y = y, Health = 1f, Speed = 1f,
-            SharpArmor = 0.85f, BluntArmor = 0.60f, EquippedWeapon = CombatWeaponType.TankCannon,
-            CurrentAmmo = 12, MaxAmmo = 12, CurrentFuel = 100f, DriverPawnId = -1
+            FactionId = 1, Type = CombatEntityType.HeavyTank, X = x + 0.5f, Y = y + 0.5f,
+            Health = 1f, Speed = 1f, SharpArmor = 0.85f, BluntArmor = 0.60f,
+            EquippedWeapon = CombatWeaponType.TankCannon, CurrentAmmo = 12, MaxAmmo = 12,
+            CurrentFuel = 100f, DriverPawnId = -1, SourcePawnId = -1
         };
-        // Spawn first. Costs are only committed if the engine has a free entity slot.
+        // Allocate the entity slot before committing item costs; rollback it if a ledger unexpectedly rejects the transaction.
         if (!engine.TrySpawn(tank, out entityId)) return false;
-        foreach (var cost in costs) _inventory[cost.Key] -= cost.Value;
-        return true;
+        if (_inventory.TryTakeMany(costs)) return true;
+        engine.TryRemoveEntity(entityId);
+        entityId = -1;
+        return false;
     }
 
     private void AddRecipe(ProductionRecipe recipe)
     {
         if (recipe.WorkTicksRequired <= 0 || recipe.InputCosts.Count == 0 ||
-            recipe.InputCosts.Any(c => string.IsNullOrWhiteSpace(c.Key) || c.Value <= 0) ||
+            recipe.InputCosts.Any(cost => string.IsNullOrWhiteSpace(cost.Key) || cost.Value <= 0) ||
             !_recipes.TryAdd(recipe.Id, recipe))
             throw new InvalidOperationException($"Invalid or duplicate production recipe '{recipe.Id}'.");
     }
 }
 
 internal sealed record CraftJob(long Id, ProductionRecipe Recipe, int WorkLeft);
-
 internal sealed record NemesisRecord(
     long Id, int NameSeed, int FactionId, int PowerLevel, int KilledPawnId,
-    bool HasBlightMutation, bool LostEye, CombatEntityType EntityType);
+    bool HasBlightMutation, bool LostEye, CombatEntityType EntityType, int KillCount = 0);
 
 internal static class NemesisNameGenerator
 {
@@ -474,7 +635,7 @@ internal static class NemesisNameGenerator
         var random = new Random(nemesis.NameSeed);
         string first = FirstNames[random.Next(FirstNames.Length)];
         string[] titles = nemesis.HasBlightMutation ? BlightTitles :
-            nemesis.KilledPawnId >= 0 ? KillerTitles :
+            nemesis.KillCount > 0 || nemesis.KilledPawnId >= 0 ? KillerTitles :
             nemesis.PowerLevel > 5 || nemesis.EntityType is CombatEntityType.Vehicle or CombatEntityType.HeavyTank ? VehicleTitles : DefaultTitles;
         string title = titles[random.Next(titles.Length)];
         return nemesis.LostEye && !nemesis.HasBlightMutation

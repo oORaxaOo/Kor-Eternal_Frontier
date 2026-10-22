@@ -1,4 +1,6 @@
 using KorTheBlight.Simulation;
+using KorTheBlight.Simulation.Combat;
+using KorTheBlight.Simulation.Research;
 using KorTheBlight.WorldModel;
 using SkiaSharp;
 
@@ -31,7 +33,8 @@ internal sealed class ColonyRenderer : IDisposable
     public void Draw(SKCanvas canvas, ColonySimulation simulation, float cameraX, float cameraY, float zoom,
         ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject, bool excavationMode, bool demolitionMode, int buildMenuPage, bool paused, float speedMultiplier,
         ContinuousWorldState spatialWorld, float worldCameraX, float worldCameraY, long? selectedWorldEntityId, int? selectedMacroCellId, WorldResourceKind? selectedShipmentResource,
-        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab, int workMatrixPage)
+        float mouseScreenX, float mouseScreenY, bool factionDashboardOpen, string? selectedFactionName, int factionTab, bool workMatrixOpen, int workerInspectorTab, int workMatrixPage,
+        WorldSimulation world, bool systemsPanelOpen, int systemsTab, int? selectedCombatEntityId)
     {
         canvas.Clear(Background);
         bool worldView = zoom < .65f;
@@ -42,6 +45,7 @@ internal sealed class ColonyRenderer : IDisposable
             DrawDeposits(canvas, simulation, cameraX, cameraY, zoom);
             DrawObjects(canvas, simulation, cameraX, cameraY, zoom);
             DrawWorkers(canvas, simulation, cameraX, cameraY, zoom);
+            DrawCombatEntities(canvas, world, cameraX, cameraY, zoom, selectedCombatEntityId);
             DrawPlacementPreview(canvas, simulation, cameraX, cameraY, zoom, architectureMode, objectType, placingObject, excavationMode, demolitionMode, mouseScreenX, mouseScreenY);
         }
         DrawHud(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage, paused, speedMultiplier, worldView, spatialWorld, selectedWorldEntityId, selectedShipmentResource);
@@ -49,10 +53,12 @@ internal sealed class ColonyRenderer : IDisposable
         if (worldView && selectedMacroCellId.HasValue) DrawMacroCellInspector(canvas, spatialWorld, selectedMacroCellId.Value);
         DrawFactionButton(canvas, factionDashboardOpen);
         DrawWorkMatrixButton(canvas, workMatrixOpen);
+        DrawSystemsButton(canvas, systemsPanelOpen);
         if (!worldView && !workMatrixOpen && simulation.SelectedWorkerId.HasValue)
             DrawWorkerInspector(canvas, simulation, workerInspectorTab);
         if (factionDashboardOpen) DrawFactionDashboard(canvas, spatialWorld, selectedFactionName, factionTab);
         if (workMatrixOpen) DrawWorkMatrix(canvas, simulation, workMatrixPage);
+        if (systemsPanelOpen) DrawSystemsPanel(canvas, world, systemsTab, selectedCombatEntityId);
     }
 
     private void DrawMacroGrid(SKCanvas canvas, ContinuousWorldState world, float cameraX, float cameraY, float zoom, float scale)
@@ -565,6 +571,205 @@ internal sealed class ColonyRenderer : IDisposable
         }
     }
 
+
+
+    private void DrawCombatEntities(SKCanvas canvas, WorldSimulation world, float cameraX, float cameraY, float zoom, int? selectedCombatEntityId)
+    {
+        if (zoom < 0.65f) return;
+        foreach (var flash in world.CombatEngine.Flashes)
+        {
+            var from = OrthogonalGridProjection.WorldToScreen(flash.FromX, flash.FromY, cameraX, cameraY, zoom);
+            var to = OrthogonalGridProjection.WorldToScreen(flash.ToX, flash.ToY, cameraX, cameraY, zoom);
+            _line.Color = flash.IsHeavy ? new SKColor(239, 174, 74, 230) : new SKColor(255, 92, 83, 210);
+            _line.StrokeWidth = flash.IsHeavy ? 3f : 1.5f;
+            canvas.DrawLine(from.X, from.Y, to.X, to.Y, _line);
+        }
+
+        foreach (var entity in world.CombatEngine.Entities.OrderBy(entity => entity.Id))
+        {
+            var point = OrthogonalGridProjection.WorldToScreen(entity.X, entity.Y, cameraX, cameraY, zoom);
+            if (point.X < -24 || point.X > 794 || point.Y < 48 || point.Y > 666) continue;
+            bool friendly = entity.FactionId == 1;
+            _fill.Color = friendly ? new SKColor(230, 217, 167) :
+                entity.HasBlightMutation ? new SKColor(179, 26, 67) : new SKColor(225, 76, 68);
+            float size = Math.Max(5f, (entity.Type is CombatEntityType.Vehicle or CombatEntityType.HeavyTank ? 8f : 5f) * Math.Clamp(zoom, .75f, 1.5f));
+            if (entity.Type is CombatEntityType.Vehicle or CombatEntityType.HeavyTank)
+            {
+                var rect = new SKRect(point.X - size, point.Y - size * .7f, point.X + size, point.Y + size * .7f);
+                canvas.DrawRoundRect(rect, 2, 2, _fill);
+                _line.Color = friendly ? Gold : Crimson;
+                canvas.DrawRoundRect(rect, 2, 2, _line);
+            }
+            else if (entity.Type is CombatEntityType.BlightBeast or CombatEntityType.BlightTitan)
+            {
+                using var path = new SKPath();
+                path.MoveTo(point.X, point.Y - size * 1.2f);
+                path.LineTo(point.X + size, point.Y + size);
+                path.LineTo(point.X - size, point.Y + size);
+                path.Close();
+                canvas.DrawPath(path, _fill);
+                _line.Color = friendly ? Gold : Crimson;
+                canvas.DrawPath(path, _line);
+            }
+            else
+            {
+                canvas.DrawCircle(point.X, point.Y, size * .78f, _fill);
+                _line.Color = friendly ? Gold : Crimson;
+                _line.StrokeWidth = 1.5f;
+                canvas.DrawCircle(point.X, point.Y, size * .78f, _line);
+            }
+
+            if (selectedCombatEntityId == entity.Id)
+            {
+                _line.Color = Gold;
+                _line.StrokeWidth = 2f;
+                canvas.DrawCircle(point.X, point.Y, size + 5f, _line);
+            }
+            if (zoom >= .92f)
+            {
+                _text.Color = friendly ? TextColor : new SKColor(255, 142, 135);
+                canvas.DrawText($"{entity.Health:0.0}", point.X + size + 2, point.Y - size, SKTextAlign.Left, _smallFont, _text);
+            }
+        }
+    }
+
+    private void DrawSystemsButton(SKCanvas canvas, bool isOpen)
+    {
+        _fill.Color = isOpen ? new SKColor(89, 58, 19) : new SKColor(28, 35, 32);
+        canvas.DrawRoundRect(new SKRect(855, 8, 950, 35), 4, 4, _fill);
+        _line.Color = isOpen ? Gold : Border;
+        canvas.DrawRoundRect(new SKRect(855, 8, 950, 35), 4, 4, _line);
+        _text.Color = isOpen ? Gold : TextColor;
+        canvas.DrawText("WAR ROOM", 902, 26, SKTextAlign.Center, _smallFont, _text);
+    }
+
+    private void DrawSystemsPanel(SKCanvas canvas, WorldSimulation world, int tab, int? selectedCombatEntityId)
+    {
+        _fill.Color = new SKColor(5, 8, 9, 248);
+        canvas.DrawRoundRect(new SKRect(110, 76, 990, 642), 8, 8, _fill);
+        _line.Color = Gold;
+        _line.StrokeWidth = 2;
+        canvas.DrawRoundRect(new SKRect(110, 76, 990, 642), 8, 8, _line);
+        _text.Color = Crimson;
+        canvas.DrawText("KOR TACTICAL & INDUSTRIAL SYSTEMS", 140, 105, SKTextAlign.Left, _titleFont, _text);
+        DrawButton(canvas, "COMBAT", 140, 116, 112, 28, tab == 0);
+        DrawButton(canvas, "WORKSHOP", 262, 116, 112, 28, tab == 1);
+        DrawButton(canvas, "RESEARCH", 384, 116, 112, 28, tab == 2);
+        DrawButton(canvas, "CLOSE ×", 862, 88, 94, 28);
+
+        if (tab == 0)
+        {
+            var entities = world.CombatEngine.Entities
+                .OrderBy(entity => entity.FactionId == 1 ? 0 : 1)
+                .ThenBy(entity => entity.Id).Take(12).ToArray();
+            int hostiles = entities.Count(entity => entity.FactionId != 1);
+            int friendlies = entities.Length - hostiles;
+            _text.Color = TextColor;
+            canvas.DrawText($"LOCAL ENGAGEMENT · {friendlies} KOR · {hostiles} HOSTILE · {world.PendingCombatLoot.Count} LOOT STACKS WAITING FOR STORAGE",
+                142, 164, SKTextAlign.Left, _smallFont, _text);
+            int y = 180;
+            foreach (var entity in entities)
+            {
+                bool selected = selectedCombatEntityId == entity.Id;
+                _fill.Color = selected ? new SKColor(76, 55, 23, 190) : new SKColor(20, 28, 27, 225);
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 26), 3, 3, _fill);
+                _line.Color = selected ? Gold : Border;
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 26), 3, 3, _line);
+                _text.Color = entity.FactionId == 1 ? TextColor : new SKColor(255, 142, 135);
+                string side = entity.FactionId == 1 ? "KOR" : entity.FactionId == 99 ? "BLIGHT" : "HOSTILE";
+                string ammo = entity.EquippedWeapon == CombatWeaponType.Melee ? "MELEE" : $"AMMO {entity.CurrentAmmo}/{entity.MaxAmmo}";
+                canvas.DrawText($"{side}  #{entity.Id}  {world.GetCombatantName(entity)}",
+                    151, y + 17, SKTextAlign.Left, _smallFont, _text);
+                _muted.Color = MutedColor;
+                canvas.DrawText($"{entity.Type}  HP {entity.Health:0.00}  {ammo}", 790, y + 17, SKTextAlign.Left, _smallFont, _muted);
+                y += 30;
+            }
+            DrawButton(canvas, "DEPLOY COLONISTS", 140, 535, 180, 26);
+            _muted.Color = MutedColor;
+            canvas.DrawText("Select a Kor unit, then click an enemy row to issue an attack order. Units without orders acquire nearby enemies automatically.",
+                142, 578, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText("Combat is fixed-step; cover comes from local walls, rock and completed objects. Defeated armies feed salvage into the shared settlement ledger.",
+                142, 588, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else if (tab == 1)
+        {
+            var inventory = world.Workshop.Inventory;
+            bool hasWorkbench = world.Colony.Objects.Any(item => item.Kind == PlaceableKind.Workbench && item.IsBuilt);
+            _text.Color = TextColor;
+            canvas.DrawText($"CANONICAL SETTLEMENT STOCK · ALLOY {inventory.GetValueOrDefault(WorkbenchManager.Alloy)} · COMPONENTS {inventory.GetValueOrDefault(WorkbenchManager.Components)} · ITEM STACKS {inventory.Count}",
+                142, 163, SKTextAlign.Left, _smallFont, _text);
+            var recipes = world.Workshop.Recipes.OrderBy(recipe => recipe.Id, StringComparer.Ordinal).Take(5).ToArray();
+            int y = 174;
+            foreach (var recipe in recipes)
+            {
+                bool canCraft = hasWorkbench && world.Workshop.CanStartCraft(recipe.Id);
+                _fill.Color = new SKColor(20, 28, 27, 225);
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 38), 3, 3, _fill);
+                _line.Color = Border;
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 38), 3, 3, _line);
+                _text.Color = TextColor;
+                string costs = string.Join(", ", recipe.InputCosts.Select(cost => $"{cost.Value} {cost.Key}"));
+                canvas.DrawText($"{recipe.ResultItemId}  ·  {costs}", 151, y + 15, SKTextAlign.Left, _smallFont, _text);
+                _muted.Color = MutedColor;
+                canvas.DrawText($"RESEARCH: {recipe.RequiredResearchId} · {recipe.WorkTicksRequired} work ticks", 151, y + 30, SKTextAlign.Left, _smallFont, _muted);
+                string craftLabel = canCraft ? "CRAFT" : !hasWorkbench ? "BUILD BENCH" :
+                    !world.Workshop.IsResearchUnlocked(recipe.RequiredResearchId) ? "LOCKED" : "NO STOCK";
+                DrawButton(canvas, craftLabel, 820, y + 5, 124, 28, canCraft);
+                y += 44;
+            }
+            _text.Color = Gold;
+            canvas.DrawText("ACTIVE JOBS", 142, 413, SKTextAlign.Left, _headingFont, _text);
+            _muted.Color = MutedColor;
+            var jobs = world.Workshop.Jobs.OrderBy(job => job.Id).Take(3).ToArray();
+            for (int i = 0; i < jobs.Length; i++)
+                canvas.DrawText($"#{jobs[i].Id} {jobs[i].Recipe.ResultItemId} · {jobs[i].WorkLeft} work ticks remaining",
+                    151, 436 + i * 20, SKTextAlign.Left, _smallFont, _muted);
+            DrawButton(canvas, "ASSEMBLE HEAVY TANK", 142, 512, 220, 32);
+            _muted.Color = MutedColor;
+            canvas.DrawText("Vehicle assembly consumes one chassis, one engine, four armor-plate stacks and one tank cannon atomically.",
+                142, 566, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText(hasWorkbench
+                ? "Outputs wait safely if storage is full; all costs use the shared settlement ledger."
+                : "Place and finish a workbench in the colony before crafting. Resources and research are shared.",
+                142, 588, SKTextAlign.Left, _smallFont, _muted);
+        }
+        else
+        {
+            var projects = world.ResearchManager.Database.ResearchDatabase.Values
+                .OrderBy(project => project.Name, StringComparer.Ordinal).Take(6).ToArray();
+            _text.Color = TextColor;
+            var currentId = world.ResearchManager.State.CurrentResearchId;
+            if (currentId is not null && world.ResearchManager.Database.ResearchDatabase.TryGetValue(currentId, out var current))
+                canvas.DrawText($"CURRENT: {current.Name} · {world.ResearchManager.State.CurrentProgressPoints:0}/{current.CostPoints:0} RP",
+                    142, 163, SKTextAlign.Left, _smallFont, _text);
+            else
+                canvas.DrawText("Choose a project. Research progresses with the shared simulation clock.",
+                    142, 163, SKTextAlign.Left, _smallFont, _text);
+
+            int y = 174;
+            foreach (var project in projects)
+            {
+                bool complete = world.ResearchManager.State.CompletedResearchIds.Contains(project.Id);
+                bool active = currentId == project.Id;
+                bool canStart = world.ResearchManager.CanStart(project.Id);
+                _fill.Color = new SKColor(20, 28, 27, 225);
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 48), 3, 3, _fill);
+                _line.Color = active ? Gold : Border;
+                canvas.DrawRoundRect(new SKRect(140, y, 955, y + 48), 3, 3, _line);
+                _text.Color = TextColor;
+                canvas.DrawText(project.Name, 151, y + 17, SKTextAlign.Left, _normalFont, _text);
+                _muted.Color = MutedColor;
+                string prereqs = project.Prerequisites.Count == 0 ? "no prerequisites" : $"requires {string.Join(", ", project.Prerequisites)}";
+                canvas.DrawText($"{project.CostPoints:0} RP · {prereqs}", 151, y + 35, SKTextAlign.Left, _smallFont, _muted);
+                DrawButton(canvas, complete ? "COMPLETE" : active ? "IN PROGRESS" : canStart ? "START" : "LOCKED",
+                    820, y + 9, 124, 28, complete || active || canStart);
+                y += 56;
+            }
+            _muted.Color = MutedColor;
+            canvas.DrawText("Research unlocks the exact recipe IDs consumed by the connected workshop; save/load preserves completed and active research.",
+                142, 566, SKTextAlign.Left, _smallFont, _muted);
+        }
+    }
 
     private void DrawWorkMatrixButton(SKCanvas canvas, bool isOpen)
     {

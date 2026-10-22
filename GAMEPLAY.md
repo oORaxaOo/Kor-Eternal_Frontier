@@ -24,15 +24,14 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 
 ## Known gaps
 
-The local colony and temporary legacy regional model currently advance through one `WorldSimulation` clock. The gameplay interface is mouse-first: visible controls expose pause/resume, speed, save/load, zoom, construction, object placement and cancellation; middle-mouse drag pans the camera. This is not completion of the world redesign. The nine-region linked-hex model is explicitly legacy scaffolding and must not be expanded into the new world. Regional stock remains separate, the old transfer bridge remains in code but is not exposed as a gameplay key, and a continuous world-space model, canonical resources, travel-time shipments, population continuity and one complete world save are still required.
+The active game uses `WorldSimulation` as the shared clock and coordinates the local square-tile colony, continuous strategic world, macro simulation, research, tactical combat and workbench jobs. The gameplay interface is mouse-first: visible controls expose pause/resume, speed, save/load, zoom, construction, object placement and cancellation; middle-mouse drag pans the camera. Colony and world views have separate zoom thresholds; middle-mouse drag pans the active camera. The continuous world owns settlement inventories and shipments, while combatants that arrive near Kor are represented in the local combat simulation. Version 2 unified session saves preserve colony/world state plus active combatants, cover, workshop jobs, Nemesis records and pending salvage. The older version 1 session format remains readable and initializes the combat runtime empty.
 
 ## Implementation priority
 
-1. Migrate the new GridManager/CitizenAgent/JobBroker core into the active colony scheduler through an adapter, preserving verified gather/carry/build behavior and save compatibility.
-2. Generalize production definitions, workplace queues, stockpile capacity and delivery rules.
-3. Add research projects that unlock actual buildings and recipes.
-4. Replace the legacy nine-region linked-hex campaign with continuous world-space entities and spatial queries; unify settlement/population state, resources, movement and shipments.
-5. Expand colonist needs, housing, work eligibility, and the Blight ecosystem after shared state contracts are stable.
+1. Add direct structural damage, repair and infection consequences to colony buildings when local combat reaches them.
+2. Extend weapon/vehicle loadouts and recipe balancing without bypassing the canonical stockpile or technology gates.
+3. Expand combat tactics—retreat, cover seeking, reload resupply and vehicle crew assignment—while keeping the deterministic single-writer simulation.
+4. Continue the colony/strategic population migration only where it preserves stable identity, resource conservation and save compatibility.
 
 
 ## Live colony ecosystem integration (migration slice)
@@ -52,6 +51,14 @@ This is an incremental migration, not a wholesale replacement of the established
 - **Cancel** — exit the active placement mode.
 - **Left click** — select colonists or place blueprints; **right click** issues a colonist command; **middle-mouse drag** pans the camera.
 
-The old keyboard-only import/export shortcuts are no longer part of the player-facing interface. The transfer bridge remains legacy implementation and must be replaced with real world shipments before the redesign is complete.
+The world-view cargo controls select Wood, Stone, Food or Alloy; select a Kor caravan and click a destination settlement to dispatch a capacity-aware shipment. World movement uses right-click commands when a strategic army or caravan is selected.
 
-The deterministic self-test continues to check resource conservation and session persistence in addition to colony and regional migration checks.
+The deterministic self-test checks colony construction/logistics, resource conservation, regional generation, strategic movement, research-gated production, combat simulation, workshop ledger debits, resident deployment, Nemesis state and unified session round-trips.
+
+The **WAR ROOM** button opens the three connected systems:
+- **COMBAT:** inspect combatants, select a Kor unit and click an enemy entry to issue an attack order, or deploy eligible colonists as defenders. Deployed residents stop taking colony jobs and stay linked to their combat entities; combat casualties are removed from the active colony roster.
+- **WORKSHOP:** craft researched weapons and vehicle parts from the canonical settlement store. A completed workbench is required, inputs are deducted at job start, outputs are added at completion, and completed outputs wait if storage is full. Assemble a heavy tank when the armored-vehicle technology and all required parts are available.
+- **RESEARCH:** start a project only after its prerequisites are complete. Research progresses with the unified simulation clock and unlocks matching workshop recipes.
+
+Local tactical combat is integrated at the unit level, including automatic target acquisition, attack orders, ammunition, cover, armor, health, death consequences and Nemesis titles. Direct damage or infection of colony buildings remains unfinished and is not claimed as complete.
+

@@ -23,6 +23,8 @@ internal sealed class WorkPriorityMatrix
         };
     }
 
+    public bool RemoveWorker(int workerId) => workerId > 0 && _priorities.Remove(workerId);
+
     public bool SetPriority(int workerId, WorkCategory category, int priority)
     {
         if (workerId <= 0 || !Enum.IsDefined(category) || priority is < 0 or > 4) return false;

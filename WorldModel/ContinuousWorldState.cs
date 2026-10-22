@@ -61,6 +61,8 @@ internal sealed class ContinuousWorldState
     public long NextShipmentId { get; set; } = 1;
     public List<WorldEntityState> Entities { get; set; } = [];
     public Dictionary<long, Dictionary<WorldResourceKind, double>> Inventories { get; set; } = [];
+    /// <summary>Canonical non-bulk item stacks (weapons, vehicle parts, and biological salvage) keyed by settlement.</summary>
+    public Dictionary<long, Dictionary<string, int>> ItemInventories { get; set; } = [];
     public Dictionary<long, double> InventoryCapacities { get; set; } = [];
     public List<WorldShipmentState> Shipments { get; set; } = [];
     public WorldEcologyState Ecology { get; set; } = new();
@@ -195,7 +197,7 @@ internal sealed class ContinuousWorldState
             // effectively unproductive even before a settlement is physically abandoned.
             double habitatPressure = Ecology.EnvironmentalPressureAt(settlement.X, settlement.Y);
             foodRate *= Math.Clamp(1d - habitatPressure * 1.6d, 0d, 1d);
-            double freeCapacity = Math.Max(0d, InventoryCapacityFor(settlement.Id) - inventory.Values.Sum());
+            double freeCapacity = Math.Max(0d, InventoryCapacityFor(settlement.Id) - InventoryTotalAt(settlement.Id));
             double producedFood = Math.Min(foodRate * deltaSeconds, freeCapacity);
             inventory[WorldResourceKind.Food] = inventory.GetValueOrDefault(WorldResourceKind.Food) + producedFood;
         }
@@ -269,7 +271,72 @@ internal sealed class ContinuousWorldState
         => Inventories.TryGetValue(entityId, out var inventory) ? inventory.GetValueOrDefault(resource) : 0d;
 
     public double InventoryTotalAt(long entityId)
-        => Inventories.TryGetValue(entityId, out var inventory) ? inventory.Values.Sum() : 0d;
+        => (Inventories.TryGetValue(entityId, out var inventory) ? inventory.Values.Sum() : 0d) +
+           ItemInventoryTotalAt(entityId);
+
+    public double ItemInventoryTotalAt(long entityId)
+        => ItemInventories.TryGetValue(entityId, out var inventory) ? inventory.Values.Sum() : 0d;
+
+    public int ItemAmountAt(long entityId, string itemId)
+    {
+        if (string.IsNullOrWhiteSpace(itemId)) throw new ArgumentException("Item ID is required.", nameof(itemId));
+        return ItemInventories.TryGetValue(entityId, out var inventory) ? inventory.GetValueOrDefault(itemId) : 0;
+    }
+
+    public IReadOnlyDictionary<string, int> ItemInventorySnapshot(long entityId)
+        => ItemInventories.TryGetValue(entityId, out var inventory)
+            ? new Dictionary<string, int>(inventory, StringComparer.Ordinal)
+            : new Dictionary<string, int>(StringComparer.Ordinal);
+
+    public bool TryAddItem(long entityId, string itemId, int amount)
+    {
+        if (string.IsNullOrWhiteSpace(itemId) || amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Item ID must be set and item amount non-negative.");
+        EnsureSettlementInventoryOwner(entityId);
+        var inventory = ItemInventoryFor(entityId);
+        if (InventoryTotalAt(entityId) + amount > InventoryCapacityFor(entityId) + 1e-9) return false;
+        inventory[itemId] = checked(inventory.GetValueOrDefault(itemId) + amount);
+        return true;
+    }
+
+    public bool TryTakeItem(long entityId, string itemId, int amount)
+    {
+        if (string.IsNullOrWhiteSpace(itemId) || amount < 0)
+            throw new ArgumentOutOfRangeException(nameof(amount), "Item ID must be set and item amount non-negative.");
+        EnsureSettlementInventoryOwner(entityId);
+        var inventory = ItemInventoryFor(entityId);
+        int available = inventory.GetValueOrDefault(itemId);
+        if (available < amount) return false;
+        inventory[itemId] = available - amount;
+        return true;
+    }
+
+    public bool RemoveEntity(long entityId)
+    {
+        var entity = Entities.FirstOrDefault(candidate => candidate.Id == entityId);
+        if (entity is null || entity.Kind == WorldEntityKind.Settlement ||
+            Shipments.Any(shipment => shipment.Status == WorldShipmentStatus.InTransit &&
+                                      shipment.CarrierEntityId == entityId)) return false;
+        Entities.Remove(entity);
+        Inventories.Remove(entityId);
+        ItemInventories.Remove(entityId);
+        InventoryCapacities.Remove(entityId);
+        _spatialIndexDirty = true;
+        return true;
+    }
+
+    private void EnsureSettlementInventoryOwner(long entityId)
+    {
+        if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
+            throw new ArgumentException("Inventory owner must be a settlement.", nameof(entityId));
+    }
+
+    private Dictionary<string, int> ItemInventoryFor(long entityId)
+    {
+        if (!ItemInventories.TryGetValue(entityId, out var inventory))
+            ItemInventories[entityId] = inventory = new Dictionary<string, int>(StringComparer.Ordinal);
+        return inventory;
+    }
 
     public double InventoryCapacityFor(long entityId)
         => InventoryCapacities.GetValueOrDefault(entityId, 500d);
@@ -291,7 +358,7 @@ internal sealed class ContinuousWorldState
         if (!Entities.Any(entity => entity.Id == entityId && entity.Kind == WorldEntityKind.Settlement))
             throw new ArgumentException("Inventory owner must be a settlement.", nameof(entityId));
         var inventory = InventoryFor(entityId);
-        if (inventory.Values.Sum() + amount > InventoryCapacityFor(entityId) + 1e-9) return false;
+        if (InventoryTotalAt(entityId) + amount > InventoryCapacityFor(entityId) + 1e-9) return false;
         inventory[resource] = inventory.GetValueOrDefault(resource) + amount;
         return true;
     }
@@ -408,6 +475,12 @@ internal sealed class ContinuousWorldState
         var entityIds = Entities.Select(entity => entity.Id).ToHashSet();
         if (Inventories.Any(pair => !entityIds.Contains(pair.Key) || pair.Value.Any(item => !Enum.IsDefined(item.Key) || !double.IsFinite(item.Value) || item.Value < 0)))
             throw new InvalidDataException("World inventory contains an invalid owner or quantity.");
+        ItemInventories ??= [];
+        if (ItemInventories.Any(pair => !entityIds.Contains(pair.Key) ||
+            pair.Value.Any(item => string.IsNullOrWhiteSpace(item.Key) || item.Value < 0)))
+            throw new InvalidDataException("World item inventory contains an invalid owner, item ID, or quantity.");
+        if (ItemInventories.Any(pair => pair.Value.Keys.Distinct(StringComparer.Ordinal).Count() != pair.Value.Count))
+            throw new InvalidDataException("World item inventory contains duplicate item IDs.");
         if (InventoryCapacities.Any(pair => !entityIds.Contains(pair.Key) || !double.IsFinite(pair.Value) || pair.Value < 0))
             throw new InvalidDataException("World inventory capacity contains an invalid owner or quantity.");
         if (Shipments.Select(shipment => shipment.Id).Distinct().Count() != Shipments.Count || NextShipmentId <= Shipments.Select(shipment => shipment.Id).DefaultIfEmpty(0).Max())
