@@ -797,8 +797,13 @@ internal sealed class ColonyRenderer : IDisposable
         }
         else
         {
-            var inventory = world.Workshop.Inventory;
-            int riflesInStock = inventory.GetValueOrDefault(WorkbenchManager.InfantryRifle);
+            // Equipment consumes from the canonical settlement ledger, so the button must
+            // reflect that same source rather than the workshop's cached inventory snapshot.
+            var home = world.SpatialWorld.Entities.FirstOrDefault(entity =>
+                entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+            int riflesInStock = home is null
+                ? 0
+                : world.SpatialWorld.ItemAmountAt(home.Id, WorkbenchManager.InfantryRifle);
             _text.Color = TextColor;
             canvas.DrawText($"FINISHED RIFLES IN SHARED STOCK: {riflesInStock}", 142, 163, SKTextAlign.Left, _headingFont, _text);
             _muted.Color = MutedColor;
