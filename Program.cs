@@ -543,7 +543,7 @@ internal static class Program
                         else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
                         else if (architectureMode != ArchitectureKind.None)
                         {
-                            architectureDragActive = architectureMode is ArchitectureKind.Wall or ArchitectureKind.Floor;
+                            architectureDragActive = IsDragConstructionKind(architectureMode);
                             architectureDragKind = architectureMode;
                             architectureDragStartX = architectureDragLastX = tileX;
                             architectureDragStartY = architectureDragLastY = tileY;
@@ -817,6 +817,9 @@ internal static class Program
     internal static bool IsMapViewport(float x, float y)
         => x >= 0 && x < 770 && y >= 62 && y < 650;
 
+    internal static bool IsDragConstructionKind(ArchitectureKind kind)
+        => kind is ArchitectureKind.Wall or ArchitectureKind.Floor;
+
     internal static bool TryParseWindowSize(string[] args, out int width, out int height)
     {
         width = 1100;
@@ -856,8 +859,8 @@ internal static class Program
                 ?? throw new InvalidOperationException($"Could not create {width}x{height} UI capture surface.");
             var canvas = surface.Canvas;
             canvas.Scale(width / 1100f, height / 720f);
-            renderer.Draw(canvas, world.Colony, 0, 0, 1f, ArchitectureKind.None, PlaceableKind.Workbench,
-                false, false, false, 0, false, 1f, world.SpatialWorld,
+            renderer.Draw(canvas, world.Colony, 0, 0, 1f, ArchitectureKind.None, PlaceableKind.SleepingPod,
+                true, false, false, 1, false, 1f, world.SpatialWorld,
                 (float)(ContinuousWorldState.WorldExtent / 2), (float)(ContinuousWorldState.WorldExtent / 2),
                 null, null, null, 550, 360, false, "Kor", 0, false, 0, 0, world, false, 0, null);
             using var image = surface.Snapshot();
