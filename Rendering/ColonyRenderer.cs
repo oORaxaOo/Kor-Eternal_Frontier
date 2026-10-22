@@ -683,7 +683,7 @@ internal sealed class ColonyRenderer : IDisposable
         {
             var entities = world.CombatEngine.Entities
                 .OrderBy(entity => entity.FactionId == 1 ? 0 : 1)
-                .ThenBy(entity => entity.Id).Take(12).ToArray();
+                .ThenBy(entity => entity.Id).Take(10).ToArray();
             int hostiles = entities.Count(entity => entity.FactionId != 1);
             int friendlies = entities.Length - hostiles;
             _text.Color = TextColor;
