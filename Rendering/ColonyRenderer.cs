@@ -1318,8 +1318,8 @@ internal sealed class ColonyRenderer : IDisposable
         _muted.Color = !worldView && (placingObject || architectureMode != ArchitectureKind.None) &&
                        actionHint.Contains("WAITING:", StringComparison.Ordinal)
             ? Crimson : MutedColor;
-        canvas.DrawText(actionHint, 790, 635, SKTextAlign.Left, _smallFont, _muted);
-        canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 646, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(actionHint, 790, 640, SKTextAlign.Left, _smallFont, _muted);
+        canvas.DrawText(worldView ? "Right click: move selected army/caravan" : "Right click: order colonist", 790, 648, SKTextAlign.Left, _smallFont, _muted);
 
         string mode = demolitionMode ? "DEMOLITION MODE" : placingObject ? $"OBJECT BLUEPRINT: {objectType}" :
             excavationMode ? "EXCAVATION DESIGNATION" :
