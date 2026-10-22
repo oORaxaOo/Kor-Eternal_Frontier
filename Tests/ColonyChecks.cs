@@ -66,7 +66,7 @@ internal static class ColonyChecks
         var inspectionRack = objectInspection.Objects.Single(item => item.Id == inspectionRackId);
         inspectionRack.Status = ConstructionStatus.Complete;
         inspectionRack.Health = inspectionRack.MaxHealth;
-        Check(objectInspection.SelectWorkOrderAt(8.5f, 8.5f) &&
+        Check(objectInspection.SelectWorkOrderAt(inspectionCell.X + 0.5f, inspectionCell.Y + 0.5f) &&
               objectInspection.Message.Contains("Storage rack inspected", StringComparison.Ordinal) &&
               objectInspection.Message.Contains(ColonySimulation.StorageRackCapacity.ToString(), StringComparison.Ordinal),
             "clicking a completed storage rack must inspect it and expose its actual capacity");
