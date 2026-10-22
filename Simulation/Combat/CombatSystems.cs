@@ -36,7 +36,7 @@ internal sealed class CombatCoverGrid
         set
         {
             if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
-            if (value > CoverType.High) throw new ArgumentOutOfRangeException(nameof(value));
+            if ((byte)value > (byte)CoverType.High) throw new ArgumentOutOfRangeException(nameof(value));
             _cover[x + y * Width] = (byte)value;
         }
     }
