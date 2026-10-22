@@ -136,6 +136,7 @@ internal sealed class CombatEngine
         int slot = FindSlot(id);
         if (slot < 0 || !Enum.IsDefined(weapon) || ammunition < 0 || ammunition > 500 ||
             _entities[slot].FactionId != 1 || _entities[slot].Type != CombatEntityType.Human ||
+            weapon == CombatWeaponType.TankCannon ||
             (weapon == CombatWeaponType.Melee && ammunition != 0) ||
             (weapon != CombatWeaponType.Melee && ammunition == 0)) return false;
         _entities[slot].EquippedWeapon = weapon;
