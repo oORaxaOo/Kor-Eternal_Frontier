@@ -378,6 +378,7 @@ internal sealed class CitizenAgent
     private float _stress;
     private bool _canReceiveJob = true;
     private readonly PawnPersonality _personality = new();
+    internal ResidentDailyActivity ScheduledActivity { get; set; } = ResidentDailyActivity.Work;
 
     public int Id { get; }
     public string Name { get; }
@@ -966,6 +967,27 @@ internal sealed class ColonyEcosystem
                 citizen.State = CitizenState.MentalBreak;
                 EmitEvent(SimulationTick, SimulationEventKind.MentalBreakStarted, citizen.Id, value: citizen.Stress);
                 LastEvent = $"{citizen.Name} is overwhelmed and has stopped working.";
+                continue;
+            }
+
+            if (citizen.ScheduledActivity != ResidentDailyActivity.Work &&
+                citizen.State is CitizenState.MovingToJob or CitizenState.Working)
+            {
+                ReleaseAssignment(citizen);
+                citizen.State = CitizenState.Idle;
+            }
+
+            if (citizen.ScheduledActivity == ResidentDailyActivity.Sleep)
+            {
+                citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.10f);
+                citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 12f);
+                continue;
+            }
+            if (citizen.ScheduledActivity == ResidentDailyActivity.Recreation)
+            {
+                citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.16f);
+                if (citizen.Fatigue < 75f)
+                    citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 3f);
                 continue;
             }
 
