@@ -127,6 +127,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float Stress { get; internal set; }
     public PawnPersonality Personality { get; } = new();
     public ResidentLifeProfile Life { get; } = ResidentLifeProfile.Create(id, name);
+    public ResidentBodyState Body { get; } = new();
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -541,7 +542,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 11,
+            SchemaVersion = 12,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -613,6 +614,7 @@ internal sealed class ColonySimulation
                 ? personaCitizen.Personality.CaptureSnapshot()
                 : worker.Personality.CaptureSnapshot(),
             Life = worker.Life.CaptureSnapshot(),
+            Body = worker.Body.CaptureSnapshot(),
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -715,6 +717,8 @@ internal sealed class ColonySimulation
                 restored.Personality.RestoreSnapshot(worker.Personality);
             if (snapshot.SchemaVersion >= 11 && worker.Life is not null)
                 restored.Life.RestoreSnapshot(worker.Life, worker.Id);
+            if (snapshot.SchemaVersion >= 12 && worker.Body is not null)
+                restored.Body.RestoreSnapshot(worker.Body, worker.Id);
             return restored;
         }));
         simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
@@ -1224,6 +1228,19 @@ internal sealed class ColonySimulation
         int beforeFood = grid.ResourceCount(ResourceKind.Food);
         _ecosystem.Step(deltaSeconds, authoritativeTick);
         int afterFood = grid.ResourceCount(ResourceKind.Food);
+
+        foreach (var worker in _workers)
+        {
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            int tileX = Math.Clamp((int)worker.X, 0, Width - 1);
+            int tileY = Math.Clamp((int)worker.Y, 0, Height - 1);
+            float temperature = _tiles[tileX, tileY].TemperatureCelsius;
+            bool safeEnvironment = worker.ThermalExposure < 15f && temperature is >= 0f and <= 35f;
+            bool resting = citizen.State == CitizenState.Idle && citizen.Fatigue < 60f &&
+                           worker.Task is null && !worker.IsCombatDeployed && !worker.IsExternalVisitor && !worker.IsLeaving;
+            if (worker.Body.Advance(deltaSeconds, worker.ThermalExposure, temperature, authoritativeTick, resting, safeEnvironment))
+                worker.Life.RecordMemory(authoritativeTick, ResidentMemoryKind.EnvironmentalHazard, 0, -8,
+                    "Sustained thermal exposure caused a physical injury.");
         if (afterFood < beforeFood)
         {
             int consumed = beforeFood - afterFood;
@@ -2583,7 +2600,7 @@ internal sealed class ColonySimulation
                 continue;
             }
 
-            float speed = worker.Hungry ? 1f : 2f;
+            float speed = (worker.Hungry ? 1f : 2f) * worker.Body.MovementMultiplier;
             float movement = Math.Min(distance, speed * deltaSeconds);
             worker.X += dx / distance * movement;
             worker.Y += dy / distance * movement;
@@ -2687,7 +2704,7 @@ internal sealed class ColonySimulation
             return;
         }
 
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (order.WorkDone < order.WorkRequired) return;
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
@@ -2720,7 +2737,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (order.WorkDone < order.WorkRequired) return;
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
@@ -2745,7 +2762,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
+        item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (item.WorkDone < item.WorkRequired) return;
         item.Status = ConstructionStatus.Complete;
         item.Health = item.MaxHealth;
@@ -2765,7 +2782,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        float workRate = (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
+        float workRate = (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < 1)
         {
             Message = "Production is waiting for storage space before it can deliver the completed component.";
