@@ -15,7 +15,7 @@ internal sealed class WorldSimulation
     private float _blightInfectionAccumulatorSeconds;
     private double _nextStorytellerRaidAtSeconds;
     private SimulationKernel _kernel = null!;
-    private const float FixedStepSeconds = 1f / TickManager.TicksPerSecond;
+    private const double FixedStepSeconds = 1d / TickManager.TicksPerSecond;
     private const float BlightInfectionIntervalSeconds = 10f;
     // 48 ticks bounds catch-up to 0.8 simulated seconds per render frame.
     private const int MaxFixedStepsPerFrame = 48;
