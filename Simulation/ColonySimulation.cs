@@ -1225,17 +1225,8 @@ internal sealed class ColonySimulation
             if (accepted < produced) grid.TryTake(ResourceKind.Food, produced - accepted);
         }
 
-        foreach (var worker in _workers)
-        {
-            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
-            worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
-            worker.Stress = citizen.Stress;
-            if (worker.Task == null)
-            {
-                worker.X = citizen.Position.X + 0.5f;
-                worker.Y = citizen.Position.Y + 0.5f;
-            }
-        }
+        // Position, hunger, fatigue and stress are direct views over the canonical ColonyWorker;
+        // there is no second copy to flush back after autonomous needs/work simulation.
 
         // Food has already reconciled its consumed/produced delta above; all other resources remain
         // spatially mirrored after construction, gathering, production or world-level shipments.
