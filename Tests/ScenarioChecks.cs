@@ -10,6 +10,7 @@ internal static class ScenarioChecks
         {
             ColonyChecks.Run();
             SimulationKernelChecks.Run();
+            PawnHealthChecks.Run();
             ColonyEcosystemChecks.Run();
             PawnUtilityAiChecks.Run();
             IntegrationChecks.Run();
