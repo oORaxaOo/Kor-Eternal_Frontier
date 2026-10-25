@@ -126,6 +126,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float ThermalExposure { get; internal set; }
     public float Stress { get; internal set; }
     public PawnPersonality Personality { get; } = new();
+    public PawnHealthState Health { get; } = new();
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -1972,12 +1973,17 @@ internal sealed class ColonySimulation
         return true;
     }
 
-    public bool RemoveCombatCasualty(int workerId)
+    public bool RemoveCombatCasualty(int workerId) => RemoveResident(workerId, requireCombatDeployment: true);
+
+    internal bool RemoveHealthCasualty(int workerId) => RemoveResident(workerId, requireCombatDeployment: false);
+
+    private bool RemoveResident(int workerId, bool requireCombatDeployment)
     {
         var worker = _workers.FirstOrDefault(candidate => candidate.Id == workerId);
-        if (worker is null || !worker.IsCombatDeployed) return false;
+        if (worker is null || (requireCombatDeployment && !worker.IsCombatDeployed)) return false;
         if (worker.Task?.Kind == ColonyTaskKind.Gather)
             _reservations.Release($"deposit:{worker.Task.DepositId}", worker.Id);
+        worker.Task?.JobTracker.Finish();
         if (_citizensByWorker.Remove(worker.Id, out var citizen))
             _ecosystem.RemoveCitizen(citizen.Id);
         _socialRelationships.RemoveResident(worker.Id);
@@ -1985,7 +1991,27 @@ internal sealed class ColonySimulation
         _workers.Remove(worker);
         _workPriorities.RemoveWorker(worker.Id);
         if (SelectedWorkerId == worker.Id) SelectedWorkerId = null;
-        Message = $"Colony roster updated after combat loss: {worker.Name} is no longer available.";
+        Message = requireCombatDeployment
+            ? $"Colony roster updated after combat loss: {worker.Name} is no longer available."
+            : $"COLONIST LOST: {worker.Name} succumbed to injuries; the resident was removed from active simulation.";
+        return true;
+    }
+
+    /// <summary>Applies tactical damage to the persistent anatomical state of the canonical resident.</summary>
+    internal bool ApplyCombatInjury(int workerId, float damage, PawnDamageKind kind, long simulationTick)
+    {
+        var worker = _workers.FirstOrDefault(candidate => candidate.Id == workerId);
+        if (worker is null || worker.Health.IsDead || !float.IsFinite(damage) || damage <= 0f) return false;
+
+        // Stable integer mixing chooses a hit location without introducing nondeterministic RNG state.
+        unchecked
+        {
+            uint mixed = (uint)workerId * 73856093u ^ (uint)simulationTick * 19349663u ^ (uint)(damage * 1000f) * 83492791u;
+            var part = (PawnBodyPartKind)(mixed % (uint)Enum.GetValues<PawnBodyPartKind>().Length);
+            worker.Health.ApplyDamage(part, kind, Math.Min(100f, damage), ElapsedSeconds);
+        }
+        if (worker.Health.NeedsMedicalCare)
+            Message = $"{worker.Name} is wounded and needs medical attention.";
         return true;
     }
 
@@ -2124,7 +2150,8 @@ internal sealed class ColonySimulation
 
         foreach (var worker in _workers)
         {
-            if (worker.Task == null) continue;
+            worker.Health.Advance(dt);
+            if (worker.Task == null || worker.Health.IsIncapacitated) continue;
             if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
                 continue;
             AdvanceWorker(worker, dt);
