@@ -185,6 +185,7 @@ internal sealed class ColonySimulation
     internal TickManager Clock => _tickManager;
     internal ThingGrid Things => _thingGrid;
     public float SimulationSpeed => _tickManager.SpeedMultiplier;
+    public long CurrentTick => _tickManager.TickCount;
     public void SetSimulationSpeed(float multiplier) => _tickManager.SetSpeed(multiplier);
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
@@ -1203,6 +1204,7 @@ internal sealed class ColonySimulation
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
             bool externallyBusy = worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor || worker.IsLeaving;
+            citizen.ScheduledActivity = worker.Life.ActivityAtTick(authoritativeTick);
             _ecosystem.SetExternalTaskState(citizen.Id, externallyBusy);
         }
 
@@ -2373,6 +2375,9 @@ internal sealed class ColonySimulation
                 // work while the worker is waiting for storage capacity or a reachable drop-off.
                 continue;
             }
+
+            if (worker.Life.ActivityAtTick(_tickManager.TickCount) != ResidentDailyActivity.Work)
+                continue;
 
             bool assigned = false;
             // Priority is evaluated across excavation, tile builds, object blueprints and production orders.
