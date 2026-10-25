@@ -217,6 +217,7 @@ internal sealed class ColonySimulation
     private int? _selectedObjectId;
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
+    internal long EcosystemTick => _ecosystem.SimulationTick;
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public ColonyStoryteller Storyteller => _storyteller;
@@ -1115,7 +1116,7 @@ internal sealed class ColonySimulation
         }
     }
 
-    private void StepEcosystem(float deltaSeconds)
+    private void StepEcosystem(float deltaSeconds, long authoritativeTick)
     {
         RegisterBuiltStorageRacks();
         var grid = _ecosystem.Grid;
@@ -1161,7 +1162,7 @@ internal sealed class ColonySimulation
         }
 
         int beforeFood = grid.ResourceCount(ResourceKind.Food);
-        _ecosystem.Step(deltaSeconds);
+        _ecosystem.Step(deltaSeconds, authoritativeTick);
         int afterFood = grid.ResourceCount(ResourceKind.Food);
         if (afterFood < beforeFood)
         {
@@ -2065,7 +2066,7 @@ internal sealed class ColonySimulation
         {
             // Work planning is aligned to the shared clock's 10 Hz boundary and receives exactly
             // one work interval, independent of frame chunking.
-            StepEcosystem(6f / TickManager.TicksPerSecond);
+            StepEcosystem(6f / TickManager.TicksPerSecond, tick.Number);
             AssignJobs();
         }
 
