@@ -39,7 +39,7 @@ internal sealed class ResidentLifeProfile
     private readonly List<ResidentTrait> _traits=[];
     private readonly List<ResidentMemory> _memories=[];
     private long _nextMemoryId=1;
-    private readonly int _scheduleOffsetHours;
+    private int _scheduleOffsetHours;
     public IReadOnlyList<ResidentTrait> Traits=>_traits;
     public IReadOnlyList<ResidentMemory> Memories=>_memories;
     public string TraitSummary=>string.Join(", ",_traits.Select(Label));
@@ -112,8 +112,7 @@ internal sealed class ResidentLifeProfile
     public void RestoreSnapshot(ResidentLifeSnapshot s,int id)
     {
         ArgumentNullException.ThrowIfNull(s);if(!s.IsValid(id))throw new InvalidDataException("Invalid resident life data.");
-        if (s.SchemaVersion >= 2 && s.ScheduleOffsetHours != _scheduleOffsetHours)
-            throw new InvalidDataException("Resident schedule data does not match the initialized profile.");
+        if (s.SchemaVersion >= 2) _scheduleOffsetHours = s.ScheduleOffsetHours;
         _traits.Clear();_traits.AddRange(s.Traits);_memories.Clear();_memories.AddRange(s.Memories);_nextMemoryId=s.NextMemoryId;
     }
     private static string Label(ResidentTrait t)=>t switch
