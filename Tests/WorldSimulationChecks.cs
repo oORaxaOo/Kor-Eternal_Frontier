@@ -83,8 +83,13 @@ internal static class WorldSimulationChecks
             "session save/load must preserve a local trader's cargo without resurrecting drained macro arrivals");
         world.Restore(restoredSession);
         Check(Math.Abs(world.ElapsedSeconds - savedClock) < 0.0001 &&
-              Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001,
-            "restoring a session must restore the one continuous world clock");
+              Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001 &&
+              Math.Abs(world.SimulationTickCount / (double)TickManager.TicksPerSecond - savedClock) < 0.0001,
+            "restoring a session must restore the canonical world tick and resynchronize all clock views");
+        world.Step(1f / TickManager.TicksPerSecond);
+        Check(world.SimulationTickCount == (long)Math.Round(savedClock * TickManager.TicksPerSecond) + 1 &&
+              world.Colony.Clock.TickCount == world.SimulationTickCount,
+            "the master clock must continue monotonically after a session round trip");
         Check(world.Colony.ResourceCount(ResourceKind.Wood) == 15,
             "session persistence must store the shared resource balance only once and restore it into both views");
     }
