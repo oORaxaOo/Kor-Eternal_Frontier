@@ -377,6 +377,7 @@ internal sealed class CitizenAgent
     private float _fatigue = 100f;
     private float _stress;
     private bool _canReceiveJob = true;
+    private readonly PawnPersonality _personality = new();
 
     public int Id { get; }
     public string Name { get; }
@@ -449,7 +450,7 @@ internal sealed class CitizenAgent
         }
     }
 
-    public PawnPersonality Personality { get; } = new();
+    public PawnPersonality Personality => _worker?.Personality ?? _personality;
     public float Mood => Math.Clamp((Hunger + Fatigue) * 0.5f - Stress * 0.5f, 0f, 100f);
     public float Happiness => Mood;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
