@@ -570,6 +570,8 @@ internal sealed class ColonyEcosystem
     private int _nextCitizenId = 1;
     private readonly SimulationEventQueue _events = new();
     private readonly Dictionary<ResourceKind, GridManager> _resourceGrids;
+    private int? _externalInventoryUsed;
+    private int? _externalInventoryCapacity;
     public GridManager Grid { get; }
     public JobBroker JobBroker { get; }
     // Every resource has its own spatial stack grid. This allows different resource stacks to share
@@ -628,6 +630,57 @@ internal sealed class ColonyEcosystem
     /// A resident must not keep a workplace job in parallel with construction, hauling, combat,
     /// or departure. Releasing the job also frees its reserved output slot.
     /// </summary>
+    /// <summary>
+    /// Connects this resident/workplace layer to the settlement's aggregate capacity ledger.
+    /// Reservations across all resource layers share one budget, so production cannot reserve the
+    /// same physical storage capacity once per resource type.
+    /// </summary>
+    public void SetExternalStorageBudget(int inventoryUsed, int inventoryCapacity)
+    {
+        if (inventoryUsed < 0 || inventoryCapacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(inventoryUsed), "Inventory budget values must be non-negative.");
+
+        _externalInventoryUsed = inventoryUsed;
+        _externalInventoryCapacity = inventoryCapacity;
+        while ((long)_externalInventoryUsed.Value + TotalReservedOutputUnits() > _externalInventoryCapacity.Value)
+        {
+            var assigned = _citizens
+                .Where(citizen => citizen.OutputReservationId != 0)
+                .OrderByDescending(citizen => citizen.Id)
+                .FirstOrDefault();
+            if (assigned is null) break;
+            ReleaseAssignment(assigned);
+            if (assigned.State is not CitizenState.MentalBreak)
+                assigned.State = CitizenState.Idle;
+            LastEvent = $"Storage budget changed; released {assigned.Name}'s reserved output slot.";
+        }
+    }
+
+    private int TotalReservedOutputUnits() =>
+        _resourceGrids.Sum(pair => pair.Value.ReservedCount(pair.Key));
+
+    private bool TryReserveOutputSpace(ResourceKind resource, int amount, out StorageReservation reservation)
+    {
+        reservation = default;
+        if (amount <= 0) return false;
+        if (_externalInventoryUsed.HasValue && _externalInventoryCapacity.HasValue &&
+            (long)_externalInventoryUsed.Value + TotalReservedOutputUnits() + amount > _externalInventoryCapacity.Value)
+            return false;
+        return GridFor(resource).TryReserveSpace(resource, amount, out reservation);
+    }
+
+    private void AccountConsumedInventory(int amount)
+    {
+        if (_externalInventoryUsed.HasValue)
+            _externalInventoryUsed = Math.Max(0, _externalInventoryUsed.Value - amount);
+    }
+
+    private void AccountProducedInventory(int amount)
+    {
+        if (_externalInventoryUsed.HasValue)
+            _externalInventoryUsed = checked(_externalInventoryUsed.Value + amount);
+    }
+
     public bool SetExternalTaskState(int citizenId, bool externallyBusy)
     {
         var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
@@ -793,6 +846,7 @@ internal sealed class ColonyEcosystem
                     int eaten = Grid.TryTake(ResourceKind.Food, 1);
                     if (eaten > 0)
                     {
+                        AccountConsumedInventory(eaten);
                         citizen.Hunger = Math.Min(100f, citizen.Hunger + 65f);
                         LastEvent = $"{citizen.Name} ate from the stockpile.";
                     }
@@ -842,8 +896,7 @@ internal sealed class ColonyEcosystem
 
             var job = JobBroker.AssignNext(citizen);
             if (job == null) continue;
-            var outputGrid = GridFor(job.OutputResource);
-            if (!outputGrid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var reservation))
+            if (!TryReserveOutputSpace(job.OutputResource, job.OutputAmount, out var reservation))
             {
                 JobBroker.Release(citizen);
                 citizen.State = CitizenState.Idle;
@@ -919,9 +972,10 @@ internal sealed class ColonyEcosystem
 
         citizen.OutputReservationId = 0;
         citizen.OutputReservationResource = null;
+        AccountProducedInventory(job.OutputAmount);
         citizen.WorkProgress = 0;
         LastEvent = $"{job.Name} produced {job.OutputAmount} {job.OutputResource}.";
-        if (!outputGrid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var nextReservation))
+        if (!TryReserveOutputSpace(job.OutputResource, job.OutputAmount, out var nextReservation))
         {
             ReleaseAssignment(citizen);
             citizen.State = CitizenState.Idle;
