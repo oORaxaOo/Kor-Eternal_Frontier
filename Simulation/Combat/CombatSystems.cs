@@ -16,6 +16,8 @@ internal struct CombatEntity
     public float X, Y, Speed, Health, SharpArmor, BluntArmor;
     public CombatWeaponType EquippedWeapon;
     public int CurrentAmmo, MaxAmmo, TargetEntityId;
+    public float MoveTargetX, MoveTargetY;
+    public bool HasMoveOrder;
     public float AttackCooldown, StructureAttackCooldown, CurrentFuel;
     public int DriverPawnId, PassengerCount, NameSeed;
     public long SourceWorldEntityId;
@@ -99,6 +101,9 @@ internal sealed class CombatEngine
         entity.SharpArmor = Math.Clamp(entity.SharpArmor, 0f, 0.95f);
         entity.BluntArmor = Math.Clamp(entity.BluntArmor, 0f, 0.95f);
         entity.TargetEntityId = -1;
+        entity.HasMoveOrder = false;
+        entity.MoveTargetX = entity.X;
+        entity.MoveTargetY = entity.Y;
         entity.AttackCooldown = MathF.Max(0f, float.IsFinite(entity.AttackCooldown) ? entity.AttackCooldown : 0f);
         entity.StructureAttackCooldown = MathF.Max(0f, float.IsFinite(entity.StructureAttackCooldown) ? entity.StructureAttackCooldown : 0f);
         _entities[slot] = entity;
@@ -120,6 +125,7 @@ internal sealed class CombatEngine
         int slot = FindSlot(entityId);
         if (slot < 0 || (targetEntityId != -1 && FindSlot(targetEntityId) < 0)) return false;
         _entities[slot].TargetEntityId = targetEntityId;
+        _entities[slot].HasMoveOrder = false;
         return true;
     }
 
@@ -162,6 +168,22 @@ internal sealed class CombatEngine
         if (slot < 0) return false;
         _entities[slot].IsActive = false;
         _slotById.Remove(id);
+        return true;
+    }
+
+    public bool TryIssueMoveOrder(int id, float x, float y)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0 || _entities[slot].FactionId != 1 ||
+            !float.IsFinite(x) || !float.IsFinite(y) ||
+            x < 0 || y < 0 || x >= CombatCoverGrid.Width || y >= CombatCoverGrid.Height)
+            return false;
+
+        ref var entity = ref _entities[slot];
+        entity.TargetEntityId = -1;
+        entity.MoveTargetX = x;
+        entity.MoveTargetY = y;
+        entity.HasMoveOrder = true;
         return true;
     }
 
@@ -243,7 +265,33 @@ internal sealed class CombatEngine
             if (!entity.IsActive || entity.Health <= 0f) continue;
             entity.AttackCooldown = MathF.Max(0f, entity.AttackCooldown - deltaSeconds);
             entity.StructureAttackCooldown = MathF.Max(0f, entity.StructureAttackCooldown - deltaSeconds);
-            if (entity.TargetEntityId < 0 || !IsEnemyAlive(entity.FactionId, entity.TargetEntityId))
+            if (entity.TargetEntityId >= 0 && !IsEnemyAlive(entity.FactionId, entity.TargetEntityId))
+                entity.TargetEntityId = -1;
+
+            // Player move orders remain authoritative until a hostile is close enough to engage.
+            // A unit can therefore reposition, retreat, or regroup instead of freezing when no
+            // enemy is currently in range.
+            if (entity.HasMoveOrder)
+            {
+                int nearbyEnemyId = FindNearestEnemy(i, entity, cover);
+                int nearbyEnemySlot = nearbyEnemyId >= 0 ? FindSlot(nearbyEnemyId) : -1;
+                bool enemyClose = nearbyEnemySlot >= 0 &&
+                    DistanceSquared(entity.X, entity.Y, _entities[nearbyEnemySlot].X, _entities[nearbyEnemySlot].Y) <= 25f;
+                if (enemyClose)
+                {
+                    entity.TargetEntityId = nearbyEnemyId;
+                    entity.HasMoveOrder = false;
+                }
+                else
+                {
+                    MoveTowards(ref entity, entity.MoveTargetX, entity.MoveTargetY, deltaSeconds, cover);
+                    if (DistanceSquared(entity.X, entity.Y, entity.MoveTargetX, entity.MoveTargetY) <= 0.04f)
+                        entity.HasMoveOrder = false;
+                    continue;
+                }
+            }
+
+            if (entity.TargetEntityId < 0)
                 entity.TargetEntityId = FindNearestEnemy(i, entity, cover);
             if (entity.TargetEntityId < 0) continue;
 
@@ -329,6 +377,12 @@ internal sealed class CombatEngine
             int y = Math.Clamp((int)entity.Y, 0, CombatCoverGrid.Height - 1);
             _cells[x + y * CombatCoverGrid.Width].Add(i);
         }
+    }
+
+    private static float DistanceSquared(float x1, float y1, float x2, float y2)
+    {
+        float dx = x2 - x1, dy = y2 - y1;
+        return dx * dx + dy * dy;
     }
 
     private int FindNearestEnemy(int sourceSlot, CombatEntity source, CombatCoverGrid cover)
