@@ -945,6 +945,7 @@ internal sealed class ColonyEcosystem
                     {
                         AccountConsumedInventory(eaten);
                         citizen.Hunger = Math.Min(100f, citizen.Hunger + 65f);
+                        _events.Enqueue(SimulationTick,SimulationEventKind.NeedSatisfied,citizen.Id,(long)PawnNeedKind.Hunger,citizen.Hunger);
                         LastEvent = $"{citizen.Name} ate from the stockpile.";
                     }
                     citizen.State = CitizenState.Idle;
@@ -986,7 +987,10 @@ internal sealed class ColonyEcosystem
             // Idle citizens recover before returning to the labour pool.
             if (citizen.Fatigue < 60f)
             {
+                float before = citizen.Fatigue;
                 citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 8f);
+                if (before < 60f && citizen.Fatigue >= 60f)
+                    _events.Enqueue(SimulationTick,SimulationEventKind.NeedSatisfied,citizen.Id,(long)PawnNeedKind.Sleep,citizen.Fatigue);
                 continue;
             }
             if (citizen.Hunger < 30f || !citizen.CanReceiveJob) continue;
