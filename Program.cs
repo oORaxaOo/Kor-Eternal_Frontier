@@ -767,7 +767,7 @@ internal static class Program
                         else if (world.CombatEngine.TryIssueMoveOrder(selectedCombat.Id,
                                      Math.Clamp(worldMouse.X, 0.01f, CombatCoverGrid.Width - 0.01f),
                                      Math.Clamp(worldMouse.Y, 0.01f, CombatCoverGrid.Height - 0.01f)))
-                            simulation.SetMessage($"Move order: {world.GetCombatantName(selectedCombat)} -> {tileX}, {tileY}.");
+                            simulation.SetMessage($"Move order: {world.GetCombatantName(selectedCombat)} -> {(int)MathF.Floor(worldMouse.X)}, {(int)MathF.Floor(worldMouse.Y)}.");
                         else
                             simulation.SetMessage("Move order rejected. Select an active Kor combatant and choose a walkable position.");
                     }
