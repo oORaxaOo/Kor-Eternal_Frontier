@@ -541,7 +541,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 10,
+            SchemaVersion = 11,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -612,6 +612,7 @@ internal sealed class ColonySimulation
             Personality = _citizensByWorker.TryGetValue(worker.Id, out var personaCitizen)
                 ? personaCitizen.Personality.CaptureSnapshot()
                 : worker.Personality.CaptureSnapshot(),
+            Health = worker.Health.CaptureSnapshot(),
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -712,6 +713,8 @@ internal sealed class ColonySimulation
             };
             if (worker.Personality is not null)
                 restored.Personality.RestoreSnapshot(worker.Personality);
+            if (snapshot.SchemaVersion >= 11 && worker.Health is not null)
+                restored.Health.RestoreSnapshot(worker.Health);
             return restored;
         }));
         simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
