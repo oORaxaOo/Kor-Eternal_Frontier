@@ -219,6 +219,8 @@ internal sealed class ColonySimulation
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     internal long EcosystemTick => _ecosystem.SimulationTick;
     internal int SpatialStorageCount(ResourceKind resource) => _ecosystem.GridFor(resource).ResourceCount(resource);
+    internal List<CellPosition>? FindEcosystemPath(ResourceKind resource, CellPosition start, CellPosition target) =>
+        _ecosystem.GridFor(resource).FindPath(start, target);
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public ColonyStoryteller Storyteller => _storyteller;
@@ -1127,8 +1129,30 @@ internal sealed class ColonySimulation
             _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker.Name, cell);
         }
 
+        SyncEcosystemNavigationGrids();
+
         // Initial stockpile seeding is setup state, not a live incident/event history.
         _ecosystem.DrainEvents();
+    }
+
+    /// <summary>
+    /// Mirrors local terrain and walls into each resource stack layer's navigation grid.
+    /// Resident pathfinding must share the colony map's topology rather than silently walking
+    /// through rock or constructed walls.
+    /// </summary>
+    private void SyncEcosystemNavigationGrids()
+    {
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+        {
+            var grid = _ecosystem.GridFor(resource);
+            for (int y = 0; y < Height; y++)
+            for (int x = 0; x < Width; x++)
+            {
+                var tile = _tiles[x, y];
+                bool blocked = tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall;
+                grid.SetWall(new CellPosition(x, y), blocked);
+            }
+        }
     }
 
     private void RegisterBuiltStorageRacks()
@@ -1152,6 +1176,7 @@ internal sealed class ColonySimulation
     private void StepEcosystem(float deltaSeconds, long authoritativeTick)
     {
         RegisterBuiltStorageRacks();
+        SyncEcosystemNavigationGrids();
         _ecosystem.SetExternalStorageBudget(InventoryUsed, InventoryCapacity);
         foreach (var resource in Enum.GetValues<ResourceKind>())
             ReconcileSpatialStorage(resource);
