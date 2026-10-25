@@ -7,6 +7,7 @@ internal static class CombatSystemsChecks
     public static void Run()
     {
         VerifyCoverGridSnapshot();
+        VerifyCombatMoveOrders();
         VerifyCombatDamageAndAmmo();
         VerifyLoadoutChangesAreValidatedAndPersistable();
         VerifyFactionLoadoutsAreSeeded();
@@ -24,6 +25,32 @@ internal static class CombatSystemsChecks
         Assert(restored[5, 5] == CoverType.High, "cover grid should round-trip");
         snapshot[5 + 5 * CombatCoverGrid.Width] = 0;
         Assert(restored[5, 5] == CoverType.High, "cover snapshot must not alias live cover storage");
+    }
+
+    private static void VerifyCombatMoveOrders()
+    {
+        var engine = new CombatEngine();
+        var cover = new CombatCoverGrid();
+        Assert(engine.TrySpawn(new CombatEntity
+        {
+            FactionId = 1, Type = CombatEntityType.Human, X = 2, Y = 2, Health = 1,
+            Speed = 4, EquippedWeapon = CombatWeaponType.Melee
+        }, out int unit), "movable Kor unit should spawn");
+        Assert(engine.TryIssueMoveOrder(unit, 8, 8), "Kor unit should accept a ground movement order");
+        engine.Step(0.1f, cover);
+        Assert(engine.TryGetEntity(unit, out var moving) && (moving.X > 2 || moving.Y > 2) && moving.HasMoveOrder,
+            "a move order should advance the unit while no enemy is present");
+        for (int i = 0; i < 30; i++) engine.Step(0.1f, cover);
+        Assert(engine.TryGetEntity(unit, out var arrived) && !arrived.HasMoveOrder &&
+               MathF.Abs(arrived.X - 8) < 0.25f && MathF.Abs(arrived.Y - 8) < 0.25f,
+            "a unit should finish its move order at the requested destination");
+        Assert(engine.TrySpawn(new CombatEntity
+        {
+            FactionId = 2, Type = CombatEntityType.Human, X = 2, Y = 2, Health = 1,
+            Speed = 2, EquippedWeapon = CombatWeaponType.Melee
+        }, out int hostile), "hostile unit should spawn");
+        Assert(!engine.TryIssueMoveOrder(hostile, 5, 5),
+            "player movement orders must not control hostile units");
     }
 
     private static void VerifyCombatDamageAndAmmo()

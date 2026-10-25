@@ -301,8 +301,10 @@ internal static class Program
                         {
                             int deployed = world.TryDeployColonists();
                             simulation.SetMessage(deployed > 0
-                                ? $"{deployed} colonists deployed to defend the settlement."
+                                ? $"{deployed} colonists are combat-ready. Select a unit and right-click to move or attack."
                                 : "Deployment unavailable: no eligible residents or no room in the combat roster.");
+                            // Do not leave the modal WAR ROOM panel intercepting every map click.
+                            systemsPanelOpen = false;
                         }
                         else if (systemsTab == 0 && Hit(mx, my, 330, 490, 510, 516))
                         {
@@ -557,9 +559,16 @@ internal static class Program
                                     ? "Floor tool: hold the left mouse button and drag to fill a rectangular area."
                                     : $"Construction order: {architectureMode}.");
                         }
+                        else if (selectedCombatEntityId.HasValue &&
+                                 world.CombatEngine.TryGetEntity(selectedCombatEntityId.Value, out var selectedForMove) &&
+                                 selectedForMove.FactionId == 1 &&
+                                 world.CombatEngine.TryIssueMoveOrder(selectedForMove.Id,
+                                     Math.Clamp(worldMouse.X, 0.01f, CombatCoverGrid.Width - 0.01f),
+                                     Math.Clamp(worldMouse.Y, 0.01f, CombatCoverGrid.Height - 0.01f)))
+                            simulation.SetMessage($"Move order: {world.GetCombatantName(selectedForMove)} -> {tileX}, {tileY}. Right-click a hostile to attack.");
                         else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                     }
-                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 423 && logicalMouse.Y < 650)
+                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 70 && logicalMouse.Y < 650)
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
                         if (!worldView && Hit(mx, my, 784, 425, 838, 447))
@@ -755,8 +764,12 @@ internal static class Program
                             .Select(item => item.Entity).FirstOrDefault();
                         if (targetCombat.Id > 0 && world.CombatEngine.TrySetTarget(selectedCombat.Id, targetCombat.Id))
                             simulation.SetMessage($"Attack order: {world.GetCombatantName(selectedCombat)} -> {world.GetCombatantName(targetCombat)}.");
+                        else if (world.CombatEngine.TryIssueMoveOrder(selectedCombat.Id,
+                                     Math.Clamp(worldMouse.X, 0.01f, CombatCoverGrid.Width - 0.01f),
+                                     Math.Clamp(worldMouse.Y, 0.01f, CombatCoverGrid.Height - 0.01f)))
+                            simulation.SetMessage($"Move order: {world.GetCombatantName(selectedCombat)} -> {(int)MathF.Floor(worldMouse.X)}, {(int)MathF.Floor(worldMouse.Y)}.");
                         else
-                            simulation.SetMessage("No hostile combatant close to that order position. Select an enemy in WAR ROOM or right-click beside a visible enemy.");
+                            simulation.SetMessage("Move order rejected. Select an active Kor combatant and choose a walkable position.");
                     }
                     else if (!worldView) simulation.CommandSelectedTo(worldMouse.X, worldMouse.Y);
                 }
