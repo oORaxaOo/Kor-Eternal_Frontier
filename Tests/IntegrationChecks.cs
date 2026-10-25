@@ -24,6 +24,14 @@ internal static class IntegrationChecks
         int wood = world.Colony.ResourceCount(ResourceKind.Wood);
         Check(wood == (int)world.SpatialWorld.InventoryAt(home.Id, WorldResourceKind.Wood),
             "local colony and strategic world must expose one shared resource balance");
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+        {
+            var spatial = world.Colony.EcosystemTick; // force the integration test to observe live citizen state too
+            Check(world.Colony.CitizenForWorker(1) is not null && spatial == 0,
+                "new world sessions must begin with synchronized resident state before their first work cycle");
+            Check(world.Colony.SpatialStorageCount(resource) == world.Colony.ResourceCount(resource),
+                $"the spatial stock grid for {resource} must mirror the canonical settlement ledger");
+        }
 
         string json = GameSessionService.Serialize(world);
         using (var envelope = JsonDocument.Parse(json))
