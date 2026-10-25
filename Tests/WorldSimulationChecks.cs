@@ -34,8 +34,9 @@ internal static class WorldSimulationChecks
         speedWorld.SetSpeed(2f);
         for (int frame = 0; frame < 5; frame++) speedWorld.Step(0.1f);
         Check(Math.Abs(speedWorld.ElapsedSeconds - 1d) < 0.0001 &&
-              speedWorld.SpatialWorld.MacroWorld.SimulationTicks == speedWorld.Colony.Clock.TickCount,
-            "speed multiplier must scale the unified clock while keeping macro and colony ticks synchronized");
+              speedWorld.SpatialWorld.MacroWorld.SimulationTicks == speedWorld.Colony.Clock.TickCount &&
+              speedWorld.Colony.EcosystemTick == speedWorld.SimulationTickCount,
+            "speed multiplier must scale the unified clock while keeping macro, colony, and resident-event ticks synchronized");
         world.Step(0.01f);
         Check(world.ElapsedSeconds >= elapsed,
             "bounded catch-up must retain backlog rather than moving the world clock backwards");
