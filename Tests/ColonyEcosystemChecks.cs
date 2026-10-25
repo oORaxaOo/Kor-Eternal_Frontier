@@ -51,6 +51,21 @@ internal static class ColonyEcosystemChecks
         Check(utilityCitizen.JobId is null && utilityDrivenNeeds.Grid.ReservedCount(ResourceKind.Wood) == 0,
             "interrupting for a utility-selected need must not strand a job or output reservation");
 
+        var outputGridWorld = new ColonyEcosystem(8, 8);
+        outputGridWorld.GridFor(ResourceKind.Food).DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        outputGridWorld.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        outputGridWorld.GridFor(ResourceKind.Food).TryAdd(ResourceKind.Food, 10);
+        outputGridWorld.AddCitizen("Wood maker", new CellPosition(0, 0));
+        outputGridWorld.JobBroker.RegisterWorkplace("Wood mill", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 0.1f);
+        outputGridWorld.Step(0.1f);
+        outputGridWorld.Step(0.1f);
+        outputGridWorld.Step(0.2f);
+        Check(outputGridWorld.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) == 1,
+            "workplace output must be committed into the spatial grid for its actual resource type");
+
         var unifiedWork = new ColonyEcosystem(8, 8);
         unifiedWork.GridFor(ResourceKind.Food).DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
