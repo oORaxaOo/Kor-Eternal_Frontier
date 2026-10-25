@@ -7,6 +7,20 @@ internal static class ColonyEcosystemChecks
     public static void Run()
     {
 
+        var sharedWorker = new ColonyWorker(77, "Shared resident", 2.5f, 3.5f, 20f);
+        var sharedMind = new ColonyEcosystem(8, 8).AddCitizen(sharedWorker, new CellPosition(2, 3));
+        Check(sharedMind.Id == sharedWorker.Id && Math.Abs(sharedMind.Hunger - 80f) < 0.001f,
+            "an attached resident mind must share the worker identity and map hunger deficit into need satisfaction");
+        sharedMind.Hunger = 55f;
+        sharedMind.Fatigue = 42f;
+        sharedMind.Stress = 19f;
+        sharedMind.Position = new CellPosition(4, 5);
+        Check(Math.Abs(sharedWorker.Hunger - 45f) < 0.001f &&
+              Math.Abs(sharedWorker.CitizenFatigue - 42f) < 0.001f &&
+              Math.Abs(sharedWorker.Stress - 19f) < 0.001f &&
+              Math.Abs(sharedWorker.X - 4.5f) < 0.001f && Math.Abs(sharedWorker.Y - 5.5f) < 0.001f,
+            "resident needs, stress and movement must mutate the canonical pawn state without frame-copy synchronization");
+
         var needs = new ColonyEcosystem(4, 4);
         var thresholdCitizen = needs.AddCitizen("Threshold probe", new CellPosition(0, 0));
         thresholdCitizen.Hunger = 30.1f;
