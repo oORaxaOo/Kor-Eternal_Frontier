@@ -167,6 +167,26 @@ internal sealed class CombatEngine
         return true;
     }
 
+    /// <summary>Ends an active entity because its persistent pawn health reached a lethal state.</summary>
+    public bool TryKillEntity(int id, int killerId = -1)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0) return false;
+        ref var entity = ref _entities[slot];
+        entity.Health = 0f;
+        entity.IsActive = false;
+        entity.TargetEntityId = -1;
+        entity.HasMoveOrder = false;
+        _slotById.Remove(entity.Id);
+        _deaths.Add(new CombatDeath(entity, killerId));
+        if (entity.Type is CombatEntityType.Vehicle or CombatEntityType.HeavyTank)
+            _deathDrops.Add((entity.Id, "resource_alloy", 25));
+        else if (entity.Type is CombatEntityType.BlightBeast or CombatEntityType.BlightTitan)
+            _deathDrops.Add((entity.Id, "resource_blight_biomass", entity.Type == CombatEntityType.BlightTitan ? 20 : 3));
+        RebuildSpatialIndex();
+        return true;
+    }
+
     public bool TrySetIncapacitated(int id, bool incapacitated)
     {
         int slot = FindSlot(id);
