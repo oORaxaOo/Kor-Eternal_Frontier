@@ -1281,8 +1281,7 @@ internal sealed class ColonyRenderer : IDisposable
         }
         else
         {
-            _text.Color = MutedColor;
-            canvas.DrawText("Use the BUILD submenu in the right panel.", 790, 582, SKTextAlign.Left, _smallFont, _muted);
+            // The construction submenu is rendered in the upper side panel.
         }
 
         if (!worldView)
@@ -1317,7 +1316,7 @@ internal sealed class ColonyRenderer : IDisposable
     {
         // RimWorld-inspired build palette: categories are the top-level menu and each category
         // opens a compact, readable submenu with large targets rather than a row of tiny buttons.
-        _fill.Color = new SKColor(8, 12, 13, 252);
+        _fill.Color = new SKColor(8, 12, 13, 255);
         canvas.DrawRoundRect(new SKRect(778, 74, 1092, 354), 6, 6, _fill);
         _line.Color = Gold;
         _line.StrokeWidth = 1;
