@@ -113,8 +113,11 @@ internal sealed class WorldSimulation
 
         _kernel.Register("combat-consequences-and-biological-pressure", SimulationPhase.Consequences, 1, tick =>
         {
+            ApplyCombatDamageEvents(tick.Number);
+            ResolvePawnHealthCasualties();
             ApplyCombatSiege(tick.DeltaSeconds);
             ApplyCombatConsequences();
+            SyncCombatantHealthState();
             _blightInfectionAccumulatorSeconds += tick.DeltaSeconds;
             if (_blightInfectionAccumulatorSeconds >= BlightInfectionIntervalSeconds)
             {
@@ -475,6 +478,45 @@ internal sealed class WorldSimulation
         int repaired = Colony.RepairAllDamagedStructures();
         SyncCombatCoverFromColony();
         return repaired;
+    }
+
+    private void ApplyCombatDamageEvents(long simulationTick)
+    {
+        foreach (var damage in CombatEngine.DamageEvents)
+        {
+            if (damage.SourcePawnId <= 0 || damage.Amount <= 0f) continue;
+            PawnDamageKind kind = damage.WeaponType switch
+            {
+                CombatWeaponType.Melee => PawnDamageKind.Blunt,
+                CombatWeaponType.Plasma or CombatWeaponType.TankCannon => PawnDamageKind.Thermal,
+                _ => PawnDamageKind.Ballistic
+            };
+            Colony.ApplyCombatInjury(damage.SourcePawnId, damage.Amount, kind, simulationTick);
+        }
+    }
+
+    private void ResolvePawnHealthCasualties()
+    {
+        foreach (var worker in Colony.Workers.Where(worker => worker.Health.IsDead).ToArray())
+        {
+            var combatant = CombatEngine.Entities.FirstOrDefault(entity =>
+                entity.IsActive && entity.SourcePawnId == worker.Id);
+            if (combatant.Id > 0 && CombatEngine.TryKillEntity(combatant.Id))
+                continue; // ApplyCombatConsequences consumes the generated death and its drops this same tick.
+
+            Colony.RemoveHealthCasualty(worker.Id);
+        }
+    }
+
+    private void SyncCombatantHealthState()
+    {
+        foreach (var entity in CombatEngine.Entities)
+        {
+            if (!entity.IsActive || entity.SourcePawnId <= 0) continue;
+            var worker = Colony.Workers.FirstOrDefault(candidate => candidate.Id == entity.SourcePawnId);
+            if (worker is null) continue;
+            CombatEngine.TrySetIncapacitated(entity.Id, worker.Health.IsIncapacitated);
+        }
     }
 
     private void ApplyCombatConsequences()
