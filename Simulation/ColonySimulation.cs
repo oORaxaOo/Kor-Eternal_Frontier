@@ -2309,7 +2309,7 @@ internal sealed class ColonySimulation
     {
         foreach (var worker in _workers)
         {
-            if (worker.IsExternalVisitor || worker.IsCombatDeployed || worker.Task != null) continue;
+            if (worker.Health.IsIncapacitated || worker.IsExternalVisitor || worker.IsCombatDeployed || worker.Task != null) continue;
             if (_citizensByWorker.TryGetValue(worker.Id, out var citizen))
             {
                 if (citizen.State is CitizenState.MovingToStorage or CitizenState.MovingToJob or CitizenState.Working or CitizenState.MentalBreak)
