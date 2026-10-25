@@ -364,20 +364,101 @@ internal sealed class GridManager
     }
 }
 
-/// <summary>A lightweight simulated citizen. Hunger and fatigue are satisfaction values: 100 is rested/fed.</summary>
-internal sealed class CitizenAgent(int id, string name, CellPosition position)
+/// <summary>
+/// Resident decision state. In a running colony, identity, position, hunger, fatigue, and stress
+/// are live views over the same ColonyWorker object used by construction, travel, trade, and combat.
+/// Standalone tests can still create an unbound citizen.
+/// </summary>
+internal sealed class CitizenAgent
 {
-    public int Id { get; } = id;
-    public string Name { get; } = name;
-    public CellPosition Position { get; internal set; } = position;
-    public float Hunger { get; internal set; } = 100f;
-    public float Fatigue { get; internal set; } = 100f;
-    public float Stress { get; internal set; }
+    private ColonyWorker? _worker;
+    private CellPosition _position;
+    private float _hunger = 100f;
+    private float _fatigue = 100f;
+    private float _stress;
+    private bool _canReceiveJob = true;
+
+    public int Id { get; }
+    public string Name { get; }
+
+    public CitizenAgent(int id, string name, CellPosition position)
+    {
+        Id = id;
+        Name = name;
+        _position = position;
+    }
+
+    internal void AttachToWorker(ColonyWorker worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (worker.Id != Id || !string.Equals(worker.Name, Name, StringComparison.Ordinal))
+            throw new InvalidOperationException("Citizen mind must attach to the matching colony resident identity.");
+        if (_worker is not null && !ReferenceEquals(_worker, worker))
+            throw new InvalidOperationException("Citizen mind is already attached to a different resident object.");
+        _worker = worker;
+        _position = new CellPosition(Math.Max(0, (int)worker.X), Math.Max(0, (int)worker.Y));
+        _hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
+        _fatigue = Math.Clamp(worker.CitizenFatigue, 0f, 100f);
+        _stress = Math.Clamp(worker.Stress, 0f, 100f);
+    }
+
+    public CellPosition Position
+    {
+        get => _worker is null
+            ? _position
+            : new CellPosition(Math.Max(0, (int)_worker.X), Math.Max(0, (int)_worker.Y));
+        internal set
+        {
+            _position = value;
+            if (_worker is not null)
+            {
+                _worker.X = value.X + 0.5f;
+                _worker.Y = value.Y + 0.5f;
+            }
+        }
+    }
+
+    // The colony worker stores hunger as a deficit (100 means starving); the mind stores satisfaction.
+    public float Hunger
+    {
+        get => _worker is null ? _hunger : Math.Clamp(100f - _worker.Hunger, 0f, 100f);
+        internal set
+        {
+            _hunger = Math.Clamp(value, 0f, 100f);
+            if (_worker is not null) _worker.Hunger = 100f - _hunger;
+        }
+    }
+
+    public float Fatigue
+    {
+        get => _worker is null ? _fatigue : Math.Clamp(_worker.CitizenFatigue, 0f, 100f);
+        internal set
+        {
+            _fatigue = Math.Clamp(value, 0f, 100f);
+            if (_worker is not null) _worker.CitizenFatigue = _fatigue;
+        }
+    }
+
+    public float Stress
+    {
+        get => _worker is null ? _stress : Math.Clamp(_worker.Stress, 0f, 100f);
+        internal set
+        {
+            _stress = Math.Clamp(value, 0f, 100f);
+            if (_worker is not null) _worker.Stress = _stress;
+        }
+    }
+
     public PawnPersonality Personality { get; } = new();
     public float Mood => Math.Clamp((Hunger + Fatigue) * 0.5f - Stress * 0.5f, 0f, 100f);
     public float Happiness => Mood;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
-    public bool CanReceiveJob { get; internal set; } = true;
+    public bool CanReceiveJob
+    {
+        get => _canReceiveJob && (_worker is null ||
+            (_worker.Task is null && !_worker.IsCombatDeployed && !_worker.IsExternalVisitor && !_worker.IsLeaving));
+        internal set => _canReceiveJob = value;
+    }
     public int? JobId { get; internal set; }
     public float WorkProgress { get; internal set; }
     public float MovementProgress { get; internal set; }
@@ -622,6 +703,21 @@ internal sealed class ColonyEcosystem
         // for every new citizen (which would make creating thousands of residents O(n²)).
         var citizen = new CitizenAgent(_nextCitizenId++, name, position);
         _citizens.Add(citizen);
+        return citizen;
+    }
+
+    /// <summary>Attaches decision state to the same object used by the colony simulation.</summary>
+    public CitizenAgent AddCitizen(ColonyWorker worker, CellPosition position)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (!Grid.InBounds(position) || Grid.TileAt(position)?.Kind == GridTileKind.Wall)
+            throw new ArgumentOutOfRangeException(nameof(position), "Citizen spawn must be on a walkable tile.");
+        if (_citizens.Any(citizen => citizen.Id == worker.Id))
+            throw new InvalidOperationException($"Resident ID {worker.Id} is already present in the colony ecosystem.");
+        var citizen = new CitizenAgent(worker.Id, worker.Name, position);
+        citizen.AttachToWorker(worker);
+        _citizens.Add(citizen);
+        _nextCitizenId = Math.Max(_nextCitizenId, worker.Id + 1);
         return citizen;
     }
 
