@@ -16,17 +16,18 @@ internal static class BuildPaletteLayout
 {
     public const float Left = 784f;
     public const float Right = 1086f;
-    public const float CategoryTop = 566f;
-    public const float CategoryHeight = 22f;
+    public const float CategoryTop = 82f;
+    public const float CategoryHeight = 26f;
     public const float CategoryWidth = 57f;
     public const float CategoryGap = 4f;
-    public const float ItemWidth = 72f;
-    public const float ItemHeight = 19f;
-    public const float ItemGap = 4f;
-    public const float FirstRowTop = 592f;
-    public const float SecondRowTop = 614f;
+    public const float ItemWidth = 145f;
+    public const float ItemHeight = 42f;
+    public const float ItemGap = 7f;
+    public const float ItemColumnGap = 8f;
+    public const float FirstRowTop = 124f;
+    public const float SecondRowTop = 173f;
     public const int CategoryCount = 5;
-    public const int ItemsPerRow = 4;
+    public const int ItemsPerRow = 2;
     public const int ItemCount = 8;
 
     private static readonly string[] CategoryLabels = ["STRUCT", "BUILD", "PROD", "STORE", "ZONES"];
@@ -83,15 +84,14 @@ internal static class BuildPaletteLayout
 
     public static int HitItem(float x, float y)
     {
-        int row;
-        if (y >= FirstRowTop && y < FirstRowTop + ItemHeight) row = 0;
-        else if (y >= SecondRowTop && y < SecondRowTop + ItemHeight) row = 1;
-        else return -1;
-
-        if (x < Left || x >= Right) return -1;
-        int column = (int)((x - Left) / (ItemWidth + ItemGap));
+        if (y < FirstRowTop) return -1;
+        int row = (int)((y - FirstRowTop) / (ItemHeight + ItemGap));
+        if (row < 0 || row >= ItemCount / ItemsPerRow) return -1;
+        float rowTop = FirstRowTop + row * (ItemHeight + ItemGap);
+        if (y >= rowTop + ItemHeight || x < Left || x >= Right) return -1;
+        int column = (int)((x - Left) / (ItemWidth + ItemColumnGap));
         if (column < 0 || column >= ItemsPerRow) return -1;
-        float itemLeft = Left + column * (ItemWidth + ItemGap);
+        float itemLeft = Left + column * (ItemWidth + ItemColumnGap);
         if (x < itemLeft || x >= itemLeft + ItemWidth) return -1;
         return row * ItemsPerRow + column;
     }
