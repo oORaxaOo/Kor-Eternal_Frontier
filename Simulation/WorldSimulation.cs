@@ -11,16 +11,20 @@ namespace KorTheBlight.Simulation;
 /// </summary>
 internal sealed class WorldSimulation
 {
-    private float _simulationAccumulator;
+    private double _simulationAccumulator;
     private float _blightInfectionAccumulatorSeconds;
     private double _nextStorytellerRaidAtSeconds;
-    private const float FixedStepSeconds = 0.1f;
+    private SimulationKernel _kernel = null!;
+    private const float FixedStepSeconds = 1f / TickManager.TicksPerSecond;
     private const float BlightInfectionIntervalSeconds = 10f;
-    private const int MaxFixedStepsPerFrame = 8;
+    // 48 ticks bounds catch-up to 0.8 simulated seconds per render frame.
+    private const int MaxFixedStepsPerFrame = 48;
 
     public ColonySimulation Colony { get; private set; }
     public ContinuousWorldState SpatialWorld { get; private set; }
     public double ElapsedSeconds { get; private set; }
+    public long SimulationTickCount => _kernel.TickCount;
+    public IReadOnlyList<string> SimulationSystems => _kernel.SystemIds;
     public bool IsPaused { get; set; }
     public float SpeedMultiplier { get; private set; } = 1f;
     public ResearchManager ResearchManager { get; private set; } = null!;
@@ -45,52 +49,87 @@ internal sealed class WorldSimulation
         database.LoadOrGenerate(dataDirectory);
         ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
         InitializeCombatSystems();
+        ConfigureSimulationKernel(initialTick: 0);
     }
 
-    /// <summary>Advances the unified simulation clock. deltaSeconds is real elapsed time.</summary>
+    /// <summary>Advances the canonical fixed-step clock; rendering supplies elapsed real time only.</summary>
     public void Step(float deltaSeconds)
     {
         if (!float.IsFinite(deltaSeconds) || deltaSeconds < 0f)
             throw new ArgumentOutOfRangeException(nameof(deltaSeconds), "Elapsed time must be finite and non-negative.");
         if (deltaSeconds == 0f || IsPaused) return;
 
-        float scaledSeconds = deltaSeconds * SpeedMultiplier;
-        if (!float.IsFinite(scaledSeconds))
+        double scaledSeconds = deltaSeconds * (double)SpeedMultiplier;
+        if (!double.IsFinite(scaledSeconds))
             throw new ArgumentOutOfRangeException(nameof(deltaSeconds), "Scaled elapsed time must be finite.");
 
-        // Consume bounded fixed-step work per render frame. Excess time remains in the accumulator
-        // instead of turning a long frame into an unbounded catch-up spike.
+        // The kernel is the sole runtime clock. Every subsystem receives the same numbered 60 Hz tick;
+        // expensive planning, incidents and economic scans run on stable 10 Hz boundaries.
         _simulationAccumulator += scaledSeconds;
         int fixedSteps = 0;
-        while (_simulationAccumulator + 1e-8f >= FixedStepSeconds && fixedSteps < MaxFixedStepsPerFrame)
+        while (_simulationAccumulator + 1e-10 >= FixedStepSeconds && fixedSteps < MaxFixedStepsPerFrame)
         {
-            Colony.Step(FixedStepSeconds);
+            _kernel.AdvanceFixedTick();
+            _simulationAccumulator -= FixedStepSeconds;
+            if (_simulationAccumulator < 0d && _simulationAccumulator > -1e-8d)
+                _simulationAccumulator = 0d;
+            fixedSteps++;
+        }
+
+        ElapsedSeconds = _kernel.SimulationSeconds;
+    }
+
+    private void ConfigureSimulationKernel(long initialTick)
+    {
+        _kernel = new SimulationKernel(initialTick);
+        const int WorkCycleTicks = TickManager.TicksPerSecond / 10;
+
+        _kernel.Register("colony-residents-and-local-environment", SimulationPhase.Colony, 1,
+            tick => Colony.AdvanceWorldTick(tick));
+
+        _kernel.Register("storyteller-and-settlement-capacity", SimulationPhase.PreWorld, WorkCycleTicks, _ =>
+        {
             ProcessStorytellerThreats();
             SpatialWorld.SetInventoryCapacity(KorSettlementId(SpatialWorld), Colony.InventoryCapacity);
-            // The world and colony consume the exact same fixed interval. Macro cells are separately
-            // timesliced inside SpatialWorld.Step so no daily world turn monopolizes this loop.
-            SpatialWorld.Step(FixedStepSeconds);
+        });
+
+        _kernel.Register("continuous-world-and-macro-clock", SimulationPhase.World, 1, tick =>
+        {
+            SpatialWorld.Step(tick.DeltaSeconds);
+            // Integer ticks, rather than repeated floating-point addition, define canonical time.
+            SpatialWorld.ClockSeconds = tick.Number / (double)TickManager.TicksPerSecond;
+        });
+
+        _kernel.Register("strategic-arrivals-blight-and-army-materialization", SimulationPhase.Strategic, WorkCycleTicks, _ =>
+        {
             ProcessBlightPressureThreats();
             ProcessMacroArrivals();
             SyncCombatCoverFromColony();
             MaterializeNearbyArmies();
-            CombatEngine.Step(FixedStepSeconds, CombatCover);
-            ApplyCombatSiege(FixedStepSeconds);
+        });
+
+        _kernel.Register("tactical-combat", SimulationPhase.Combat, 1,
+            tick => CombatEngine.Step(tick.DeltaSeconds, CombatCover));
+
+        _kernel.Register("combat-consequences-and-biological-pressure", SimulationPhase.Consequences, 1, tick =>
+        {
+            ApplyCombatSiege(tick.DeltaSeconds);
             ApplyCombatConsequences();
-            _blightInfectionAccumulatorSeconds += FixedStepSeconds;
+            _blightInfectionAccumulatorSeconds += tick.DeltaSeconds;
             if (_blightInfectionAccumulatorSeconds >= BlightInfectionIntervalSeconds)
             {
                 _blightInfectionAccumulatorSeconds -= BlightInfectionIntervalSeconds;
                 Colony.ApplyBlightInfectionTick();
             }
             SyncCombatantPawnPositions();
+            FlushPendingCombatLoot();
+        });
+
+        _kernel.Register("research-and-workshop-economy", SimulationPhase.Economy, WorkCycleTicks, _ =>
+        {
             Workshop.Advance(1);
             ResearchManager.AddProgress(1f);
-            FlushPendingCombatLoot();
-            _simulationAccumulator -= FixedStepSeconds;
-            fixedSteps++;
-        }
-        ElapsedSeconds = SpatialWorld.ClockSeconds;
+        });
     }
 
     private void ProcessMacroArrivals()
@@ -697,7 +736,10 @@ internal sealed class WorldSimulation
         ResearchManager = new ResearchManager(database, SpatialWorld.MacroWorld.Research);
         InitializeCombatSystems();
         RestoreCombatRuntime(session.CombatRuntimeJson);
-        ElapsedSeconds = SpatialWorld.ClockSeconds;
-        _simulationAccumulator = 0f;
+        _simulationAccumulator = 0d;
+        long restoredTick = Math.Max(0L, (long)Math.Round(SpatialWorld.ClockSeconds * TickManager.TicksPerSecond));
+        ConfigureSimulationKernel(restoredTick);
+        ElapsedSeconds = _kernel.SimulationSeconds;
+        SpatialWorld.ClockSeconds = ElapsedSeconds;
     }
 }
