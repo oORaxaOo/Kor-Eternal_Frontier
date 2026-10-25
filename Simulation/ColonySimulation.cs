@@ -122,6 +122,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float X { get; internal set; } = x;
     public float Y { get; internal set; } = y;
     public float Hunger { get; internal set; } = hunger;
+    public float CitizenFatigue { get; internal set; } = 100f;
     public float ThermalExposure { get; internal set; }
     public float Stress { get; internal set; }
     public bool Hungry => Hunger >= 80f;
@@ -248,7 +249,7 @@ internal sealed class ColonySimulation
             Task = new WorkerTask(ColonyTaskKind.Move, target, route)
         };
         _workers.Add(visitor);
-        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry);
+        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor, entry);
         Message = $"{faction} visitor entered the colony and is heading to the stockpile.";
         return id;
     }
@@ -1089,7 +1090,7 @@ internal sealed class ColonySimulation
             var cell = spawn.Value;
             var worker = new ColonyWorker(id, $"Kor-{id:0000}", cell.X + 0.5f, cell.Y + 0.5f, 0f);
             _workers.Add(worker);
-            _citizensByWorker[id] = _ecosystem.AddCitizen(worker.Name, cell);
+            _citizensByWorker[id] = _ecosystem.AddCitizen(worker, cell);
             recruited++;
         }
 
@@ -1126,7 +1127,7 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             var cell = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
-            _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker.Name, cell);
+            _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker, cell);
         }
 
         SyncEcosystemNavigationGrids();
@@ -1185,12 +1186,8 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
-            if (citizen.State == CitizenState.Idle || worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor)
-                citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
             bool externallyBusy = worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor || worker.IsLeaving;
             _ecosystem.SetExternalTaskState(citizen.Id, externallyBusy);
-            citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
-            citizen.Stress = worker.Stress;
         }
 
         // Completed gardens become real food-producing workplaces. Their output is reserved
