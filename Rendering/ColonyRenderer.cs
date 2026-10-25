@@ -1281,42 +1281,12 @@ internal sealed class ColonyRenderer : IDisposable
         }
         else
         {
-            for (int category = 0; category < BuildPaletteLayout.CategoryCount; category++)
-            {
-                float categoryX = BuildPaletteLayout.Left + category * (BuildPaletteLayout.CategoryWidth + BuildPaletteLayout.CategoryGap);
-                DrawButton(canvas, BuildPaletteLayout.CategoryLabel(category), categoryX, BuildPaletteLayout.CategoryTop,
-                    BuildPaletteLayout.CategoryWidth, BuildPaletteLayout.CategoryHeight, buildMenuPage == category);
-            }
-
-            for (int slot = 0; slot < BuildPaletteLayout.ItemCount; slot++)
-            {
-                float itemX = BuildPaletteLayout.Left + (slot % BuildPaletteLayout.ItemsPerRow) * (BuildPaletteLayout.ItemWidth + BuildPaletteLayout.ItemGap);
-                float y = slot < BuildPaletteLayout.ItemsPerRow ? BuildPaletteLayout.FirstRowTop : BuildPaletteLayout.SecondRowTop;
-                var action = BuildPaletteLayout.ActionAt(buildMenuPage, slot);
-                bool active = action switch
-                {
-                    BuildPaletteAction.Wall => architectureMode == ArchitectureKind.Wall,
-                    BuildPaletteAction.Floor => architectureMode == ArchitectureKind.Floor,
-                    BuildPaletteAction.Path => architectureMode == ArchitectureKind.Path,
-                    BuildPaletteAction.Door => architectureMode == ArchitectureKind.Door,
-                    BuildPaletteAction.Conduit => architectureMode == ArchitectureKind.Conduit,
-                    BuildPaletteAction.Dig => excavationMode,
-                    BuildPaletteAction.Remove => demolitionMode,
-                    BuildPaletteAction.SleepingPod => placingObject && objectType == PlaceableKind.SleepingPod,
-                    BuildPaletteAction.DiningTable => placingObject && objectType == PlaceableKind.DiningTable,
-                    BuildPaletteAction.ComfortBench => placingObject && objectType == PlaceableKind.ComfortBench,
-                    BuildPaletteAction.Lamp => placingObject && objectType == PlaceableKind.Lamp,
-                    BuildPaletteAction.Workbench => placingObject && objectType == PlaceableKind.Workbench,
-                    BuildPaletteAction.Generator => placingObject && objectType == PlaceableKind.Generator,
-                    BuildPaletteAction.StorageRack => placingObject && objectType == PlaceableKind.StorageRack,
-                    BuildPaletteAction.Garden => placingObject && objectType == PlaceableKind.Garden,
-                    _ => false
-                };
-                if (action != BuildPaletteAction.None)
-                    DrawButton(canvas, BuildPaletteLayout.ItemLabel(buildMenuPage, slot), itemX, y,
-                        BuildPaletteLayout.ItemWidth, BuildPaletteLayout.ItemHeight, active);
-            }
+            _text.Color = MutedColor;
+            canvas.DrawText("Use the BUILD submenu in the right panel.", 790, 582, SKTextAlign.Left, _smallFont, _muted);
         }
+
+        if (!worldView)
+            DrawBuildMenuOverlay(canvas, simulation, architectureMode, objectType, placingObject, excavationMode, demolitionMode, buildMenuPage);
 
         _muted.Color = MutedColor;
         string actionHint = worldView
@@ -1339,6 +1309,62 @@ internal sealed class ColonyRenderer : IDisposable
         _text.Color = TextColor;
         canvas.DrawText(simulation.Message, 18, 700, SKTextAlign.Left, _smallFont, _text);
         if (!worldView) DrawButton(canvas, "RECRUIT +10", 920, 660, 165, 27);
+    }
+
+    private void DrawBuildMenuOverlay(SKCanvas canvas, ColonySimulation simulation,
+        ArchitectureKind architectureMode, PlaceableKind objectType, bool placingObject,
+        bool excavationMode, bool demolitionMode, int selectedCategory)
+    {
+        // RimWorld-inspired build palette: categories are the top-level menu and each category
+        // opens a compact, readable submenu with large targets rather than a row of tiny buttons.
+        _fill.Color = new SKColor(8, 12, 13, 252);
+        canvas.DrawRoundRect(new SKRect(778, 74, 1092, 337), 6, 6, _fill);
+        _line.Color = Gold;
+        _line.StrokeWidth = 1;
+        canvas.DrawRoundRect(new SKRect(778, 74, 1092, 337), 6, 6, _line);
+        _text.Color = Gold;
+        canvas.DrawText("ARCHITECT", 790, 98, SKTextAlign.Left, _headingFont, _text);
+        _muted.Color = MutedColor;
+        canvas.DrawText("Choose a category, then a tool or blueprint.", 790, 113, SKTextAlign.Left, _smallFont, _muted);
+
+        for (int category = 0; category < BuildPaletteLayout.CategoryCount; category++)
+        {
+            float x = BuildPaletteLayout.Left + category * (BuildPaletteLayout.CategoryWidth + BuildPaletteLayout.CategoryGap);
+            DrawButton(canvas, BuildPaletteLayout.CategoryLabel(category), x, BuildPaletteLayout.CategoryTop,
+                BuildPaletteLayout.CategoryWidth, BuildPaletteLayout.CategoryHeight, selectedCategory == category);
+        }
+
+        for (int slot = 0; slot < BuildPaletteLayout.ItemCount; slot++)
+        {
+            var action = BuildPaletteLayout.ActionAt(selectedCategory, slot);
+            if (action == BuildPaletteAction.None) continue;
+            int row = slot / BuildPaletteLayout.ItemsPerRow;
+            int column = slot % BuildPaletteLayout.ItemsPerRow;
+            float x = BuildPaletteLayout.Left + column * (BuildPaletteLayout.ItemWidth + BuildPaletteLayout.ItemColumnGap);
+            float y = BuildPaletteLayout.FirstRowTop + row * (BuildPaletteLayout.ItemHeight + BuildPaletteLayout.ItemGap);
+            bool active = action switch
+            {
+                BuildPaletteAction.Wall => architectureMode == ArchitectureKind.Wall,
+                BuildPaletteAction.Floor => architectureMode == ArchitectureKind.Floor,
+                BuildPaletteAction.Path => architectureMode == ArchitectureKind.Path,
+                BuildPaletteAction.Door => architectureMode == ArchitectureKind.Door,
+                BuildPaletteAction.Conduit => architectureMode == ArchitectureKind.Conduit,
+                BuildPaletteAction.Dig => excavationMode,
+                BuildPaletteAction.Remove => demolitionMode,
+                BuildPaletteAction.Cancel => architectureMode == ArchitectureKind.None && !placingObject && !excavationMode && !demolitionMode,
+                BuildPaletteAction.SleepingPod => placingObject && objectType == PlaceableKind.SleepingPod,
+                BuildPaletteAction.DiningTable => placingObject && objectType == PlaceableKind.DiningTable,
+                BuildPaletteAction.ComfortBench => placingObject && objectType == PlaceableKind.ComfortBench,
+                BuildPaletteAction.Lamp => placingObject && objectType == PlaceableKind.Lamp,
+                BuildPaletteAction.Workbench => placingObject && objectType == PlaceableKind.Workbench,
+                BuildPaletteAction.Generator => placingObject && objectType == PlaceableKind.Generator,
+                BuildPaletteAction.StorageRack => placingObject && objectType == PlaceableKind.StorageRack,
+                BuildPaletteAction.Garden => placingObject && objectType == PlaceableKind.Garden,
+                _ => false
+            };
+            DrawButton(canvas, BuildPaletteLayout.ItemLabel(selectedCategory, slot), x, y,
+                BuildPaletteLayout.ItemWidth, BuildPaletteLayout.ItemHeight, active);
+        }
     }
 
     private void DrawButton(SKCanvas canvas, string label, float x, float y, float width, float height, bool active = false)
