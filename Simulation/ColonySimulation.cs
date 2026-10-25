@@ -1146,6 +1146,7 @@ internal sealed class ColonySimulation
     private void StepEcosystem(float deltaSeconds, long authoritativeTick)
     {
         RegisterBuiltStorageRacks();
+        _ecosystem.SetExternalStorageBudget(InventoryUsed, InventoryCapacity);
         foreach (var resource in Enum.GetValues<ResourceKind>())
             ReconcileSpatialStorage(resource);
         var grid = _ecosystem.Grid;
