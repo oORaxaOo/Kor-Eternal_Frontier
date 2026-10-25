@@ -2323,6 +2323,7 @@ internal sealed class ColonySimulation
                 : Math.Max(0f, previous - deltaSeconds * 1.25f);
 
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            citizen.EnvironmentallyExposed = worker.ThermalExposure > 15f;
             if (previous < 15f && worker.ThermalExposure >= 15f)
             {
                 _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, worker.ThermalExposure);
