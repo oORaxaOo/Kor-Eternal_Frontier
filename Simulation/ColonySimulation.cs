@@ -126,6 +126,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float ThermalExposure { get; internal set; }
     public float Stress { get; internal set; }
     public PawnPersonality Personality { get; } = new();
+    public ResidentLifeProfile Life { get; } = ResidentLifeProfile.Create(id, name);
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -540,7 +541,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 10,
+            SchemaVersion = 11,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -611,6 +612,7 @@ internal sealed class ColonySimulation
             Personality = _citizensByWorker.TryGetValue(worker.Id, out var personaCitizen)
                 ? personaCitizen.Personality.CaptureSnapshot()
                 : worker.Personality.CaptureSnapshot(),
+            Life = worker.Life.CaptureSnapshot(),
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -711,6 +713,8 @@ internal sealed class ColonySimulation
             };
             if (worker.Personality is not null)
                 restored.Personality.RestoreSnapshot(worker.Personality);
+            if (snapshot.SchemaVersion >= 11 && worker.Life is not null)
+                restored.Life.RestoreSnapshot(worker.Life, worker.Id);
             return restored;
         }));
         simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
@@ -1240,6 +1244,43 @@ internal sealed class ColonySimulation
         foreach (var resource in Enum.GetValues<ResourceKind>())
             if (resource != ResourceKind.Food)
                 ReconcileSpatialStorage(resource);
+        ProcessResidentLifeEvents();
+    }
+
+    private void ProcessResidentLifeEvents()
+    {
+        var pending = _ecosystem.DrainEvents();
+        if (pending.Count == 0) return;
+        var byId = _workers.ToDictionary(worker => worker.Id);
+        foreach (var item in pending.OrderBy(item => item.Tick).ThenBy(item => item.Sequence))
+        {
+            if (item.SubjectId <= 0 || item.SubjectId > int.MaxValue || !byId.TryGetValue((int)item.SubjectId, out var worker)) continue;
+            switch (item.Kind)
+            {
+                case SimulationEventKind.NeedThresholdCrossed:
+                    if (item.RelatedId == (long)SimulationNeedKind.Hunger)
+                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.HungerCrisis,0,-4,"Hunger became a critical need.");
+                    else if (item.RelatedId == (long)SimulationNeedKind.Fatigue)
+                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Exhaustion,0,-4,"Exhaustion reached a critical level.");
+                    break;
+                case SimulationEventKind.NeedSatisfied:
+                    if (item.RelatedId == (long)PawnNeedKind.Hunger)
+                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.AteMeal,0,4,"Found food and recovered from hunger.");
+                    else if (item.RelatedId == (long)PawnNeedKind.Sleep)
+                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Rested,0,3,"Recovered some rest.");
+                    break;
+                case SimulationEventKind.HazardChanged:
+                    worker.Life.RecordMemory(_tickManager.TickCount,item.Value>0?ResidentMemoryKind.EnvironmentalHazard:ResidentMemoryKind.Recovery,0,item.Value>0?-6:2,
+                        item.Value>0?"Dangerous environmental exposure affected this resident.":"Environmental exposure returned to a safe level.");
+                    break;
+                case SimulationEventKind.MentalBreakStarted:
+                    worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.MentalBreak,0,-8,"Stress became overwhelming and interrupted normal work.");
+                    break;
+                case SimulationEventKind.MentalBreakEnded:
+                    worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Recovery,0,5,"Recovered enough to resume normal activity.");
+                    break;
+            }
+        }
     }
 
     public ResourceDeposit? DepositAt(int x, int y) =>
@@ -2220,11 +2261,30 @@ internal sealed class ColonySimulation
             if (existing != null && _socialTick - existing.LastEncounterTick < 30) continue;
             var citizenA = _citizensByWorker.GetValueOrDefault(a.Id);
             var citizenB = _citizensByWorker.GetValueOrDefault(b.Id);
+            int previousAffinity = existing?.Affinity ?? 0;
+            float socialStressA = Math.Clamp(a.Stress - a.Life.RecentMoodBias(_tickManager.TickCount), 0f, 100f);
+            float socialStressB = Math.Clamp(b.Stress - b.Life.RecentMoodBias(_tickManager.TickCount), 0f, 100f);
             _socialRelationships.RecordEncounter(a.Id, b.Id, _socialTick,
-                a.Stress, a.Hunger, citizenA == null ? 100f : 100f - citizenA.Fatigue,
+                socialStressA, a.Hunger, citizenA == null ? 100f : 100f - citizenA.Fatigue,
                 citizenA?.State == CitizenState.MentalBreak,
-                b.Stress, b.Hunger, citizenB == null ? 100f : 100f - citizenB.Fatigue,
+                socialStressB, b.Hunger, citizenB == null ? 100f : 100f - citizenB.Fatigue,
                 citizenB?.State == CitizenState.MentalBreak);
+            var updated = _socialRelationships.Get(a.Id, b.Id);
+            if (existing is null)
+            {
+                a.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.FirstMeeting,b.Id,2,$"Met {b.Name} for the first time.");
+                b.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.FirstMeeting,a.Id,2,$"Met {a.Name} for the first time.");
+            }
+            else if(updated is not null&&previousAffinity>updated.Affinity&&(updated.Affinity<=-60||previousAffinity-updated.Affinity>=3))
+            {
+                a.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.SocialConflict,b.Id,-3,$"A tense encounter with {b.Name} affected this resident.");
+                b.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.SocialConflict,a.Id,-3,$"A tense encounter with {a.Name} affected this resident.");
+            }
+            else if(updated is not null&&updated.Affinity>previousAffinity&&(updated.Affinity>=60||updated.Affinity-previousAffinity>=2))
+            {
+                a.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Friendship,b.Id,3,$"A positive encounter with {b.Name} strengthened the relationship.");
+                b.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Friendship,a.Id,3,$"A positive encounter with {a.Name} strengthened the relationship.");
+            }
         }
         _incidentManager.Consume(_socialRelationships.DrainEvents());
     }
@@ -2583,6 +2643,7 @@ internal sealed class ColonySimulation
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         AssignDelivery(worker);
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.WorkCompleted,0,1,$"Collected {amount} {deposit.Resource} from a finite deposit.");
         Message = $"{worker.Name} collected {amount} {deposit.Resource}; returning it to stockpile.";
     }
 
@@ -2596,10 +2657,12 @@ internal sealed class ColonySimulation
         }
 
         int delivered = Math.Min(worker.CarriedAmount, InventoryFreeCapacity);
+        ResourceKind resourceType = worker.CarriedResource.Value;
         if (delivered > 0)
         {
-            AddResource(worker.CarriedResource.Value, delivered);
+            AddResource(resourceType, delivered);
             worker.CarriedAmount -= delivered;
+            worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ResourceDelivered,0,2,$"Delivered {delivered} {resourceType} to colony storage.");
         }
 
         if (worker.CarriedAmount == 0)
@@ -2628,7 +2691,7 @@ internal sealed class ColonySimulation
             return;
         }
 
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
         if (order.WorkDone < order.WorkRequired) return;
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
@@ -2646,6 +2709,7 @@ internal sealed class ColonySimulation
         InvalidatePathCache();
         AddDeposit(order.Cell, ResourceKind.Stone, amount: 3);
         order.Status = ConstructionStatus.Complete;
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.WorkCompleted,0,2,"Completed an excavation; stone is now available to be hauled.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"Excavation complete at ({order.Cell.X}, {order.Cell.Y}); 3 stone are ready to be hauled.";
@@ -2660,7 +2724,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
         if (order.WorkDone < order.WorkRequired) return;
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
@@ -2670,6 +2734,7 @@ internal sealed class ColonySimulation
         tile.ConstructionOrderId = null;
         InvalidatePathCache();
         order.Status = ConstructionStatus.Complete;
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ConstructionCompleted,0,3,$"Completed a {order.Target.ToString().ToLowerInvariant()} structure.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"{order.Target} completed at ({order.Cell.X}, {order.Cell.Y}).";
@@ -2684,11 +2749,12 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
         if (item.WorkDone < item.WorkRequired) return;
         item.Status = ConstructionStatus.Complete;
         item.Health = item.MaxHealth;
         item.IsBlightInfected = false;
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ConstructionCompleted,0,3,$"Completed a {item.Kind.ToString().ToLowerInvariant()} building.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"{item.Kind} completed and is now operational.";
@@ -2703,7 +2769,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        float workRate = worker.Hungry ? 0.5f : 1f;
+        float workRate = (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress);
         if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < 1)
         {
             Message = "Production is waiting for storage space before it can deliver the completed component.";
@@ -2714,6 +2780,7 @@ internal sealed class ColonySimulation
         order.Complete = true;
         order.Assigned = false;
         AddResource(ResourceKind.Components, 1);
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ProductionCompleted,0,2,"Completed a component production order.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = "Workbench production completed: 1 component produced from committed materials.";
