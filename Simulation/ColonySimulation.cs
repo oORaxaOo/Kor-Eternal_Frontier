@@ -1114,6 +1114,7 @@ internal sealed class ColonySimulation
     private void InitializeEcosystem()
     {
         _ecosystem = new ColonyEcosystem(Width, Height);
+        _ecosystem.EventEmitted += HandleResidentLifeEvent;
         _citizensByWorker.Clear();
         _gardenJobsByObject.Clear();
         _storageZonesByObject.Clear();
@@ -1244,42 +1245,37 @@ internal sealed class ColonySimulation
         foreach (var resource in Enum.GetValues<ResourceKind>())
             if (resource != ResourceKind.Food)
                 ReconcileSpatialStorage(resource);
-        ProcessResidentLifeEvents();
     }
 
-    private void ProcessResidentLifeEvents()
+    private void HandleResidentLifeEvent(SimulationEvent item)
     {
-        var pending = _ecosystem.DrainEvents();
-        if (pending.Count == 0) return;
-        var byId = _workers.ToDictionary(worker => worker.Id);
-        foreach (var item in pending.OrderBy(item => item.Tick).ThenBy(item => item.Sequence))
+        if (item.SubjectId <= 0 || item.SubjectId > int.MaxValue) return;
+        var worker = _workers.FirstOrDefault(candidate => candidate.Id == (int)item.SubjectId);
+        if (worker is null) return;
+        switch (item.Kind)
         {
-            if (item.SubjectId <= 0 || item.SubjectId > int.MaxValue || !byId.TryGetValue((int)item.SubjectId, out var worker)) continue;
-            switch (item.Kind)
-            {
-                case SimulationEventKind.NeedThresholdCrossed:
-                    if (item.RelatedId == (long)SimulationNeedKind.Hunger)
-                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.HungerCrisis,0,-4,"Hunger became a critical need.");
-                    else if (item.RelatedId == (long)SimulationNeedKind.Fatigue)
-                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Exhaustion,0,-4,"Exhaustion reached a critical level.");
-                    break;
-                case SimulationEventKind.NeedSatisfied:
-                    if (item.RelatedId == (long)PawnNeedKind.Hunger)
-                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.AteMeal,0,4,"Found food and recovered from hunger.");
-                    else if (item.RelatedId == (long)PawnNeedKind.Sleep)
-                        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Rested,0,3,"Recovered some rest.");
-                    break;
-                case SimulationEventKind.HazardChanged:
-                    worker.Life.RecordMemory(_tickManager.TickCount,item.Value>0?ResidentMemoryKind.EnvironmentalHazard:ResidentMemoryKind.Recovery,0,item.Value>0?-6:2,
-                        item.Value>0?"Dangerous environmental exposure affected this resident.":"Environmental exposure returned to a safe level.");
-                    break;
-                case SimulationEventKind.MentalBreakStarted:
-                    worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.MentalBreak,0,-8,"Stress became overwhelming and interrupted normal work.");
-                    break;
-                case SimulationEventKind.MentalBreakEnded:
-                    worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Recovery,0,5,"Recovered enough to resume normal activity.");
-                    break;
-            }
+            case SimulationEventKind.NeedThresholdCrossed:
+                if (item.RelatedId == (long)SimulationNeedKind.Hunger)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.HungerCrisis,0,-4,"Hunger became a critical need.");
+                else if (item.RelatedId == (long)SimulationNeedKind.Fatigue)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Exhaustion,0,-4,"Exhaustion reached a critical level.");
+                break;
+            case SimulationEventKind.NeedSatisfied:
+                if (item.RelatedId == (long)PawnNeedKind.Hunger)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.AteMeal,0,4,"Found food and recovered from hunger.");
+                else if (item.RelatedId == (long)PawnNeedKind.Sleep)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Rested,0,3,"Recovered some rest.");
+                break;
+            case SimulationEventKind.HazardChanged:
+                worker.Life.RecordMemory(item.Tick,item.Value>0?ResidentMemoryKind.EnvironmentalHazard:ResidentMemoryKind.Recovery,0,item.Value>0?-6:2,
+                    item.Value>0?"Dangerous environmental exposure affected this resident.":"Environmental exposure returned to a safe level.");
+                break;
+            case SimulationEventKind.MentalBreakStarted:
+                worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.MentalBreak,0,-8,"Stress became overwhelming and interrupted normal work.");
+                break;
+            case SimulationEventKind.MentalBreakEnded:
+                worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Recovery,0,5,"Recovered enough to resume normal activity.");
+                break;
         }
     }
 
