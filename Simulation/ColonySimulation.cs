@@ -1241,6 +1241,8 @@ internal sealed class ColonySimulation
             if (worker.Body.Advance(deltaSeconds, worker.ThermalExposure, temperature, authoritativeTick, resting, safeEnvironment))
                 worker.Life.RecordMemory(authoritativeTick, ResidentMemoryKind.EnvironmentalHazard, 0, -8,
                     "Sustained thermal exposure caused a physical injury.");
+        }
+
         if (afterFood < beforeFood)
         {
             int consumed = beforeFood - afterFood;
