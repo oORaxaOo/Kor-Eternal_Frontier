@@ -82,6 +82,7 @@ internal sealed class PawnHealthState
         {
             float head = PartRatio(PawnBodyPartKind.Head);
             float torso = PartRatio(PawnBodyPartKind.Torso);
+            if (head <= 0f || torso <= 0f) return 0f;
             float circulation = Math.Clamp(1f - BloodLoss / MaximumBloodLoss, 0f, 1f);
             float painPenalty = Math.Clamp(1f - Pain / 180f, 0.25f, 1f);
             return Math.Clamp((head * 0.45f + torso * 0.55f) * circulation * painPenalty, 0f, 1f);
@@ -142,7 +143,7 @@ internal sealed class PawnHealthState
             kind == PawnDamageKind.Infection ? Math.Clamp(damage / 100f, 0f, 1f) : 0f;
         var injury = AddInjury(part, kind, damage, bleeding, infection, elapsedSeconds);
 
-        if (_parts[PawnBodyPartKind.Head].Health <= 0f || _parts[PawnBodyPartKind.Torso].Health <= 0f || OverallHealth <= 0.001f)
+        if (OverallHealth <= 0.001f)
             IsDead = true;
         return injury;
     }
@@ -152,7 +153,7 @@ internal sealed class PawnHealthState
         var injury = _injuries.FirstOrDefault(item => item.Id == injuryId && !item.IsHealed);
         if (injury is null) return false;
         injury.IsTreated = true;
-        injury.BleedingPerMinute *= 0.10f;
+        injury.BleedingPerMinute = Math.Min(injury.BleedingPerMinute * 0.10f, 0.05f);
         injury.Infection *= 0.20f;
         return true;
     }
@@ -186,6 +187,10 @@ internal sealed class PawnHealthState
                 if (age > 21_600d)
                     injury.Infection = Math.Clamp(injury.Infection + (float)(deltaSeconds / 86_400d) * 0.08f, 0f, 1f);
             }
+            else if (injury.IsTreated && injury.Infection > 0f)
+            {
+                injury.Infection = Math.Max(0f, injury.Infection - deltaSeconds * 0.00001f);
+            }
 
             float healingPerSecond = injury.IsTreated ? 0.00040f : 0.00007f;
             injury.Severity = Math.Max(0f, injury.Severity - deltaSeconds * healingPerSecond);
@@ -206,8 +211,7 @@ internal sealed class PawnHealthState
             part.Health = Math.Min(part.MaximumHealth, part.Health + healPerSecond);
         }
 
-        if (BloodLoss >= MaximumBloodLoss || _parts[PawnBodyPartKind.Head].Health <= 0f ||
-            _parts[PawnBodyPartKind.Torso].Health <= 0f || OverallHealth <= 0.001f)
+        if (BloodLoss >= MaximumBloodLoss || OverallHealth <= 0.001f)
             IsDead = true;
     }
 
@@ -333,10 +337,7 @@ internal sealed class PawnHealthSnapshot
                 throw new InvalidDataException("Pawn health save contains an invalid injury.");
         }
 
-        if (IsDead && BodyParts.Sum(part => part.CurrentHealth) > 0.001f &&
-            BloodLoss < PawnHealthState.MaximumBloodLoss &&
-            BodyParts.All(part => part.Part is not (PawnBodyPartKind.Head or PawnBodyPartKind.Torso) ||
-                                  part.CurrentHealth > 0f))
+        if (IsDead && BodyParts.Sum(part => part.CurrentHealth) > 0.001f && BloodLoss < PawnHealthState.MaximumBloodLoss)
             throw new InvalidDataException("Pawn health save marks a living body as dead without a lethal condition.");
     }
 }
