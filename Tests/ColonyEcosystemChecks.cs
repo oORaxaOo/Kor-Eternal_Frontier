@@ -92,13 +92,15 @@ internal static class ColonyEcosystemChecks
             sharedCapacity.GridFor(resource).DefineStockpileZone(resource,
                 [new CellPosition(0, 0), new CellPosition(1, 0)]);
         sharedCapacity.SetExternalStorageBudget(inventoryUsed: 9, inventoryCapacity: 10);
-        var budgetWorker = sharedCapacity.AddCitizen("Budget worker", new CellPosition(0, 0));
+        var budgetWorker = sharedCapacity.AddCitizen("Budget worker A", new CellPosition(0, 0));
+        var secondBudgetWorker = sharedCapacity.AddCitizen("Budget worker B", new CellPosition(1, 0));
         sharedCapacity.JobBroker.RegisterWorkplace("First output", new CellPosition(0, 0),
             workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 0.1f);
-        sharedCapacity.JobBroker.RegisterWorkplace("Second output", new CellPosition(0, 0),
+        sharedCapacity.JobBroker.RegisterWorkplace("Second output", new CellPosition(1, 0),
             workerCapacity: 1, outputResource: ResourceKind.Alloy, outputAmount: 1, workSeconds: 0.1f);
         sharedCapacity.Step(0.1f);
-        Check(sharedCapacity.Citizens.Count(citizen => citizen.OutputReservationId > 0) == 1,
+        Check(sharedCapacity.Citizens.Count(citizen => citizen.OutputReservationId > 0) == 1 &&
+              new[] { budgetWorker, secondBudgetWorker }.Count(citizen => citizen.JobId.HasValue) == 1,
             "output reservations across different resource grids must share the same aggregate inventory budget");
         sharedCapacity.SetExternalStorageBudget(inventoryUsed: 10, inventoryCapacity: 10);
         Check(sharedCapacity.Citizens.All(citizen => citizen.OutputReservationId == 0),
