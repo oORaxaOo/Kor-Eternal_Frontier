@@ -31,7 +31,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 ## Implemented mechanics
 
 - 40 by 26 orthogonal square-tile colony grid.
-- Individually identified colonists with movement, task state, carrying, hunger and fatigue.
+- Individually identified colonists with movement, task state, carrying, hunger, fatigue, deterministic personality traits, bounded autobiographical memories, and persisted body-part health/injuries with movement/work consequences.
 - Finite deposits and resource-conserving gather/carry/deliver transfers.
 - Compact tile-array storage grid with bounded resource stacks, connected stockpile zones and storage reservations.
 - Capacity-aware gathering, partial delivery, retained cargo while storage is full, and production output that waits for room.
@@ -45,7 +45,7 @@ The projection layer owns screen/world mapping. Gameplay APIs receive logical wo
 - One active real-time clock shared by local colony and continuous world simulation.
 - Unified session saves contain colony state and continuous world state; resource balances are serialized only in the world ledger.
 - Bounded, deterministic tile fluid redistribution and thermal exchange with temperature persistence; walls and doors now attenuate heat transfer according to material/edge conductance, so rooms can insulate without perfect heat isolation. Residents accumulate persistent thermal exposure on dangerous tiles; sustained exposure reduces rest satisfaction and emits threshold-crossing hazard events through the deterministic queue. Unmet hunger/fatigue also accumulates persistent stress; high stress releases job/output reservations, pauses work in a mental-break state, and emits deterministic start/recovery events.
-- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Citizen hunger/fatigue threshold crossings, stock additions/withdrawals and workplace availability changes emit data-only notifications; stockpile planning, hazard propagation and incidents are not yet event-wired.
+- A deterministic tick-indexed event queue with stable same-tick ordering and bounded draining. Need thresholds, need satisfaction, stock changes, workplace availability, thermal hazards, and mental-break transitions emit notifications. A live subscriber records resident memories without draining the queue used by diagnostics and incident consumers; stockpile planning and planner wake-ups are not yet fully event-driven.
 - A regression check that creates and advances 10,000 individually identified citizen agents. This is not yet a performance guarantee for 10,000 fully integrated workers.
 
 ## Combined design target: DF depth + Songs of Syx scale + RimWorld storytelling
@@ -63,7 +63,7 @@ These games are design references, not evidence that their proprietary internal 
 
 - The local settlement remains 2D, not a full 3D voxel world. Tiles now persist water/magma levels (0–7) and temperature; bounded lateral fluid redistribution and material-dependent thermal exchange are implemented. Vertical gravity, pressure-driven pipes, ignition/melting and organ/tissue damage remain future work.
 - The strategic/local-worker route cache remains grid-based breadth-first search keyed by start and target, not A*. The high-throughput citizen grid now uses shared target-oriented flow fields for repeated destinations; this is not yet a global flow-field solution for every colony job or world route.
-- Individual citizen needs and workplace jobs exist, but full personality-driven mental breaks, long-lived memories, social graphs, body-part health and schedules are not integrated.
+- Individual needs, workplace jobs, a starter set of behavior-affecting traits, bounded memories, social relationships, and basic body-part injury consequences are integrated. Medical treatment, combat-linked localized injuries, richer thought/mood modifiers, daily schedules and family histories remain incomplete.
 - Population cohorts are a separate aggregate model; transitions between cohorts and individually simulated residents still need explicit conservation rules and persistence.
 - The new event queue is currently infrastructure with regression tests, not yet wired to every need, job, stock or hazard subsystem.
 - The continuous-world radius-query spatial index is implemented and tested against a full-scan oracle; local-agent spatial indexing, route/target invalidation metrics and reproducible 1k/5k/10k end-to-end benchmarks remain planned.
