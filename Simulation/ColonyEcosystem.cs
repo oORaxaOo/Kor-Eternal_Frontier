@@ -622,6 +622,28 @@ internal sealed class ColonyEcosystem
         return citizen;
     }
 
+    /// <summary>
+    /// Marks a resident as busy in another colony task pipeline or outside local work.
+    /// A resident must not keep a workplace job in parallel with construction, hauling, combat,
+    /// or departure. Releasing the job also frees its reserved output slot.
+    /// </summary>
+    public bool SetExternalTaskState(int citizenId, bool externallyBusy)
+    {
+        var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
+        if (citizen is null) return false;
+        citizen.CanReceiveJob = !externallyBusy;
+        if (externallyBusy)
+        {
+            ReleaseAssignment(citizen);
+            citizen.Route.Clear();
+            citizen.RouteIndex = 0;
+            citizen.MovementProgress = 0f;
+            if (citizen.State is not CitizenState.MentalBreak)
+                citizen.State = CitizenState.Idle;
+        }
+        return true;
+    }
+
     public bool SetCombatDeployment(int citizenId, bool deployed)
     {
         var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
