@@ -20,8 +20,10 @@ internal static class SimulationKernelChecks
 
         calls.Clear();
         for (int i = 0; i < 5; i++) kernel.AdvanceFixedTick();
-        Check(calls.SequenceEqual(new[] { "colony:6", "world:6", "planning:6" }),
-            "slow systems must run exactly on deterministic 10 Hz boundaries");
+        Check(calls.Count == 11 &&
+              calls.TakeLast(3).SequenceEqual(new[] { "colony:6", "world:6", "planning:6" }) &&
+              calls.Count(item => item == "planning:6") == 1,
+            "every-tick systems must continue running while slow systems run exactly on 10 Hz boundaries");
 
         var restored = new SimulationKernel(600);
         Check(Math.Abs(restored.SimulationSeconds - 10d) < 1e-9 &&
