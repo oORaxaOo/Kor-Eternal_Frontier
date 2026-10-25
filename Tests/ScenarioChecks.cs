@@ -12,6 +12,7 @@ internal static class ScenarioChecks
             SimulationKernelChecks.Run();
             ColonyEcosystemChecks.Run();
             PawnUtilityAiChecks.Run();
+            ResidentLifeProfileChecks.Run();
             IntegrationChecks.Run();
             WorldSimulationChecks.Run();
             ContinuousWorldChecks.Run();
@@ -31,7 +32,7 @@ internal static class ScenarioChecks
             VerifyWindowSizeParsing();
             VerifyArchitectureDragPolicy();
             MacroWorldChecks.Run();
-            Console.WriteLine("Kor checks passed: pawn utility AI, colony construction and logistics, bounded stockpile reservations, citizen needs and movement, job-broker capacity, continuous world movement and queries, shared settlement ledger, unified clock, session persistence, deterministic bounded simulation events, data-driven colony storyteller events and cooldowns, resident social relationships and incident milestones, and indexed world-space radius queries, deterministic regional biomes and local-map seeds, seeded faction strategy, diplomatic relationship matrices and persistent threat intelligence, deterministic 100x100 macro cells, daily macro economy, bounded supply-demand prices, data-driven research and generated item definitions, colonist work matrices, target reservations, strategic routes, macro-faction actions, wealth valuation and threat-scaled storyteller incidents, deterministic tactical combat, cover, faction loadouts, research-gated production, vehicle assembly, persistent nemesis titles, and cross-system combat/workshop/research/save integration.");
+            Console.WriteLine("Kor checks passed: resident personality traits and persistent memories, event-driven need satisfaction and hazards, pawn utility AI, colony construction and logistics, bounded stockpile reservations, citizen needs and movement, job-broker capacity, continuous world movement and queries, shared settlement ledger, unified clock, session persistence, deterministic bounded simulation events, data-driven colony storyteller events and cooldowns, resident social relationships and incident milestones, and indexed world-space radius queries, deterministic regional biomes and local-map seeds, seeded faction strategy, diplomatic relationship matrices and persistent threat intelligence, deterministic 100x100 macro cells, daily macro economy, bounded supply-demand prices, data-driven research and generated item definitions, colonist work matrices, target reservations, strategic routes, macro-faction actions, wealth valuation and threat-scaled storyteller incidents, deterministic tactical combat, cover, faction loadouts, research-gated production, vehicle assembly, persistent nemesis titles, and cross-system combat/workshop/research/save integration.");
             return 0;
         }
         catch (Exception ex)
