@@ -21,6 +21,21 @@ internal static class ColonyEcosystemChecks
               Math.Abs(sharedWorker.X - 4.5f) < 0.001f && Math.Abs(sharedWorker.Y - 5.5f) < 0.001f,
             "resident needs, stress and movement must mutate the canonical pawn state without frame-copy synchronization");
 
+        var healthWorker = new ColonyWorker(88, "Injured resident", 1.5f, 1.5f, 0f);
+        var healthMind = new ColonyEcosystem(8, 8).AddCitizen(healthWorker, new CellPosition(1, 1));
+        var legWound = healthMind.Health.ApplyDamage(PawnBodyPartKind.LeftLeg, PawnDamageKind.Cut, 8f, 0d);
+        Check(healthMind.Health.InjuryCount == 1 && healthMind.Health.NeedsMedicalCare &&
+              healthMind.Health.Mobility < 1f && legWound.Part == PawnBodyPartKind.LeftLeg,
+            "body-part wounds must persist, reduce limb function, and trigger medical urgency");
+        Check(healthMind.Health.TreatInjury(legWound.Id) &&
+              healthMind.Health.Injuries.Single().BleedingPerMinute <= 0.05f,
+            "treating an injury must reduce bleeding to a controlled level");
+        var healthCopy = new PawnHealthState();
+        healthCopy.RestoreSnapshot(healthMind.Health.CaptureSnapshot());
+        Check(Math.Abs(healthCopy.OverallHealth - healthMind.Health.OverallHealth) < 0.001f &&
+              healthCopy.Injuries.Count == 1 && healthCopy.Injuries.Single().IsTreated,
+            "anatomical damage and treatment state must survive snapshot restore");
+
         var needs = new ColonyEcosystem(4, 4);
         var thresholdCitizen = needs.AddCitizen("Threshold probe", new CellPosition(0, 0));
         thresholdCitizen.Hunger = 30.1f;
