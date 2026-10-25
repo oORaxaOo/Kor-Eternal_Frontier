@@ -218,6 +218,7 @@ internal sealed class ColonySimulation
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
     internal long EcosystemTick => _ecosystem.SimulationTick;
+    internal int SpatialStorageCount(ResourceKind resource) => _ecosystem.GridFor(resource).ResourceCount(resource);
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public ColonyStoryteller Storyteller => _storyteller;
@@ -807,14 +808,31 @@ internal sealed class ColonySimulation
         _inventory.Clear(); // No second resource balance remains once the canonical ledger is attached.
         world.SetInventoryCapacity(settlementId, InventoryCapacity);
 
-        // The ecosystem grid is an operational buffer for citizen needs and garden jobs, not a
-        // second authority. Reconcile it from the canonical settlement ledger at bind time.
-        int ledgerFood = ResourceCount(ResourceKind.Food);
-        int gridFood = _ecosystem.Grid.ResourceCount(ResourceKind.Food);
-        if (ledgerFood > gridFood && !_ecosystem.Grid.TryAdd(ResourceKind.Food, ledgerFood - gridFood))
-            throw new InvalidOperationException("The ecosystem food buffer cannot mirror the settlement ledger.");
-        if (gridFood > ledgerFood) _ecosystem.Grid.TryTake(ResourceKind.Food, gridFood - ledgerFood);
+        // Spatial stacks are mirrors of the one authoritative settlement ledger. Reconciliation is
+        // deterministic and bounded by built storage footprints for every resource, not food alone.
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            ReconcileSpatialStorage(resource);
         RefreshWealthMetrics();
+    }
+
+    private void ReconcileSpatialStorage(ResourceKind resource)
+    {
+        var grid = _ecosystem.GridFor(resource);
+        int ledgerCount = ResourceCount(resource);
+        int gridCount = grid.ResourceCount(resource);
+        if (ledgerCount > gridCount)
+        {
+            if (!grid.TryAdd(resource, ledgerCount - gridCount))
+                throw new InvalidOperationException(
+                    $"Spatial storage for {resource} cannot mirror the authoritative settlement ledger.");
+        }
+        else if (gridCount > ledgerCount)
+        {
+            int removed = grid.TryTake(resource, gridCount - ledgerCount);
+            if (removed != gridCount - ledgerCount)
+                throw new InvalidOperationException(
+                    $"Spatial storage for {resource} could not reconcile an inventory withdrawal.");
+        }
     }
 
     private double InventoryAmount(ResourceKind resource)
@@ -1079,18 +1097,22 @@ internal sealed class ColonySimulation
         _gardenJobsByObject.Clear();
         _storageZonesByObject.Clear();
 
-        // The starter stockpile occupies six map tiles. The first runtime bridge maps its
-        // pooled capacity to the grid's bounded stacks while the legacy construction scheduler
-        // continues to own non-food materials during this migration slice.
-        _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food,
+        // The starter stockpile occupies six map tiles. Separate per-resource stack grids share this
+        // footprint spatially, allowing wood, stone, food, alloy and components to coexist in storage.
+        CellPosition[] starterStorageCells =
         [
             new CellPosition(18, 8), new CellPosition(19, 8), new CellPosition(20, 8),
             new CellPosition(18, 9), new CellPosition(19, 9), new CellPosition(20, 9)
-        ]);
+        ];
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+        {
+            var grid = _ecosystem.GridFor(resource);
+            grid.DefineStockpileZone(resource, starterStorageCells);
+            int amount = ResourceCount(resource);
+            if (amount > 0 && !grid.TryAdd(resource, amount))
+                throw new InvalidOperationException($"Could not migrate starter {resource} into spatial storage.");
+        }
         RegisterBuiltStorageRacks();
-        int initialFood = ResourceCount(ResourceKind.Food);
-        if (initialFood > 0 && !_ecosystem.Grid.TryAdd(ResourceKind.Food, initialFood))
-            throw new InvalidOperationException("Could not migrate starter food into grid storage.");
 
         foreach (var worker in _workers)
         {
@@ -1111,7 +1133,8 @@ internal sealed class ColonySimulation
             for (int y = rack.Origin.Y; y < rack.Origin.Y + rack.Height; y++)
             for (int x = rack.Origin.X; x < rack.Origin.X + rack.Width; x++)
                 cells.Add(new CellPosition(x, y));
-            _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food, cells, StorageRackCapacity / tileCount);
+            foreach (var resource in Enum.GetValues<ResourceKind>())
+                _ecosystem.GridFor(resource).DefineStockpileZone(resource, cells, StorageRackCapacity / tileCount);
             _storageZonesByObject.Add(rack.Id);
         }
     }
@@ -1119,18 +1142,9 @@ internal sealed class ColonySimulation
     private void StepEcosystem(float deltaSeconds, long authoritativeTick)
     {
         RegisterBuiltStorageRacks();
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            ReconcileSpatialStorage(resource);
         var grid = _ecosystem.Grid;
-        int inventoryFood = ResourceCount(ResourceKind.Food);
-        int gridFood = grid.ResourceCount(ResourceKind.Food);
-        if (inventoryFood > gridFood)
-        {
-            if (!grid.TryAdd(ResourceKind.Food, inventoryFood - gridFood))
-                throw new InvalidOperationException("Grid food storage could not accept the current colony inventory.");
-        }
-        else if (gridFood > inventoryFood)
-        {
-            grid.TryTake(ResourceKind.Food, gridFood - inventoryFood);
-        }
 
         foreach (var worker in _workers)
         {
@@ -1188,6 +1202,12 @@ internal sealed class ColonySimulation
                 worker.Y = citizen.Position.Y + 0.5f;
             }
         }
+
+        // Food has already reconciled its consumed/produced delta above; all other resources remain
+        // spatially mirrored after construction, gathering, production or world-level shipments.
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            if (resource != ResourceKind.Food)
+                ReconcileSpatialStorage(resource);
     }
 
     public ResourceDeposit? DepositAt(int x, int y) =>
