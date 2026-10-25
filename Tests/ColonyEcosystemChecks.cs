@@ -48,7 +48,7 @@ internal static class ColonyEcosystemChecks
         utilityDrivenNeeds.Step(0.1f);
         Check(utilityCitizen.State == CitizenState.MovingToStorage,
             "live citizen behavior must use personality-weighted utility scores to choose food over rest");
-        Check(utilityCitizen.JobId is null && utilityDrivenNeeds.Grid.ReservedCount(ResourceKind.Wood) == 0,
+        Check(utilityCitizen.JobId is null && utilityDrivenNeeds.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 0,
             "interrupting for a utility-selected need must not strand a job or output reservation");
 
         var outputGridWorld = new ColonyEcosystem(8, 8);
@@ -177,7 +177,7 @@ internal static class ColonyEcosystemChecks
         var colony = new ColonyEcosystem(8, 8);
         colony.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(0, 1)]);
-        colony.Grid.DefineStockpileZone(ResourceKind.Wood,
+        colony.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
             [new CellPosition(6, 6), new CellPosition(6, 7)]);
         Check(colony.Grid.TryAdd(ResourceKind.Food, 5),
             "the integrated colony should be able to seed a food stockpile");
@@ -189,18 +189,18 @@ internal static class ColonyEcosystemChecks
         colony.Step(0.1f);
         Check(citizen.JobId == jobId && citizen.State == CitizenState.MovingToJob,
             "an idle eligible citizen should reserve a job and move toward its workplace");
-        Check(colony.Grid.ReservedCount(ResourceKind.Wood) == 2,
+        Check(colony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 2,
             "a worker must reserve output capacity before starting its job");
         Check(colony.RemoveWorkplace(jobId), "a registered workplace should be removable");
         Check(citizen.JobId == null && citizen.State == CitizenState.Idle &&
-              colony.Grid.ReservedCount(ResourceKind.Wood) == 0,
+              colony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 0,
             "removing a workplace must release its citizen and all reserved storage");
 
         int replacementJob = colony.JobBroker.RegisterWorkplace("Lumber yard", new CellPosition(5, 6),
             workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 2, workSeconds: 0.5f);
         for (int i = 0; i < 100; i++) colony.Step(0.1f);
-        Check(colony.Grid.ResourceCount(ResourceKind.Wood) > 0 &&
-              colony.Grid.ResourceCount(ResourceKind.Wood) <= 20,
+        Check(colony.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) > 0 &&
+              colony.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) <= 20,
             "work must produce real stored output without exceeding tile stack capacity");
         Check(colony.JobBroker.FindJob(replacementJob)?.AssignedWorkers <= 1,
             "workplace assignment must never exceed its worker capacity");
@@ -210,7 +210,7 @@ internal static class ColonyEcosystemChecks
         var priorityColony = new ColonyEcosystem(8, 8);
         priorityColony.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(0, 1)]);
-        priorityColony.Grid.DefineStockpileZone(ResourceKind.Wood,
+        priorityColony.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
             [new CellPosition(6, 6), new CellPosition(6, 7)]);
         Check(priorityColony.Grid.TryAdd(ResourceKind.Food, 2),
             "the priority fixture should have food available before work begins");
@@ -220,13 +220,13 @@ internal static class ColonyEcosystemChecks
             outputAmount: 2, workSeconds: 5f);
         priorityColony.Step(0.1f);
         Check(priorityCitizen.JobId == priorityJob &&
-              priorityColony.Grid.ReservedCount(ResourceKind.Wood) == 2,
+              priorityColony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 2,
             "a citizen should reserve workplace capacity and output storage before travelling to work");
         priorityCitizen.Hunger = 29f;
         priorityColony.Step(0.1f);
         Check(priorityCitizen.State == CitizenState.MovingToStorage &&
               priorityCitizen.JobId == null &&
-              priorityColony.Grid.ReservedCount(ResourceKind.Wood) == 0,
+              priorityColony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 0,
             "food needs must preempt workplace travel and release both the job slot and its output reservation");
         Check(priorityColony.JobBroker.FindJob(priorityJob)?.AssignedWorkers == 0,
             "a citizen seeking food must not occupy workplace capacity while away from the job");
