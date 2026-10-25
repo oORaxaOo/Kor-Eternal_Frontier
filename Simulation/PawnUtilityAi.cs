@@ -36,6 +36,43 @@ internal sealed class PawnPersonality
             throw new ArgumentOutOfRangeException(nameof(weight), "Personality weights must be between 0 and 3.");
         _weights[kind] = weight;
     }
+
+    public PawnPersonalitySnapshot CaptureSnapshot() => new()
+    {
+        HungerWeight = WeightFor(PawnNeedKind.Hunger),
+        SleepWeight = WeightFor(PawnNeedKind.Sleep),
+        SocialWeight = WeightFor(PawnNeedKind.Social),
+        RecreationWeight = WeightFor(PawnNeedKind.Recreation),
+        ComfortWeight = WeightFor(PawnNeedKind.Comfort)
+    };
+
+    public void RestoreSnapshot(PawnPersonalitySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.IsValid())
+            throw new InvalidDataException("Pawn personality contains an invalid need weight.");
+        SetWeight(PawnNeedKind.Hunger, snapshot.HungerWeight);
+        SetWeight(PawnNeedKind.Sleep, snapshot.SleepWeight);
+        SetWeight(PawnNeedKind.Social, snapshot.SocialWeight);
+        SetWeight(PawnNeedKind.Recreation, snapshot.RecreationWeight);
+        SetWeight(PawnNeedKind.Comfort, snapshot.ComfortWeight);
+    }
+}
+
+/// <summary>Versioned, validated preference data stored with its resident.</summary>
+internal sealed class PawnPersonalitySnapshot
+{
+    public float HungerWeight { get; set; } = 1f;
+    public float SleepWeight { get; set; } = 1f;
+    public float SocialWeight { get; set; } = 1f;
+    public float RecreationWeight { get; set; } = 1f;
+    public float ComfortWeight { get; set; } = 1f;
+
+    public bool IsValid() =>
+        Valid(HungerWeight) && Valid(SleepWeight) && Valid(SocialWeight) &&
+        Valid(RecreationWeight) && Valid(ComfortWeight);
+
+    private static bool Valid(float value) => float.IsFinite(value) && value is >= 0f and <= 3f;
 }
 
 /// <summary>
