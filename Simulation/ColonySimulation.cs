@@ -812,6 +812,7 @@ internal sealed class ColonySimulation
         // deterministic and bounded by built storage footprints for every resource, not food alone.
         foreach (var resource in Enum.GetValues<ResourceKind>())
             ReconcileSpatialStorage(resource);
+        _ecosystem.DrainEvents();
         RefreshWealthMetrics();
     }
 
@@ -1119,6 +1120,9 @@ internal sealed class ColonySimulation
             var cell = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
             _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker.Name, cell);
         }
+
+        // Initial stockpile seeding is setup state, not a live incident/event history.
+        _ecosystem.DrainEvents();
     }
 
     private void RegisterBuiltStorageRacks()
@@ -1149,9 +1153,10 @@ internal sealed class ColonySimulation
         foreach (var worker in _workers)
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
-            if (citizen.State == CitizenState.Idle || worker.Task != null)
+            if (citizen.State == CitizenState.Idle || worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor)
                 citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
-            citizen.CanReceiveJob = worker.Task == null && !worker.IsExternalVisitor;
+            bool externallyBusy = worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor || worker.IsLeaving;
+            _ecosystem.SetExternalTaskState(citizen.Id, externallyBusy);
             citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
             citizen.Stress = worker.Stress;
         }
