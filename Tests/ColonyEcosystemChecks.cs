@@ -7,6 +7,20 @@ internal static class ColonyEcosystemChecks
     public static void Run()
     {
 
+        var sharedWorker = new ColonyWorker(77, "Shared resident", 2.5f, 3.5f, 20f);
+        var sharedMind = new ColonyEcosystem(8, 8).AddCitizen(sharedWorker, new CellPosition(2, 3));
+        Check(sharedMind.Id == sharedWorker.Id && Math.Abs(sharedMind.Hunger - 80f) < 0.001f,
+            "an attached resident mind must share the worker identity and map hunger deficit into need satisfaction");
+        sharedMind.Hunger = 55f;
+        sharedMind.Fatigue = 42f;
+        sharedMind.Stress = 19f;
+        sharedMind.Position = new CellPosition(4, 5);
+        Check(Math.Abs(sharedWorker.Hunger - 45f) < 0.001f &&
+              Math.Abs(sharedWorker.CitizenFatigue - 42f) < 0.001f &&
+              Math.Abs(sharedWorker.Stress - 19f) < 0.001f &&
+              Math.Abs(sharedWorker.X - 4.5f) < 0.001f && Math.Abs(sharedWorker.Y - 5.5f) < 0.001f,
+            "resident needs, stress and movement must mutate the canonical pawn state without frame-copy synchronization");
+
         var needs = new ColonyEcosystem(4, 4);
         var thresholdCitizen = needs.AddCitizen("Threshold probe", new CellPosition(0, 0));
         thresholdCitizen.Hunger = 30.1f;
@@ -48,8 +62,63 @@ internal static class ColonyEcosystemChecks
         utilityDrivenNeeds.Step(0.1f);
         Check(utilityCitizen.State == CitizenState.MovingToStorage,
             "live citizen behavior must use personality-weighted utility scores to choose food over rest");
-        Check(utilityCitizen.JobId is null && utilityDrivenNeeds.Grid.ReservedCount(ResourceKind.Wood) == 0,
+        Check(utilityCitizen.JobId is null && utilityDrivenNeeds.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 0,
             "interrupting for a utility-selected need must not strand a job or output reservation");
+
+        var outputGridWorld = new ColonyEcosystem(8, 8);
+        outputGridWorld.GridFor(ResourceKind.Food).DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        outputGridWorld.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        outputGridWorld.GridFor(ResourceKind.Food).TryAdd(ResourceKind.Food, 10);
+        outputGridWorld.AddCitizen("Wood maker", new CellPosition(0, 0));
+        outputGridWorld.JobBroker.RegisterWorkplace("Wood mill", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 0.1f);
+        outputGridWorld.Step(0.1f);
+        outputGridWorld.Step(0.1f);
+        outputGridWorld.Step(0.2f);
+        Check(outputGridWorld.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) == 1,
+            "workplace output must be committed into the spatial grid for its actual resource type");
+
+        var unifiedWork = new ColonyEcosystem(8, 8);
+        unifiedWork.GridFor(ResourceKind.Food).DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        unifiedWork.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        unifiedWork.GridFor(ResourceKind.Food).TryAdd(ResourceKind.Food, 10);
+        var externalWorker = unifiedWork.AddCitizen("External task worker", new CellPosition(0, 0));
+        int workplaceId = unifiedWork.JobBroker.RegisterWorkplace("Garden", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 1f);
+        unifiedWork.Step(0.1f);
+        Check(externalWorker.JobId == workplaceId && externalWorker.OutputReservationId > 0,
+            "a resident may reserve a workplace and output slot before starting work");
+        Check(unifiedWork.SetExternalTaskState(externalWorker.Id, true) &&
+              externalWorker.JobId is null && externalWorker.OutputReservationId == 0 &&
+              unifiedWork.JobBroker.FindJob(workplaceId)!.AssignedWorkers == 0,
+            "an external colony task must cancel the ecosystem job and release reserved output atomically");
+        unifiedWork.Step(0.1f);
+        Check(externalWorker.WorkProgress == 0f &&
+              unifiedWork.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) == 0,
+            "a resident must not keep working a second workplace while an external task owns the resident");
+
+        var sharedCapacity = new ColonyEcosystem(8, 8);
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            sharedCapacity.GridFor(resource).DefineStockpileZone(resource,
+                [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        sharedCapacity.SetExternalStorageBudget(inventoryUsed: 9, inventoryCapacity: 10);
+        var budgetWorker = sharedCapacity.AddCitizen("Budget worker A", new CellPosition(0, 0));
+        var secondBudgetWorker = sharedCapacity.AddCitizen("Budget worker B", new CellPosition(1, 0));
+        sharedCapacity.JobBroker.RegisterWorkplace("First output", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 0.1f);
+        sharedCapacity.JobBroker.RegisterWorkplace("Second output", new CellPosition(1, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Alloy, outputAmount: 1, workSeconds: 0.1f);
+        sharedCapacity.Step(0.1f);
+        Check(sharedCapacity.Citizens.Count(citizen => citizen.OutputReservationId > 0) == 1 &&
+              new[] { budgetWorker, secondBudgetWorker }.Count(citizen => citizen.JobId.HasValue) == 1,
+            "output reservations across different resource grids must share the same aggregate inventory budget");
+        sharedCapacity.SetExternalStorageBudget(inventoryUsed: 10, inventoryCapacity: 10);
+        Check(sharedCapacity.Citizens.All(citizen => citizen.OutputReservationId == 0),
+            "external shipments filling the aggregate inventory must release all over-budget output reservations");
 
         var logisticsEvents = new ColonyEcosystem(4, 4);
         logisticsEvents.Grid.DefineStockpileZone(ResourceKind.Food,
@@ -141,7 +210,7 @@ internal static class ColonyEcosystemChecks
         var colony = new ColonyEcosystem(8, 8);
         colony.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(0, 1)]);
-        colony.Grid.DefineStockpileZone(ResourceKind.Wood,
+        colony.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
             [new CellPosition(6, 6), new CellPosition(6, 7)]);
         Check(colony.Grid.TryAdd(ResourceKind.Food, 5),
             "the integrated colony should be able to seed a food stockpile");
@@ -153,18 +222,18 @@ internal static class ColonyEcosystemChecks
         colony.Step(0.1f);
         Check(citizen.JobId == jobId && citizen.State == CitizenState.MovingToJob,
             "an idle eligible citizen should reserve a job and move toward its workplace");
-        Check(colony.Grid.ReservedCount(ResourceKind.Wood) == 2,
+        Check(colony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 2,
             "a worker must reserve output capacity before starting its job");
         Check(colony.RemoveWorkplace(jobId), "a registered workplace should be removable");
         Check(citizen.JobId == null && citizen.State == CitizenState.Idle &&
-              colony.Grid.ReservedCount(ResourceKind.Wood) == 0,
+              colony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 0,
             "removing a workplace must release its citizen and all reserved storage");
 
         int replacementJob = colony.JobBroker.RegisterWorkplace("Lumber yard", new CellPosition(5, 6),
             workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 2, workSeconds: 0.5f);
         for (int i = 0; i < 100; i++) colony.Step(0.1f);
-        Check(colony.Grid.ResourceCount(ResourceKind.Wood) > 0 &&
-              colony.Grid.ResourceCount(ResourceKind.Wood) <= 20,
+        Check(colony.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) > 0 &&
+              colony.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) <= 20,
             "work must produce real stored output without exceeding tile stack capacity");
         Check(colony.JobBroker.FindJob(replacementJob)?.AssignedWorkers <= 1,
             "workplace assignment must never exceed its worker capacity");
@@ -174,7 +243,7 @@ internal static class ColonyEcosystemChecks
         var priorityColony = new ColonyEcosystem(8, 8);
         priorityColony.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(0, 1)]);
-        priorityColony.Grid.DefineStockpileZone(ResourceKind.Wood,
+        priorityColony.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
             [new CellPosition(6, 6), new CellPosition(6, 7)]);
         Check(priorityColony.Grid.TryAdd(ResourceKind.Food, 2),
             "the priority fixture should have food available before work begins");
@@ -184,13 +253,13 @@ internal static class ColonyEcosystemChecks
             outputAmount: 2, workSeconds: 5f);
         priorityColony.Step(0.1f);
         Check(priorityCitizen.JobId == priorityJob &&
-              priorityColony.Grid.ReservedCount(ResourceKind.Wood) == 2,
+              priorityColony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 2,
             "a citizen should reserve workplace capacity and output storage before travelling to work");
         priorityCitizen.Hunger = 29f;
         priorityColony.Step(0.1f);
         Check(priorityCitizen.State == CitizenState.MovingToStorage &&
               priorityCitizen.JobId == null &&
-              priorityColony.Grid.ReservedCount(ResourceKind.Wood) == 0,
+              priorityColony.GridFor(ResourceKind.Wood).ReservedCount(ResourceKind.Wood) == 0,
             "food needs must preempt workplace travel and release both the job slot and its output reservation");
         Check(priorityColony.JobBroker.FindJob(priorityJob)?.AssignedWorkers == 0,
             "a citizen seeking food must not occupy workplace capacity while away from the job");

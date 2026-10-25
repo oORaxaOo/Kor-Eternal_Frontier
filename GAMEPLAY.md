@@ -22,6 +22,10 @@ Architectural features such as walls, floors, doors, paths, and conduits are des
 - Versioned local colony saves with structural validation and round-trip tests.
 - A `WorldSimulation` coordinator that advances the local colony and regional world under one real-time clock, with pause/speed support and automatic regional updates.
 
+## Canonical simulation clock and system phases
+
+The active runtime now advances all world and colony systems from one authoritative integer 60 Hz clock. Each fixed tick has a stable phase order: local colony and resident simulation, pre-world incident/ledger checks, continuous world and macro time, strategic arrival and Blight processing, tactical combat, combat consequences, and research/workshop progression. Planning, incident checks, strategic arrivals, research, and workshop work run on deterministic 10 Hz boundaries; they no longer depend on render-frame chunking. Loading a saved session reconstructs the master tick from canonical world time and reattaches the colony to it. The clock and phase scheduler have dedicated deterministic self-tests.
+
 ## Known gaps
 
 The active game uses `WorldSimulation` as the shared clock and coordinates the local square-tile colony, continuous strategic world, macro simulation, research, tactical combat and workbench jobs. The gameplay interface is mouse-first: visible controls expose pause/resume, speed, save/load, zoom, construction, object placement and cancellation; middle-mouse drag pans the camera. Colony and world views have separate zoom thresholds; middle-mouse drag pans the active camera. The continuous world owns settlement inventories and shipments, while combatants that arrive near Kor are represented in the local combat simulation. Version 2 unified session saves preserve colony/world state plus active combatants, cover, workshop jobs, Nemesis records and pending salvage. The older version 1 session format remains readable and initializes the combat runtime empty.

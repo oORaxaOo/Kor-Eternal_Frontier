@@ -7,6 +7,11 @@ internal static class WorldSimulationChecks
 {
     public static void Run()
     {
+        var terrainProbe = new ColonySimulation(seed: 41024);
+        Check(terrainProbe.FindEcosystemPath(ResourceKind.Food, new CellPosition(21, 6), new CellPosition(22, 6)) is null &&
+              terrainProbe.FindEcosystemPath(ResourceKind.Wood, new CellPosition(21, 6), new CellPosition(22, 6)) is null,
+            "resident navigation layers must inherit blocked rock from the actual colony map for every resource");
+
         var world = new WorldSimulation(seed: 70241);
         var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
         Check(world.Colony.ResourceCount(ResourceKind.Wood) ==
@@ -34,8 +39,9 @@ internal static class WorldSimulationChecks
         speedWorld.SetSpeed(2f);
         for (int frame = 0; frame < 5; frame++) speedWorld.Step(0.1f);
         Check(Math.Abs(speedWorld.ElapsedSeconds - 1d) < 0.0001 &&
-              speedWorld.SpatialWorld.MacroWorld.SimulationTicks == speedWorld.Colony.Clock.TickCount,
-            "speed multiplier must scale the unified clock while keeping macro and colony ticks synchronized");
+              speedWorld.SpatialWorld.MacroWorld.SimulationTicks == speedWorld.Colony.Clock.TickCount &&
+              speedWorld.Colony.EcosystemTick == speedWorld.SimulationTickCount,
+            "speed multiplier must scale the unified clock while keeping macro, colony, and resident-event ticks synchronized");
         world.Step(0.01f);
         Check(world.ElapsedSeconds >= elapsed,
             "bounded catch-up must retain backlog rather than moving the world clock backwards");
@@ -83,8 +89,13 @@ internal static class WorldSimulationChecks
             "session save/load must preserve a local trader's cargo without resurrecting drained macro arrivals");
         world.Restore(restoredSession);
         Check(Math.Abs(world.ElapsedSeconds - savedClock) < 0.0001 &&
-              Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001,
-            "restoring a session must restore the one continuous world clock");
+              Math.Abs(world.SpatialWorld.ClockSeconds - savedClock) < 0.0001 &&
+              Math.Abs(world.SimulationTickCount / (double)TickManager.TicksPerSecond - savedClock) < 0.0001,
+            "restoring a session must restore the canonical world tick and resynchronize all clock views");
+        world.Step(1f / TickManager.TicksPerSecond);
+        Check(world.SimulationTickCount == (long)Math.Round(savedClock * TickManager.TicksPerSecond) + 1 &&
+              world.Colony.Clock.TickCount == world.SimulationTickCount,
+            "the master clock must continue monotonically after a session round trip");
         Check(world.Colony.ResourceCount(ResourceKind.Wood) == 15,
             "session persistence must store the shared resource balance only once and restore it into both views");
     }

@@ -122,8 +122,10 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float X { get; internal set; } = x;
     public float Y { get; internal set; } = y;
     public float Hunger { get; internal set; } = hunger;
+    public float CitizenFatigue { get; internal set; } = 100f;
     public float ThermalExposure { get; internal set; }
     public float Stress { get; internal set; }
+    public PawnPersonality Personality { get; } = new();
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -217,6 +219,10 @@ internal sealed class ColonySimulation
     private int? _selectedObjectId;
 
     public IReadOnlyList<ColonyWorker> Workers => _workers;
+    internal long EcosystemTick => _ecosystem.SimulationTick;
+    internal int SpatialStorageCount(ResourceKind resource) => _ecosystem.GridFor(resource).ResourceCount(resource);
+    internal List<CellPosition>? FindEcosystemPath(ResourceKind resource, CellPosition start, CellPosition target) =>
+        _ecosystem.GridFor(resource).FindPath(start, target);
     public SocialRelationshipNetwork SocialRelationships => _socialRelationships;
     public IncidentManager Incidents => _incidentManager;
     public ColonyStoryteller Storyteller => _storyteller;
@@ -244,7 +250,7 @@ internal sealed class ColonySimulation
             Task = new WorkerTask(ColonyTaskKind.Move, target, route)
         };
         _workers.Add(visitor);
-        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor.Name, entry);
+        _citizensByWorker[id] = _ecosystem.AddCitizen(visitor, entry);
         Message = $"{faction} visitor entered the colony and is heading to the stockpile.";
         return id;
     }
@@ -534,7 +540,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 9,
+            SchemaVersion = 10,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -601,7 +607,10 @@ internal sealed class ColonySimulation
             Id = worker.Id, Name = worker.Name, Faction = worker.Faction, IsExternalVisitor = worker.IsExternalVisitor, IsLeaving = worker.IsLeaving, TradeCargo = new Dictionary<ResourceKind, int>(worker.TradeCargo), X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
             ThermalExposure = worker.ThermalExposure,
             Stress = worker.Stress,
-            CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
+            CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : worker.CitizenFatigue,
+            Personality = _citizensByWorker.TryGetValue(worker.Id, out var personaCitizen)
+                ? personaCitizen.Personality.CaptureSnapshot()
+                : worker.Personality.CaptureSnapshot(),
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -681,6 +690,7 @@ internal sealed class ColonySimulation
         {
             var restored = new ColonyWorker(worker.Id, worker.Name, worker.X, worker.Y, worker.Hunger)
             {
+                CitizenFatigue = worker.CitizenFatigue,
                 Faction = worker.Faction,
                 IsExternalVisitor = worker.IsExternalVisitor,
                 IsLeaving = worker.IsLeaving,
@@ -699,6 +709,8 @@ internal sealed class ColonySimulation
                     DepositId = worker.Task.DepositId
                 }
             };
+            if (worker.Personality is not null)
+                restored.Personality.RestoreSnapshot(worker.Personality);
             return restored;
         }));
         simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
@@ -806,14 +818,38 @@ internal sealed class ColonySimulation
         _inventory.Clear(); // No second resource balance remains once the canonical ledger is attached.
         world.SetInventoryCapacity(settlementId, InventoryCapacity);
 
-        // The ecosystem grid is an operational buffer for citizen needs and garden jobs, not a
-        // second authority. Reconcile it from the canonical settlement ledger at bind time.
-        int ledgerFood = ResourceCount(ResourceKind.Food);
-        int gridFood = _ecosystem.Grid.ResourceCount(ResourceKind.Food);
-        if (ledgerFood > gridFood && !_ecosystem.Grid.TryAdd(ResourceKind.Food, ledgerFood - gridFood))
-            throw new InvalidOperationException("The ecosystem food buffer cannot mirror the settlement ledger.");
-        if (gridFood > ledgerFood) _ecosystem.Grid.TryTake(ResourceKind.Food, gridFood - ledgerFood);
+        // Spatial stacks are mirrors of the one authoritative settlement ledger. Reconciliation is
+        // deterministic and bounded by built storage footprints for every resource, not food alone.
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            ReconcileSpatialStorage(resource);
+        _ecosystem.DrainEvents();
         RefreshWealthMetrics();
+    }
+
+    private void ReconcileSpatialStorage(ResourceKind resource)
+    {
+        var grid = _ecosystem.GridFor(resource);
+        int ledgerCount = ResourceCount(resource);
+        int gridCount = grid.ResourceCount(resource);
+        if (ledgerCount > gridCount)
+        {
+            // The strategic settlement ledger can legitimately hold more than the locally mapped
+            // stockpile footprint (for example, regional stores or an expanded strategic capacity).
+            // Materialize only what the actual local stacks can hold; the remainder stays in the
+            // settlement ledger until physical local storage is built. Never invent extra map cells
+            // or bypass stack capacity to force a visual mirror.
+            int materialized = Math.Min(ledgerCount - gridCount, grid.FreeCapacity(resource));
+            if (materialized > 0 && !grid.TryAdd(resource, materialized))
+                throw new InvalidOperationException(
+                    $"Spatial storage for {resource} rejected {materialized} units despite reported free capacity.");
+        }
+        else if (gridCount > ledgerCount)
+        {
+            int removed = grid.TryTake(resource, gridCount - ledgerCount);
+            if (removed != gridCount - ledgerCount)
+                throw new InvalidOperationException(
+                    $"Spatial storage for {resource} could not reconcile an inventory withdrawal.");
+        }
     }
 
     private double InventoryAmount(ResourceKind resource)
@@ -1061,7 +1097,7 @@ internal sealed class ColonySimulation
             var cell = spawn.Value;
             var worker = new ColonyWorker(id, $"Kor-{id:0000}", cell.X + 0.5f, cell.Y + 0.5f, 0f);
             _workers.Add(worker);
-            _citizensByWorker[id] = _ecosystem.AddCitizen(worker.Name, cell);
+            _citizensByWorker[id] = _ecosystem.AddCitizen(worker, cell);
             recruited++;
         }
 
@@ -1078,23 +1114,52 @@ internal sealed class ColonySimulation
         _gardenJobsByObject.Clear();
         _storageZonesByObject.Clear();
 
-        // The starter stockpile occupies six map tiles. The first runtime bridge maps its
-        // pooled capacity to the grid's bounded stacks while the legacy construction scheduler
-        // continues to own non-food materials during this migration slice.
-        _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food,
+        // The starter stockpile occupies six map tiles. Separate per-resource stack grids share this
+        // footprint spatially, allowing wood, stone, food, alloy and components to coexist in storage.
+        CellPosition[] starterStorageCells =
         [
             new CellPosition(18, 8), new CellPosition(19, 8), new CellPosition(20, 8),
             new CellPosition(18, 9), new CellPosition(19, 9), new CellPosition(20, 9)
-        ]);
+        ];
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+        {
+            var grid = _ecosystem.GridFor(resource);
+            grid.DefineStockpileZone(resource, starterStorageCells);
+            int amount = ResourceCount(resource);
+            if (amount > 0 && !grid.TryAdd(resource, amount))
+                throw new InvalidOperationException($"Could not migrate starter {resource} into spatial storage.");
+        }
         RegisterBuiltStorageRacks();
-        int initialFood = ResourceCount(ResourceKind.Food);
-        if (initialFood > 0 && !_ecosystem.Grid.TryAdd(ResourceKind.Food, initialFood))
-            throw new InvalidOperationException("Could not migrate starter food into grid storage.");
 
         foreach (var worker in _workers)
         {
             var cell = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
-            _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker.Name, cell);
+            _citizensByWorker[worker.Id] = _ecosystem.AddCitizen(worker, cell);
+        }
+
+        SyncEcosystemNavigationGrids();
+
+        // Initial stockpile seeding is setup state, not a live incident/event history.
+        _ecosystem.DrainEvents();
+    }
+
+    /// <summary>
+    /// Mirrors local terrain and walls into each resource stack layer's navigation grid.
+    /// Resident pathfinding must share the colony map's topology rather than silently walking
+    /// through rock or constructed walls.
+    /// </summary>
+    private void SyncEcosystemNavigationGrids()
+    {
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+        {
+            var grid = _ecosystem.GridFor(resource);
+            for (int y = 0; y < Height; y++)
+            for (int x = 0; x < Width; x++)
+            {
+                var tile = _tiles[x, y];
+                bool blocked = tile.Terrain == TerrainKind.Rock || tile.Architecture == ArchitectureKind.Wall;
+                grid.SetWall(new CellPosition(x, y), blocked);
+            }
         }
     }
 
@@ -1110,35 +1175,26 @@ internal sealed class ColonySimulation
             for (int y = rack.Origin.Y; y < rack.Origin.Y + rack.Height; y++)
             for (int x = rack.Origin.X; x < rack.Origin.X + rack.Width; x++)
                 cells.Add(new CellPosition(x, y));
-            _ecosystem.Grid.DefineStockpileZone(ResourceKind.Food, cells, StorageRackCapacity / tileCount);
+            foreach (var resource in Enum.GetValues<ResourceKind>())
+                _ecosystem.GridFor(resource).DefineStockpileZone(resource, cells, StorageRackCapacity / tileCount);
             _storageZonesByObject.Add(rack.Id);
         }
     }
 
-    private void StepEcosystem(float deltaSeconds)
+    private void StepEcosystem(float deltaSeconds, long authoritativeTick)
     {
         RegisterBuiltStorageRacks();
+        SyncEcosystemNavigationGrids();
+        _ecosystem.SetExternalStorageBudget(InventoryUsed, InventoryCapacity);
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            ReconcileSpatialStorage(resource);
         var grid = _ecosystem.Grid;
-        int inventoryFood = ResourceCount(ResourceKind.Food);
-        int gridFood = grid.ResourceCount(ResourceKind.Food);
-        if (inventoryFood > gridFood)
-        {
-            if (!grid.TryAdd(ResourceKind.Food, inventoryFood - gridFood))
-                throw new InvalidOperationException("Grid food storage could not accept the current colony inventory.");
-        }
-        else if (gridFood > inventoryFood)
-        {
-            grid.TryTake(ResourceKind.Food, gridFood - inventoryFood);
-        }
 
         foreach (var worker in _workers)
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
-            if (citizen.State == CitizenState.Idle || worker.Task != null)
-                citizen.Position = new CellPosition(Math.Clamp((int)worker.X, 0, Width - 1), Math.Clamp((int)worker.Y, 0, Height - 1));
-            citizen.CanReceiveJob = worker.Task == null && !worker.IsExternalVisitor;
-            citizen.Hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
-            citizen.Stress = worker.Stress;
+            bool externallyBusy = worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor || worker.IsLeaving;
+            _ecosystem.SetExternalTaskState(citizen.Id, externallyBusy);
         }
 
         // Completed gardens become real food-producing workplaces. Their output is reserved
@@ -1161,7 +1217,7 @@ internal sealed class ColonySimulation
         }
 
         int beforeFood = grid.ResourceCount(ResourceKind.Food);
-        _ecosystem.Step(deltaSeconds);
+        _ecosystem.Step(deltaSeconds, authoritativeTick);
         int afterFood = grid.ResourceCount(ResourceKind.Food);
         if (afterFood < beforeFood)
         {
@@ -1176,17 +1232,14 @@ internal sealed class ColonySimulation
             if (accepted < produced) grid.TryTake(ResourceKind.Food, produced - accepted);
         }
 
-        foreach (var worker in _workers)
-        {
-            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
-            worker.Hunger = Math.Clamp(100f - citizen.Hunger, 0f, 100f);
-            worker.Stress = citizen.Stress;
-            if (worker.Task == null)
-            {
-                worker.X = citizen.Position.X + 0.5f;
-                worker.Y = citizen.Position.Y + 0.5f;
-            }
-        }
+        // Position, hunger, fatigue and stress are direct views over the canonical ColonyWorker;
+        // there is no second copy to flush back after autonomous needs/work simulation.
+
+        // Food has already reconciled its consumed/produced delta above; all other resources remain
+        // spatially mirrored after construction, gathering, production or world-level shipments.
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            if (resource != ResourceKind.Food)
+                ReconcileSpatialStorage(resource);
     }
 
     public ResourceDeposit? DepositAt(int x, int y) =>
@@ -2038,39 +2091,50 @@ internal sealed class ColonySimulation
     public void Step(float deltaSeconds)
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
-        float workCycleElapsed = 0f;
-        _tickManager.Advance(deltaSeconds, tick =>
+        _tickManager.Advance(deltaSeconds, AdvanceSimulationTick);
+    }
+
+    /// <summary>
+    /// Advances one tick supplied by WorldSimulation. During a live session, the colony clock is
+    /// a mirror of the authoritative world tick; standalone tests may still advance a colony directly.
+    /// </summary>
+    internal void AdvanceWorldTick(SimulationTick tick)
+    {
+        if (tick.Number <= 0 || !float.IsFinite(tick.DeltaSeconds) || tick.DeltaSeconds <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(tick));
+        _tickManager.RestoreTickCount(tick.Number);
+        AdvanceSimulationTick(tick);
+    }
+
+    private void AdvanceSimulationTick(SimulationTick tick)
+    {
+        float dt = tick.DeltaSeconds;
+        ElapsedSeconds = (float)(tick.Number / (double)TickManager.TicksPerSecond);
+
+        StepEnvironment(dt);
+        StepEnvironmentalExposure(dt);
+
+        if (tick.IsWorkCycle)
         {
-            float dt = tick.DeltaSeconds;
-            ElapsedSeconds += dt;
-            workCycleElapsed += dt;
+            // Work planning is aligned to the shared clock's 10 Hz boundary and receives exactly
+            // one work interval, independent of frame chunking.
+            StepEcosystem(6f / TickManager.TicksPerSecond, tick.Number);
+            AssignJobs();
+        }
 
-            // Fluid/thermal simulation already owns its own accumulator, so it can be called safely
-            // at tick cadence while doing expensive environment work only when due.
-            StepEnvironment(dt);
-            StepEnvironmentalExposure(dt);
+        foreach (var worker in _workers)
+        {
+            if (worker.Task == null) continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
+                continue;
+            AdvanceWorker(worker, dt);
+        }
 
-            if (tick.IsWorkCycle)
-            {
-                StepEcosystem(workCycleElapsed);
-                workCycleElapsed = 0f;
-                AssignJobs();
-            }
-
-            foreach (var worker in _workers)
-            {
-                if (worker.Task == null) continue;
-                if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
-                    continue;
-                AdvanceWorker(worker, dt);
-            }
-
-            if (tick.IsRare)
-                StepSocialRelationships(TickManager.RareInterval / (float)TickManager.TicksPerSecond);
-            if (tick.IsGlobal)
-                StepStoryteller();
-            SyncThingGrid();
-        });
+        if (tick.IsRare)
+            StepSocialRelationships(TickManager.RareInterval / (float)TickManager.TicksPerSecond);
+        if (tick.IsGlobal)
+            StepStoryteller();
+        SyncThingGrid();
     }
 
     private void SyncThingGrid()

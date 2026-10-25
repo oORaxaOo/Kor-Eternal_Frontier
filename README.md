@@ -4,6 +4,8 @@ Kor Eternal Frontier is a developing colony, civilization, and world simulation.
 
 ## Current foundation
 
+The live simulation uses one fixed-step 60 Hz kernel as the authoritative clock for the colony, continuous world, macro regions, combat and consequences. Systems execute in a stable phase order, while planning, storyteller checks, strategic arrival handling, research and workshop work are scheduled at 10 Hz. The kernel is independent of render-frame timing and restores its integer tick from the saved world clock.
+
 The canonical application is the root .NET 8 project. The Unity prototype, duplicate nested project, legacy isometric artwork pipeline, duplicated art/metadata folders, and checked-in build output have been removed from the active source tree.
 
 The local map is a 40 by 26 orthogonal square grid. A world seed now drives both the strategic overworld and its local spawn map: terrain scatter, resource-deposit positions/amounts, regional biomes, faction settlements, armies, caravans, Blight fronts and strategic resource sites are reproducible for the same seed and differ across seeds. The starter habitat and stockpile remain in a protected starting area so a new run is playable. The current simulation foundation has:

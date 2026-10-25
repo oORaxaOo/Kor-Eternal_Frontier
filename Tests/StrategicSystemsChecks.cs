@@ -93,9 +93,14 @@ internal static class StrategicSystemsChecks
 
         var colony = new ColonySimulation();
         colony.WorkPriorities.SetPriority(1, WorkCategory.Construction, 0);
+        colony.CitizenForWorker(1)!.Personality.SetWeight(PawnNeedKind.Hunger, 2.4f);
+        colony.CitizenForWorker(1)!.Personality.SetWeight(PawnNeedKind.Comfort, 0.35f);
         var restoredColony = ColonySaveService.Deserialize(ColonySaveService.Serialize(colony));
         Check(restoredColony.WorkPriorities.GetPriority(1, WorkCategory.Construction) == 0,
             "the per-colonist work matrix must persist through save/load");
+        Check(Math.Abs(restoredColony.CitizenForWorker(1)!.Personality.WeightFor(PawnNeedKind.Hunger) - 2.4f) < 0.001f &&
+              Math.Abs(restoredColony.CitizenForWorker(1)!.Personality.WeightFor(PawnNeedKind.Comfort) - 0.35f) < 0.001f,
+            "resident need preferences must persist in save schema 10 and be restored onto the canonical pawn");
 
         static void Check(bool condition, string message)
         {

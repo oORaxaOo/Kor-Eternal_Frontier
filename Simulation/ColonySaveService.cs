@@ -42,7 +42,7 @@ internal static class ColonySaveService
 
 internal sealed class ColonySnapshot
 {
-    public int SchemaVersion { get; set; } = 9;
+    public int SchemaVersion { get; set; } = 10;
     public long SocialTick { get; set; }
     public SocialNetworkSnapshot? SocialNetwork { get; set; }
     public IncidentManagerSnapshot? IncidentManager { get; set; }
@@ -72,7 +72,7 @@ internal sealed class ColonySnapshot
 
     public void Validate()
     {
-        if (SchemaVersion < 2 || SchemaVersion > 9) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
+        if (SchemaVersion < 2 || SchemaVersion > 10) throw new InvalidDataException($"Unsupported colony save schema version: {SchemaVersion}.");
         if (SocialTick < 0) throw new InvalidDataException("Colony save contains an invalid social simulation tick.");
         if (SchemaVersion >= 4 && (SocialNetwork is null || IncidentManager is null))
             throw new InvalidDataException("Current colony save is missing social or incident state.");
@@ -241,7 +241,8 @@ internal sealed class ColonySnapshot
                 !float.IsFinite(worker.CitizenFatigue) || worker.CitizenFatigue is < 0 or > 100 ||
                 !float.IsFinite(worker.ThermalExposure) || worker.ThermalExposure is < 0 or > 100 ||
                 !float.IsFinite(worker.Stress) || worker.Stress is < 0 or > 100 ||
-                worker.CarriedAmount < 0)
+                worker.CarriedAmount < 0 ||
+                (SchemaVersion >= 10 && (worker.Personality is null || !worker.Personality.IsValid())))
                 throw new InvalidDataException("Colony save contains an invalid colonist state.");
             if (worker.CarriedResource.HasValue != (worker.CarriedAmount > 0) ||
                 (worker.CarriedResource.HasValue && !Enum.IsDefined(worker.CarriedResource.Value)))
@@ -419,6 +420,7 @@ internal sealed class ColonyWorkerSnapshot
     public float Y { get; set; }
     public float Hunger { get; set; }
     public float CitizenFatigue { get; set; } = 100f;
+    public PawnPersonalitySnapshot Personality { get; set; } = new();
     public float ThermalExposure { get; set; }
     public float Stress { get; set; }
     public ResourceKind? CarriedResource { get; set; }

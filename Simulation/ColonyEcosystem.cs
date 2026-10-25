@@ -364,24 +364,107 @@ internal sealed class GridManager
     }
 }
 
-/// <summary>A lightweight simulated citizen. Hunger and fatigue are satisfaction values: 100 is rested/fed.</summary>
-internal sealed class CitizenAgent(int id, string name, CellPosition position)
+/// <summary>
+/// Resident decision state. In a running colony, identity, position, hunger, fatigue, and stress
+/// are live views over the same ColonyWorker object used by construction, travel, trade, and combat.
+/// Standalone tests can still create an unbound citizen.
+/// </summary>
+internal sealed class CitizenAgent
 {
-    public int Id { get; } = id;
-    public string Name { get; } = name;
-    public CellPosition Position { get; internal set; } = position;
-    public float Hunger { get; internal set; } = 100f;
-    public float Fatigue { get; internal set; } = 100f;
-    public float Stress { get; internal set; }
-    public PawnPersonality Personality { get; } = new();
+    private ColonyWorker? _worker;
+    private CellPosition _position;
+    private float _hunger = 100f;
+    private float _fatigue = 100f;
+    private float _stress;
+    private bool _canReceiveJob = true;
+    private readonly PawnPersonality _personality = new();
+
+    public int Id { get; }
+    public string Name { get; }
+
+    public CitizenAgent(int id, string name, CellPosition position)
+    {
+        Id = id;
+        Name = name;
+        _position = position;
+    }
+
+    internal void AttachToWorker(ColonyWorker worker)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (worker.Id != Id || !string.Equals(worker.Name, Name, StringComparison.Ordinal))
+            throw new InvalidOperationException("Citizen mind must attach to the matching colony resident identity.");
+        if (_worker is not null && !ReferenceEquals(_worker, worker))
+            throw new InvalidOperationException("Citizen mind is already attached to a different resident object.");
+        _worker = worker;
+        _position = new CellPosition(Math.Max(0, (int)worker.X), Math.Max(0, (int)worker.Y));
+        _hunger = Math.Clamp(100f - worker.Hunger, 0f, 100f);
+        _fatigue = Math.Clamp(worker.CitizenFatigue, 0f, 100f);
+        _stress = Math.Clamp(worker.Stress, 0f, 100f);
+    }
+
+    public CellPosition Position
+    {
+        get => _worker is null
+            ? _position
+            : new CellPosition(Math.Max(0, (int)_worker.X), Math.Max(0, (int)_worker.Y));
+        internal set
+        {
+            _position = value;
+            if (_worker is not null)
+            {
+                _worker.X = value.X + 0.5f;
+                _worker.Y = value.Y + 0.5f;
+            }
+        }
+    }
+
+    // The colony worker stores hunger as a deficit (100 means starving); the mind stores satisfaction.
+    public float Hunger
+    {
+        get => _worker is null ? _hunger : Math.Clamp(100f - _worker.Hunger, 0f, 100f);
+        internal set
+        {
+            _hunger = Math.Clamp(value, 0f, 100f);
+            if (_worker is not null) _worker.Hunger = 100f - _hunger;
+        }
+    }
+
+    public float Fatigue
+    {
+        get => _worker is null ? _fatigue : Math.Clamp(_worker.CitizenFatigue, 0f, 100f);
+        internal set
+        {
+            _fatigue = Math.Clamp(value, 0f, 100f);
+            if (_worker is not null) _worker.CitizenFatigue = _fatigue;
+        }
+    }
+
+    public float Stress
+    {
+        get => _worker is null ? _stress : Math.Clamp(_worker.Stress, 0f, 100f);
+        internal set
+        {
+            _stress = Math.Clamp(value, 0f, 100f);
+            if (_worker is not null) _worker.Stress = _stress;
+        }
+    }
+
+    public PawnPersonality Personality => _worker?.Personality ?? _personality;
     public float Mood => Math.Clamp((Hunger + Fatigue) * 0.5f - Stress * 0.5f, 0f, 100f);
     public float Happiness => Mood;
     public CitizenState State { get; internal set; } = CitizenState.Idle;
-    public bool CanReceiveJob { get; internal set; } = true;
+    public bool CanReceiveJob
+    {
+        get => _canReceiveJob && (_worker is null ||
+            (_worker.Task is null && !_worker.IsCombatDeployed && !_worker.IsExternalVisitor && !_worker.IsLeaving));
+        internal set => _canReceiveJob = value;
+    }
     public int? JobId { get; internal set; }
     public float WorkProgress { get; internal set; }
     public float MovementProgress { get; internal set; }
     public int OutputReservationId { get; internal set; }
+    public ResourceKind? OutputReservationResource { get; internal set; }
     public List<CellPosition> Route { get; internal set; } = [];
     public int RouteIndex { get; internal set; }
 }
@@ -568,8 +651,19 @@ internal sealed class ColonyEcosystem
     private readonly IReadOnlyList<CitizenAgent> _citizenView;
     private int _nextCitizenId = 1;
     private readonly SimulationEventQueue _events = new();
+    private readonly Dictionary<ResourceKind, GridManager> _resourceGrids;
+    private int? _externalInventoryUsed;
+    private int? _externalInventoryCapacity;
     public GridManager Grid { get; }
     public JobBroker JobBroker { get; }
+    // Every resource has its own spatial stack grid. This allows different resource stacks to share
+    // the same physical stockpile footprint without turning the local map into a single-resource silo.
+    // The shared settlement ledger still enforces the authoritative aggregate capacity.
+    public GridManager GridFor(ResourceKind resource) =>
+        _resourceGrids.TryGetValue(resource, out var grid)
+            ? grid
+            : throw new ArgumentOutOfRangeException(nameof(resource));
+    public IReadOnlyDictionary<ResourceKind, GridManager> ResourceGrids => _resourceGrids;
     // Cache the read-only wrapper: UI, save and simulation code may query this every frame.
     public IReadOnlyList<CitizenAgent> Citizens => _citizenView;
     public float ElapsedSeconds { get; private set; }
@@ -580,10 +674,14 @@ internal sealed class ColonyEcosystem
     public ColonyEcosystem(int width, int height)
     {
         Grid = new GridManager(width, height);
+        _resourceGrids = Enum.GetValues<ResourceKind>().ToDictionary(
+            resource => resource,
+            resource => resource == ResourceKind.Food ? Grid : new GridManager(width, height));
         JobBroker = new JobBroker(width, height);
         _citizenView = _citizens.AsReadOnly();
-        Grid.StockChanged += (resource, delta, total) =>
-            _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
+        foreach (var grid in _resourceGrids.Values)
+            grid.StockChanged += (resource, delta, total) =>
+                _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
         JobBroker.AvailabilityChanged += (jobId, freeWorkers) =>
             _events.Enqueue(SimulationTick, SimulationEventKind.JobBecameAvailable, jobId, freeWorkers);
     }
@@ -607,6 +705,94 @@ internal sealed class ColonyEcosystem
         var citizen = new CitizenAgent(_nextCitizenId++, name, position);
         _citizens.Add(citizen);
         return citizen;
+    }
+
+    /// <summary>Attaches decision state to the same object used by the colony simulation.</summary>
+    public CitizenAgent AddCitizen(ColonyWorker worker, CellPosition position)
+    {
+        ArgumentNullException.ThrowIfNull(worker);
+        if (!Grid.InBounds(position) || Grid.TileAt(position)?.Kind == GridTileKind.Wall)
+            throw new ArgumentOutOfRangeException(nameof(position), "Citizen spawn must be on a walkable tile.");
+        if (_citizens.Any(citizen => citizen.Id == worker.Id))
+            throw new InvalidOperationException($"Resident ID {worker.Id} is already present in the colony ecosystem.");
+        var citizen = new CitizenAgent(worker.Id, worker.Name, position);
+        citizen.AttachToWorker(worker);
+        _citizens.Add(citizen);
+        _nextCitizenId = Math.Max(_nextCitizenId, worker.Id + 1);
+        return citizen;
+    }
+
+    /// <summary>
+    /// Marks a resident as busy in another colony task pipeline or outside local work.
+    /// A resident must not keep a workplace job in parallel with construction, hauling, combat,
+    /// or departure. Releasing the job also frees its reserved output slot.
+    /// </summary>
+    /// <summary>
+    /// Connects this resident/workplace layer to the settlement's aggregate capacity ledger.
+    /// Reservations across all resource layers share one budget, so production cannot reserve the
+    /// same physical storage capacity once per resource type.
+    /// </summary>
+    public void SetExternalStorageBudget(int inventoryUsed, int inventoryCapacity)
+    {
+        if (inventoryUsed < 0 || inventoryCapacity < 0)
+            throw new ArgumentOutOfRangeException(nameof(inventoryUsed), "Inventory budget values must be non-negative.");
+
+        _externalInventoryUsed = inventoryUsed;
+        _externalInventoryCapacity = inventoryCapacity;
+        while ((long)_externalInventoryUsed.Value + TotalReservedOutputUnits() > _externalInventoryCapacity.Value)
+        {
+            var assigned = _citizens
+                .Where(citizen => citizen.OutputReservationId != 0)
+                .OrderByDescending(citizen => citizen.Id)
+                .FirstOrDefault();
+            if (assigned is null) break;
+            ReleaseAssignment(assigned);
+            if (assigned.State is not CitizenState.MentalBreak)
+                assigned.State = CitizenState.Idle;
+            LastEvent = $"Storage budget changed; released {assigned.Name}'s reserved output slot.";
+        }
+    }
+
+    private int TotalReservedOutputUnits() =>
+        _resourceGrids.Sum(pair => pair.Value.ReservedCount(pair.Key));
+
+    private bool TryReserveOutputSpace(ResourceKind resource, int amount, out StorageReservation reservation)
+    {
+        reservation = default;
+        if (amount <= 0) return false;
+        if (_externalInventoryUsed.HasValue && _externalInventoryCapacity.HasValue &&
+            (long)_externalInventoryUsed.Value + TotalReservedOutputUnits() + amount > _externalInventoryCapacity.Value)
+            return false;
+        return GridFor(resource).TryReserveSpace(resource, amount, out reservation);
+    }
+
+    private void AccountConsumedInventory(int amount)
+    {
+        if (_externalInventoryUsed.HasValue)
+            _externalInventoryUsed = Math.Max(0, _externalInventoryUsed.Value - amount);
+    }
+
+    private void AccountProducedInventory(int amount)
+    {
+        if (_externalInventoryUsed.HasValue)
+            _externalInventoryUsed = checked(_externalInventoryUsed.Value + amount);
+    }
+
+    public bool SetExternalTaskState(int citizenId, bool externallyBusy)
+    {
+        var citizen = _citizens.FirstOrDefault(candidate => candidate.Id == citizenId);
+        if (citizen is null) return false;
+        citizen.CanReceiveJob = !externallyBusy;
+        if (externallyBusy)
+        {
+            ReleaseAssignment(citizen);
+            citizen.Route.Clear();
+            citizen.RouteIndex = 0;
+            citizen.MovementProgress = 0f;
+            if (citizen.State is not CitizenState.MentalBreak)
+                citizen.State = CitizenState.Idle;
+        }
+        return true;
     }
 
     public bool SetCombatDeployment(int citizenId, bool deployed)
@@ -684,11 +870,21 @@ internal sealed class ColonyEcosystem
         return true;
     }
 
-    public void Step(float deltaSeconds)
+    public void Step(float deltaSeconds, long? authoritativeTick = null)
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
-        SimulationTick++;
+        if (authoritativeTick.HasValue)
+        {
+            if (authoritativeTick.Value <= SimulationTick)
+                throw new ArgumentOutOfRangeException(nameof(authoritativeTick),
+                    "An authoritative ecosystem tick must advance monotonically.");
+            SimulationTick = authoritativeTick.Value;
+        }
+        else
+        {
+            SimulationTick++;
+        }
         foreach (var citizen in _citizens)
         {
             float previousHunger = citizen.Hunger;
@@ -747,6 +943,7 @@ internal sealed class ColonyEcosystem
                     int eaten = Grid.TryTake(ResourceKind.Food, 1);
                     if (eaten > 0)
                     {
+                        AccountConsumedInventory(eaten);
                         citizen.Hunger = Math.Min(100f, citizen.Hunger + 65f);
                         LastEvent = $"{citizen.Name} ate from the stockpile.";
                     }
@@ -796,13 +993,14 @@ internal sealed class ColonyEcosystem
 
             var job = JobBroker.AssignNext(citizen);
             if (job == null) continue;
-            if (!Grid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var reservation))
+            if (!TryReserveOutputSpace(job.OutputResource, job.OutputAmount, out var reservation))
             {
                 JobBroker.Release(citizen);
                 citizen.State = CitizenState.Idle;
                 continue;
             }
             citizen.OutputReservationId = reservation.Id;
+            citizen.OutputReservationResource = job.OutputResource;
             if (!TryStartMovement(citizen, job.Position, CitizenState.MovingToJob))
             {
                 ReleaseAssignment(citizen);
@@ -861,22 +1059,27 @@ internal sealed class ColonyEcosystem
 
         citizen.WorkProgress += deltaSeconds;
         if (citizen.WorkProgress < job.WorkSeconds) return;
-        if (citizen.OutputReservationId == 0 || !Grid.CommitReservation(citizen.OutputReservationId))
+        var outputGrid = GridFor(job.OutputResource);
+        if (citizen.OutputReservationId == 0 || citizen.OutputReservationResource != job.OutputResource ||
+            !outputGrid.CommitReservation(citizen.OutputReservationId))
         {
             LastEvent = $"Storage blocked output from {job.Name}.";
             return;
         }
 
         citizen.OutputReservationId = 0;
+        citizen.OutputReservationResource = null;
+        AccountProducedInventory(job.OutputAmount);
         citizen.WorkProgress = 0;
         LastEvent = $"{job.Name} produced {job.OutputAmount} {job.OutputResource}.";
-        if (!Grid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var nextReservation))
+        if (!TryReserveOutputSpace(job.OutputResource, job.OutputAmount, out var nextReservation))
         {
             ReleaseAssignment(citizen);
             citizen.State = CitizenState.Idle;
             return;
         }
         citizen.OutputReservationId = nextReservation.Id;
+        citizen.OutputReservationResource = job.OutputResource;
     }
 
     private bool TryStartMovement(CitizenAgent citizen, CellPosition target, CitizenState state)
@@ -906,8 +1109,12 @@ internal sealed class ColonyEcosystem
         JobBroker.Release(citizen);
         if (citizen.OutputReservationId != 0)
         {
-            Grid.CancelReservation(citizen.OutputReservationId);
+            var resourceGrid = citizen.OutputReservationResource.HasValue
+                ? GridFor(citizen.OutputReservationResource.Value)
+                : Grid;
+            resourceGrid.CancelReservation(citizen.OutputReservationId);
             citizen.OutputReservationId = 0;
+            citizen.OutputReservationResource = null;
         }
         citizen.Route.Clear();
         citizen.RouteIndex = 0;
