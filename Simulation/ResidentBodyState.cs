@@ -109,7 +109,7 @@ internal sealed class ResidentBodyState
         if (!float.IsFinite(temperatureCelsius) || temperatureCelsius < -273.15f || temperatureCelsius > 5000)
             throw new ArgumentOutOfRangeException(nameof(temperatureCelsius));
         bool newTrauma = false;
-        if (thermalExposure >= 70f && deltaSeconds > 0)
+        if (thermalExposure >= 70f && deltaSeconds > 0 && (temperatureCelsius > 35f || temperatureCelsius < 0f))
         {
             float damage = deltaSeconds * (thermalExposure - 70f) / 30f * 0.4f;
             var kind = temperatureCelsius > 35f ? ResidentTraumaKind.ThermalBurn : ResidentTraumaKind.Frostbite;
