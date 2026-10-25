@@ -17,7 +17,7 @@ internal struct CombatEntity
     public CombatWeaponType EquippedWeapon;
     public int CurrentAmmo, MaxAmmo, TargetEntityId;
     public float MoveTargetX, MoveTargetY;
-    public bool HasMoveOrder;
+    public bool HasMoveOrder, IsIncapacitated;
     public float AttackCooldown, StructureAttackCooldown, CurrentFuel;
     public int DriverPawnId, PassengerCount, NameSeed;
     public long SourceWorldEntityId;
@@ -60,6 +60,8 @@ internal sealed class CombatCoverGrid
 
 internal readonly record struct CombatFlash(int AttackerId, int TargetId, float FromX, float FromY, float ToX, float ToY, bool IsHeavy);
 internal readonly record struct CombatDeath(CombatEntity Entity, int KillerId);
+internal readonly record struct CombatDamageEvent(int TargetEntityId, int SourcePawnId,
+    int AttackerEntityId, CombatWeaponType WeaponType, float Amount, long Tick);
 internal sealed record CombatEngineSnapshot(int NextEntityId, long Tick, List<CombatEntity> Entities, byte[] CoverSnapshot);
 internal sealed record PendingCombatLoot(string ItemId, int Amount, int SourceEntityId);
 internal sealed record CombatRuntimeSnapshot(CombatEngineSnapshot Engine, WorkbenchSnapshot Workshop,
@@ -81,6 +83,8 @@ internal sealed class CombatEngine
     private readonly List<(int EntityId, string ItemId, int Amount)> _deathDrops = new();
     private readonly List<CombatDeath> _deaths = new();
     private readonly int[] _lastAttackerByTargetSlot = new int[MaximumEntities];
+    private readonly CombatWeaponType[] _lastWeaponByTargetSlot = new CombatWeaponType[MaximumEntities];
+    private readonly List<CombatDamageEvent> _damageEvents = new();
     private int _nextEntityId = 1;
     private long _tick;
 
@@ -88,6 +92,7 @@ internal sealed class CombatEngine
     public IReadOnlyList<CombatFlash> Flashes => _flashes;
     public IReadOnlyList<(int EntityId, string ItemId, int Amount)> DeathDrops => _deathDrops;
     public IReadOnlyList<CombatDeath> Deaths => _deaths;
+    public IReadOnlyList<CombatDamageEvent> DamageEvents => _damageEvents;
 
     public bool TrySpawn(CombatEntity entity, out int entityId)
     {
@@ -159,6 +164,20 @@ internal sealed class CombatEngine
         if (slot < 0 || _entities[slot].EquippedWeapon == CombatWeaponType.Melee ||
             _entities[slot].CurrentAmmo < amount) return false;
         _entities[slot].CurrentAmmo -= amount;
+        return true;
+    }
+
+    public bool TrySetIncapacitated(int id, bool incapacitated)
+    {
+        int slot = FindSlot(id);
+        if (slot < 0) return false;
+        ref var entity = ref _entities[slot];
+        entity.IsIncapacitated = incapacitated;
+        if (incapacitated)
+        {
+            entity.TargetEntityId = -1;
+            entity.HasMoveOrder = false;
+        }
         return true;
     }
 
@@ -254,8 +273,10 @@ internal sealed class CombatEngine
         _flashes.Clear();
         _deathDrops.Clear();
         _deaths.Clear();
+        _damageEvents.Clear();
         Array.Clear(_pendingDamage);
         Array.Clear(_lastAttackerByTargetSlot);
+        Array.Clear(_lastWeaponByTargetSlot);
         RebuildSpatialIndex();
 
         // Phase one: movement and target selection. No entity is removed or damaged in this phase.
@@ -263,6 +284,12 @@ internal sealed class CombatEngine
         {
             ref var entity = ref _entities[i];
             if (!entity.IsActive || entity.Health <= 0f) continue;
+            if (entity.IsIncapacitated)
+            {
+                entity.TargetEntityId = -1;
+                entity.HasMoveOrder = false;
+                continue;
+            }
             entity.AttackCooldown = MathF.Max(0f, entity.AttackCooldown - deltaSeconds);
             entity.StructureAttackCooldown = MathF.Max(0f, entity.StructureAttackCooldown - deltaSeconds);
             if (entity.TargetEntityId >= 0 && !IsEnemyAlive(entity.FactionId, entity.TargetEntityId))
@@ -316,7 +343,7 @@ internal sealed class CombatEngine
         for (int i = 0; i < _entities.Length; i++)
         {
             ref var attacker = ref _entities[i];
-            if (!attacker.IsActive || attacker.Health <= 0f || attacker.TargetEntityId < 0) continue;
+            if (!attacker.IsActive || attacker.Health <= 0f || attacker.IsIncapacitated || attacker.TargetEntityId < 0) continue;
             int targetSlot = FindSlot(attacker.TargetEntityId);
             if (targetSlot < 0) continue;
             ref var target = ref _entities[targetSlot];
@@ -338,8 +365,10 @@ internal sealed class CombatEngine
             else if (pathCover == CoverType.Low)
                 damage *= 0.70f;
 
-            _pendingDamage[targetSlot] += damage * (1f - effectiveArmor);
+            float effectiveDamage = damage * (1f - effectiveArmor);
+            _pendingDamage[targetSlot] += effectiveDamage;
             _lastAttackerByTargetSlot[targetSlot] = attacker.Id;
+            _lastWeaponByTargetSlot[targetSlot] = attacker.EquippedWeapon;
             attacker.AttackCooldown = WeaponCooldown(attacker.EquippedWeapon);
             if (attacker.EquippedWeapon != CombatWeaponType.Melee) attacker.CurrentAmmo--;
             _flashes.Add(new CombatFlash(attacker.Id, target.Id, attacker.X, attacker.Y, target.X, target.Y,
@@ -351,7 +380,11 @@ internal sealed class CombatEngine
         {
             ref var entity = ref _entities[i];
             if (!entity.IsActive || _pendingDamage[i] <= 0f) continue;
-            entity.Health -= _pendingDamage[i];
+            float actualDamage = Math.Min(entity.Health, _pendingDamage[i]);
+            entity.Health -= actualDamage;
+            int attackerId = _lastAttackerByTargetSlot[i];
+            _damageEvents.Add(new CombatDamageEvent(entity.Id, entity.SourcePawnId, attackerId,
+                _lastWeaponByTargetSlot[i], actualDamage, _tick));
             if (entity.Health > 0f) continue;
             entity.Health = 0f;
             int killerId = _lastAttackerByTargetSlot[i];
