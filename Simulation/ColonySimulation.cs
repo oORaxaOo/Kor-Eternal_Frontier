@@ -823,9 +823,15 @@ internal sealed class ColonySimulation
         int gridCount = grid.ResourceCount(resource);
         if (ledgerCount > gridCount)
         {
-            if (!grid.TryAdd(resource, ledgerCount - gridCount))
+            // The strategic settlement ledger can legitimately hold more than the locally mapped
+            // stockpile footprint (for example, regional stores or an expanded strategic capacity).
+            // Materialize only what the actual local stacks can hold; the remainder stays in the
+            // settlement ledger until physical local storage is built. Never invent extra map cells
+            // or bypass stack capacity to force a visual mirror.
+            int materialized = Math.Min(ledgerCount - gridCount, grid.FreeCapacity(resource));
+            if (materialized > 0 && !grid.TryAdd(resource, materialized))
                 throw new InvalidOperationException(
-                    $"Spatial storage for {resource} cannot mirror the authoritative settlement ledger.");
+                    $"Spatial storage for {resource} rejected {materialized} units despite reported free capacity.");
         }
         else if (gridCount > ledgerCount)
         {
