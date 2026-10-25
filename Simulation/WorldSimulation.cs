@@ -13,6 +13,7 @@ internal sealed class WorldSimulation
 {
     private float _simulationAccumulator;
     private float _blightInfectionAccumulatorSeconds;
+    private double _nextStorytellerRaidAtSeconds;
     private const float FixedStepSeconds = 0.1f;
     private const float BlightInfectionIntervalSeconds = 10f;
     private const int MaxFixedStepsPerFrame = 8;
@@ -164,7 +165,14 @@ internal sealed class WorldSimulation
     {
         var home = SpatialWorld.Entities.FirstOrDefault(entity =>
             entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
-        if (home == null) return;
+        if (home == null || SpatialWorld.ClockSeconds < _nextStorytellerRaidAtSeconds) return;
+
+        // Do not queue a second tactical raid on top of an unresolved local engagement.
+        bool activeRaidNearHome = SpatialWorld.Entities.Any(entity =>
+            entity.Kind == WorldEntityKind.Army && entity.Faction == "Raiders" &&
+            Math.Pow(entity.X - home.X, 2) + Math.Pow(entity.Y - home.Y, 2) <= 3_000d * 3_000d);
+        if (activeRaidNearHome) return;
+
         foreach (var incident in Colony.Storyteller.Events
                      .Where(item => item.Code == "wealth_attracts_attention" && item.ThreatPoints > 0)
                      .OrderBy(item => item.Id))
@@ -188,7 +196,9 @@ internal sealed class WorldSimulation
                 double speed = straightDistance / Math.Max(1, route.EstimatedSeconds);
                 SpatialWorld.OrderMove(raider.Id, home.X, home.Y, Math.Max(1, speed));
             }
-            Colony.SetMessage($"STORYTELLER RAID: {units} hostile units generated from {incident.ThreatPoints} threat points and advancing toward Kor.");
+            _nextStorytellerRaidAtSeconds = SpatialWorld.ClockSeconds + 300d;
+            Colony.SetMessage($"STORYTELLER RAID: {units} hostile units generated from {incident.ThreatPoints} threat points. They are approaching from the strategic map.");
+            break; // One incident per cooldown; never stack every pending incident into one instant wave.
         }
     }
 
