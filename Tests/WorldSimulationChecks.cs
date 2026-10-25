@@ -7,6 +7,11 @@ internal static class WorldSimulationChecks
 {
     public static void Run()
     {
+        var terrainProbe = new ColonySimulation(seed: 41024);
+        Check(terrainProbe.FindEcosystemPath(ResourceKind.Food, new CellPosition(21, 6), new CellPosition(22, 6)) is null &&
+              terrainProbe.FindEcosystemPath(ResourceKind.Wood, new CellPosition(21, 6), new CellPosition(22, 6)) is null,
+            "resident navigation layers must inherit blocked rock from the actual colony map for every resource");
+
         var world = new WorldSimulation(seed: 70241);
         var home = world.SpatialWorld.Entities.Single(entity => entity.Faction == "Kor" && entity.Kind == WorldEntityKind.Settlement);
         Check(world.Colony.ResourceCount(ResourceKind.Wood) ==
