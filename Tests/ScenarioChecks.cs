@@ -42,16 +42,16 @@ internal static class ScenarioChecks
 
     private static void VerifyBuildPaletteLayout()
     {
-        if (BuildPaletteLayout.HitCategory(784f, 566f) != 0 ||
-            BuildPaletteLayout.HitCategory(845f, 566f) != 1 ||
-            BuildPaletteLayout.HitCategory(1028f, 587.9f) != 4 ||
-            BuildPaletteLayout.HitCategory(842f, 575f) != -1 ||
-            BuildPaletteLayout.HitCategory(1085f, 575f) != -1 ||
-            BuildPaletteLayout.HitItem(784f, 592f) != 0 ||
-            BuildPaletteLayout.HitItem(860f, 592f) != 1 ||
-            BuildPaletteLayout.HitItem(784f, 614f) != 4 ||
-            BuildPaletteLayout.HitItem(856f, 600f) != -1 ||
-            BuildPaletteLayout.HitItem(784f, 634f) != -1)
+        if (BuildPaletteLayout.HitCategory(784f, 82f) != 0 ||
+            BuildPaletteLayout.HitCategory(845f, 82f) != 1 ||
+            BuildPaletteLayout.HitCategory(1028f, 82f) != 4 ||
+            BuildPaletteLayout.HitCategory(842f, 90f) != -1 ||
+            BuildPaletteLayout.HitCategory(1085f, 90f) != -1 ||
+            BuildPaletteLayout.HitItem(784f, 124f) != 0 ||
+            BuildPaletteLayout.HitItem(937f, 124f) != 1 ||
+            BuildPaletteLayout.HitItem(784f, 173f) != 2 ||
+            BuildPaletteLayout.HitItem(932f, 130f) != -1 ||
+            BuildPaletteLayout.HitItem(784f, 320f) != -1)
             throw new InvalidOperationException("Build palette hitboxes overlap, include gaps, or escape their panel.");
 
         if (BuildPaletteLayout.ActionAt(0, 0) != BuildPaletteAction.Wall ||
