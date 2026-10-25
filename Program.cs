@@ -540,13 +540,6 @@ internal static class Program
                                 simulation.SetMessage($"Selected combatant: {world.GetCombatantName(clickedCombat)}. Right-click an enemy or use WAR ROOM.");
                             }
                         }
-                        else if (selectedCombatEntityId.HasValue &&
-                                 world.CombatEngine.TryGetEntity(selectedCombatEntityId.Value, out var selectedForMove) &&
-                                 selectedForMove.FactionId == 1 &&
-                                 world.CombatEngine.TryIssueMoveOrder(selectedForMove.Id,
-                                     Math.Clamp(worldMouse.X, 0.01f, CombatCoverGrid.Width - 0.01f),
-                                     Math.Clamp(worldMouse.Y, 0.01f, CombatCoverGrid.Height - 0.01f)))
-                            simulation.SetMessage($"Move order: {world.GetCombatantName(selectedForMove)} -> {tileX}, {tileY}. Right-click a hostile to attack.");
                         else if (demolitionMode) simulation.DemolishAt(tileX, tileY);
                         else if (placingObject) simulation.PlaceObjectBlueprint(objectType, tileX, tileY);
                         else if (excavationMode) simulation.DesignExcavation(tileX, tileY);
@@ -566,9 +559,16 @@ internal static class Program
                                     ? "Floor tool: hold the left mouse button and drag to fill a rectangular area."
                                     : $"Construction order: {architectureMode}.");
                         }
+                        else if (selectedCombatEntityId.HasValue &&
+                                 world.CombatEngine.TryGetEntity(selectedCombatEntityId.Value, out var selectedForMove) &&
+                                 selectedForMove.FactionId == 1 &&
+                                 world.CombatEngine.TryIssueMoveOrder(selectedForMove.Id,
+                                     Math.Clamp(worldMouse.X, 0.01f, CombatCoverGrid.Width - 0.01f),
+                                     Math.Clamp(worldMouse.Y, 0.01f, CombatCoverGrid.Height - 0.01f)))
+                            simulation.SetMessage($"Move order: {world.GetCombatantName(selectedForMove)} -> {tileX}, {tileY}. Right-click a hostile to attack.");
                         else if (!simulation.SelectWorkOrderAt(worldMouse.X, worldMouse.Y)) simulation.SelectWorkerAt(worldMouse.X, worldMouse.Y);
                     }
-                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 423 && logicalMouse.Y < 650)
+                    else if (logicalMouse.X >= 770 && logicalMouse.Y >= 70 && logicalMouse.Y < 650)
                     {
                         float mx = logicalMouse.X, my = logicalMouse.Y;
                         if (!worldView && Hit(mx, my, 784, 425, 838, 447))
