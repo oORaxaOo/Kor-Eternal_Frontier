@@ -51,6 +51,27 @@ internal static class ColonyEcosystemChecks
         Check(utilityCitizen.JobId is null && utilityDrivenNeeds.Grid.ReservedCount(ResourceKind.Wood) == 0,
             "interrupting for a utility-selected need must not strand a job or output reservation");
 
+        var unifiedWork = new ColonyEcosystem(8, 8);
+        unifiedWork.GridFor(ResourceKind.Food).DefineStockpileZone(ResourceKind.Food,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        unifiedWork.GridFor(ResourceKind.Wood).DefineStockpileZone(ResourceKind.Wood,
+            [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        unifiedWork.GridFor(ResourceKind.Food).TryAdd(ResourceKind.Food, 10);
+        var externalWorker = unifiedWork.AddCitizen("External task worker", new CellPosition(0, 0));
+        int workplaceId = unifiedWork.JobBroker.RegisterWorkplace("Garden", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 1f);
+        unifiedWork.Step(0.1f);
+        Check(externalWorker.JobId == workplaceId && externalWorker.OutputReservationId > 0,
+            "a resident may reserve a workplace and output slot before starting work");
+        Check(unifiedWork.SetExternalTaskState(externalWorker.Id, true) &&
+              externalWorker.JobId is null && externalWorker.OutputReservationId == 0 &&
+              unifiedWork.JobBroker.FindJob(workplaceId)!.AssignedWorkers == 0,
+            "an external colony task must cancel the ecosystem job and release reserved output atomically");
+        unifiedWork.Step(0.1f);
+        Check(externalWorker.WorkProgress == 0f &&
+              unifiedWork.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) == 0,
+            "a resident must not keep working a second workplace while an external task owns the resident");
+
         var logisticsEvents = new ColonyEcosystem(4, 4);
         logisticsEvents.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
