@@ -32,7 +32,7 @@ internal static class ResidentBodyStateChecks
         Check(thermal.Advance(1f, 100f, 50f, 100, false, false) &&
               thermal.Injuries.Single().Kind == ResidentTraumaKind.ThermalBurn,
             "sustained severe heat exposure creates a physical injury");
-        Check(thermal.Advance(1f, 100f, 10f, 101, false, false) == false,
+        Check(thermal.Advance(1f, 100f, 50f, 101, false, false) == false,
             "continued exposure consolidates the existing injury record");
         float injuredHealth = thermal.TotalHealth;
         thermal.Advance(100f, 0f, 20f, 200, true, true);
