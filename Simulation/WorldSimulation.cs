@@ -171,14 +171,17 @@ internal sealed class WorldSimulation
         {
             string prefix = $"Kor Wealth Raid {incident.Id}";
             if (SpatialWorld.Entities.Any(entity => entity.Name.StartsWith(prefix, StringComparison.Ordinal))) continue;
-            int units = Math.Clamp(incident.ThreatUnits, 1, 10);
+            // Raids are bounded incidents, not endless instant waves. Keep each arrival small
+            // and stage it outside the local encounter radius so the strategic approach is visible.
+            int units = Math.Clamp(incident.ThreatUnits, 1, 4);
             var random = new Random(unchecked(SpatialWorld.Seed * 397 ^ (int)incident.Id));
+            double approachAngle = random.NextDouble() * Math.PI * 2d;
+            double approachRadius = 3_500d + random.Next(0, 1_001);
             for (int i = 0; i < units; i++)
             {
-                double x = Math.Clamp(home.X + random.Next(-4_000, 4_001), 0, ContinuousWorldState.WorldExtent);
-                double y = Math.Clamp(home.Y + random.Next(-4_000, 4_001), 0, ContinuousWorldState.WorldExtent);
-                if (Math.Abs(x - home.X) + Math.Abs(y - home.Y) < 1_500)
-                    x = Math.Clamp(x + 2_000, 0, ContinuousWorldState.WorldExtent);
+                double spread = (i - (units - 1) / 2d) * 240d;
+                double x = Math.Clamp(home.X + Math.Cos(approachAngle) * (approachRadius + spread), 0, ContinuousWorldState.WorldExtent);
+                double y = Math.Clamp(home.Y + Math.Sin(approachAngle) * (approachRadius + spread), 0, ContinuousWorldState.WorldExtent);
                 var raider = SpatialWorld.AddEntity(WorldEntityKind.Army, $"{prefix} / Unit {i + 1}", "Raiders", x, y);
                 var route = WorldRoutePlanner.FindRoute(SpatialWorld, x, y, home.X, home.Y, 40);
                 double straightDistance = Math.Sqrt(Math.Pow(home.X - x, 2) + Math.Pow(home.Y - y, 2));
