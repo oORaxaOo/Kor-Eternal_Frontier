@@ -379,6 +379,8 @@ internal sealed class CitizenAgent
     private bool _canReceiveJob = true;
     private readonly PawnPersonality _personality = new();
     internal ResidentDailyActivity ScheduledActivity { get; set; } = ResidentDailyActivity.Work;
+    // Unsafe thermal exposure prevents restorative sleep; the environmental system applies the fatigue penalty.
+    internal bool EnvironmentallyExposed { get; set; }
 
     public int Id { get; }
     public string Name { get; }
@@ -980,7 +982,10 @@ internal sealed class ColonyEcosystem
             if (citizen.ScheduledActivity == ResidentDailyActivity.Sleep)
             {
                 citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.10f);
-                citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 12f);
+                // Sleep is an activity, not a guaranteed recovery button: dangerous exposure
+                // interrupts restorative rest while StepEnvironmentalExposure reduces fatigue.
+                if (!citizen.EnvironmentallyExposed)
+                    citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 12f);
                 continue;
             }
             if (citizen.ScheduledActivity == ResidentDailyActivity.Recreation)
