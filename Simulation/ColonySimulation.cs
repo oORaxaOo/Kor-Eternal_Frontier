@@ -125,6 +125,7 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float CitizenFatigue { get; internal set; } = 100f;
     public float ThermalExposure { get; internal set; }
     public float Stress { get; internal set; }
+    public PawnPersonality Personality { get; } = new();
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
