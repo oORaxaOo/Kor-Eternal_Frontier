@@ -540,7 +540,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 9,
+            SchemaVersion = 10,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -607,7 +607,10 @@ internal sealed class ColonySimulation
             Id = worker.Id, Name = worker.Name, Faction = worker.Faction, IsExternalVisitor = worker.IsExternalVisitor, IsLeaving = worker.IsLeaving, TradeCargo = new Dictionary<ResourceKind, int>(worker.TradeCargo), X = worker.X, Y = worker.Y, Hunger = worker.Hunger,
             ThermalExposure = worker.ThermalExposure,
             Stress = worker.Stress,
-            CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : 100f,
+            CitizenFatigue = _citizensByWorker.TryGetValue(worker.Id, out var citizen) ? citizen.Fatigue : worker.CitizenFatigue,
+            Personality = _citizensByWorker.TryGetValue(worker.Id, out var personaCitizen)
+                ? personaCitizen.Personality.CaptureSnapshot()
+                : worker.Personality.CaptureSnapshot(),
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -687,6 +690,7 @@ internal sealed class ColonySimulation
         {
             var restored = new ColonyWorker(worker.Id, worker.Name, worker.X, worker.Y, worker.Hunger)
             {
+                CitizenFatigue = worker.CitizenFatigue,
                 Faction = worker.Faction,
                 IsExternalVisitor = worker.IsExternalVisitor,
                 IsLeaving = worker.IsLeaving,
@@ -705,6 +709,8 @@ internal sealed class ColonySimulation
                     DepositId = worker.Task.DepositId
                 }
             };
+            if (worker.Personality is not null)
+                restored.Personality.RestoreSnapshot(worker.Personality);
             return restored;
         }));
         simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
