@@ -684,11 +684,21 @@ internal sealed class ColonyEcosystem
         return true;
     }
 
-    public void Step(float deltaSeconds)
+    public void Step(float deltaSeconds, long? authoritativeTick = null)
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
         ElapsedSeconds += deltaSeconds;
-        SimulationTick++;
+        if (authoritativeTick.HasValue)
+        {
+            if (authoritativeTick.Value <= SimulationTick)
+                throw new ArgumentOutOfRangeException(nameof(authoritativeTick),
+                    "An authoritative ecosystem tick must advance monotonically.");
+            SimulationTick = authoritativeTick.Value;
+        }
+        else
+        {
+            SimulationTick++;
+        }
         foreach (var citizen in _citizens)
         {
             float previousHunger = citizen.Hunger;
