@@ -886,12 +886,16 @@ internal sealed class ColonyRenderer : IDisposable
         {
             var citizen = simulation.CitizenForWorker(worker.Id);
             string toil = worker.Task?.JobTracker.CurrentToil?.Kind.ToString() ?? "Idle";
-            canvas.DrawText($"Job: {worker.Task?.Kind.ToString() ?? "No assigned job"}", 24, 550, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 570, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Hunger {worker.Hunger:0}/100  |  Mood {citizen?.Mood ?? 100:0}  |  Stress {worker.Stress:0}", 24, 590, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0}  |  Carried {worker.CarriedAmount} {worker.CarriedResource?.ToString() ?? "—"}", 24, 610, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Job: {worker.Task?.Kind.ToString() ?? "No assigned job"}", 24, 545, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 562, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Hunger {worker.Hunger:0}/100 | Mood {citizen?.Mood ?? 100:0} | Stress {worker.Stress:0}", 24, 579, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0} | Carried {worker.CarriedAmount} {worker.CarriedResource?.ToString() ?? "—"}", 24, 596, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Traits: {worker.Life.TraitSummary}", 24, 613, SKTextAlign.Left, _smallFont, _text);
             _muted.Color = MutedColor;
-            canvas.DrawText(simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.", 24, 630, SKTextAlign.Left, _smallFont, _muted);
+            string diagnostic = simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.";
+            string note = diagnostic == "No current needs warning." ? worker.Life.LatestMemorySummary : diagnostic;
+            if(note.Length>47) note=note[..44]+"...";
+            canvas.DrawText(note, 24, 630, SKTextAlign.Left, _smallFont, _muted);
         }
         else
         {
