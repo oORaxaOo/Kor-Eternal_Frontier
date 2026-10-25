@@ -568,8 +568,17 @@ internal sealed class ColonyEcosystem
     private readonly IReadOnlyList<CitizenAgent> _citizenView;
     private int _nextCitizenId = 1;
     private readonly SimulationEventQueue _events = new();
+    private readonly Dictionary<ResourceKind, GridManager> _resourceGrids;
     public GridManager Grid { get; }
     public JobBroker JobBroker { get; }
+    // Every resource has its own spatial stack grid. This allows different resource stacks to share
+    // the same physical stockpile footprint without turning the local map into a single-resource silo.
+    // The shared settlement ledger still enforces the authoritative aggregate capacity.
+    public GridManager GridFor(ResourceKind resource) =>
+        _resourceGrids.TryGetValue(resource, out var grid)
+            ? grid
+            : throw new ArgumentOutOfRangeException(nameof(resource));
+    public IReadOnlyDictionary<ResourceKind, GridManager> ResourceGrids => _resourceGrids;
     // Cache the read-only wrapper: UI, save and simulation code may query this every frame.
     public IReadOnlyList<CitizenAgent> Citizens => _citizenView;
     public float ElapsedSeconds { get; private set; }
@@ -580,10 +589,14 @@ internal sealed class ColonyEcosystem
     public ColonyEcosystem(int width, int height)
     {
         Grid = new GridManager(width, height);
+        _resourceGrids = Enum.GetValues<ResourceKind>().ToDictionary(
+            resource => resource,
+            resource => resource == ResourceKind.Food ? Grid : new GridManager(width, height));
         JobBroker = new JobBroker(width, height);
         _citizenView = _citizens.AsReadOnly();
-        Grid.StockChanged += (resource, delta, total) =>
-            _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
+        foreach (var grid in _resourceGrids.Values)
+            grid.StockChanged += (resource, delta, total) =>
+                _events.Enqueue(SimulationTick, SimulationEventKind.StockChanged, (long)resource, total, delta);
         JobBroker.AvailabilityChanged += (jobId, freeWorkers) =>
             _events.Enqueue(SimulationTick, SimulationEventKind.JobBecameAvailable, jobId, freeWorkers);
     }
