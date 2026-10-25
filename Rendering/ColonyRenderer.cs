@@ -890,7 +890,7 @@ internal sealed class ColonyRenderer : IDisposable
             canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 562, SKTextAlign.Left, _smallFont, _text);
             canvas.DrawText($"Hunger {worker.Hunger:0}/100 | Mood {citizen?.Mood ?? 100:0} | Stress {worker.Stress:0}", 24, 579, SKTextAlign.Left, _smallFont, _text);
             canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0} | HP {worker.Body.TotalHealth:0}% | Injuries {worker.Body.ActiveInjuryCount}", 24, 596, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Traits: {worker.Life.TraitSummary}", 24, 613, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Routine: {worker.Life.ActivityAtTick(simulation.CurrentTick)} | {worker.Life.TraitSummary}", 24, 613, SKTextAlign.Left, _smallFont, _text);
             _muted.Color = MutedColor;
             string diagnostic = simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.";
             string note = diagnostic == "No current needs warning." ? worker.Life.LatestMemorySummary : diagnostic;
