@@ -382,6 +382,7 @@ internal sealed class CitizenAgent(int id, string name, CellPosition position)
     public float WorkProgress { get; internal set; }
     public float MovementProgress { get; internal set; }
     public int OutputReservationId { get; internal set; }
+    public ResourceKind? OutputReservationResource { get; internal set; }
     public List<CellPosition> Route { get; internal set; } = [];
     public int RouteIndex { get; internal set; }
 }
@@ -841,13 +842,15 @@ internal sealed class ColonyEcosystem
 
             var job = JobBroker.AssignNext(citizen);
             if (job == null) continue;
-            if (!Grid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var reservation))
+            var outputGrid = GridFor(job.OutputResource);
+            if (!outputGrid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var reservation))
             {
                 JobBroker.Release(citizen);
                 citizen.State = CitizenState.Idle;
                 continue;
             }
             citizen.OutputReservationId = reservation.Id;
+            citizen.OutputReservationResource = job.OutputResource;
             if (!TryStartMovement(citizen, job.Position, CitizenState.MovingToJob))
             {
                 ReleaseAssignment(citizen);
@@ -906,22 +909,26 @@ internal sealed class ColonyEcosystem
 
         citizen.WorkProgress += deltaSeconds;
         if (citizen.WorkProgress < job.WorkSeconds) return;
-        if (citizen.OutputReservationId == 0 || !Grid.CommitReservation(citizen.OutputReservationId))
+        var outputGrid = GridFor(job.OutputResource);
+        if (citizen.OutputReservationId == 0 || citizen.OutputReservationResource != job.OutputResource ||
+            !outputGrid.CommitReservation(citizen.OutputReservationId))
         {
             LastEvent = $"Storage blocked output from {job.Name}.";
             return;
         }
 
         citizen.OutputReservationId = 0;
+        citizen.OutputReservationResource = null;
         citizen.WorkProgress = 0;
         LastEvent = $"{job.Name} produced {job.OutputAmount} {job.OutputResource}.";
-        if (!Grid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var nextReservation))
+        if (!outputGrid.TryReserveSpace(job.OutputResource, job.OutputAmount, out var nextReservation))
         {
             ReleaseAssignment(citizen);
             citizen.State = CitizenState.Idle;
             return;
         }
         citizen.OutputReservationId = nextReservation.Id;
+        citizen.OutputReservationResource = job.OutputResource;
     }
 
     private bool TryStartMovement(CitizenAgent citizen, CellPosition target, CitizenState state)
@@ -951,8 +958,12 @@ internal sealed class ColonyEcosystem
         JobBroker.Release(citizen);
         if (citizen.OutputReservationId != 0)
         {
-            Grid.CancelReservation(citizen.OutputReservationId);
+            var resourceGrid = citizen.OutputReservationResource.HasValue
+                ? GridFor(citizen.OutputReservationResource.Value)
+                : Grid;
+            resourceGrid.CancelReservation(citizen.OutputReservationId);
             citizen.OutputReservationId = 0;
+            citizen.OutputReservationResource = null;
         }
         citizen.Route.Clear();
         citizen.RouteIndex = 0;
