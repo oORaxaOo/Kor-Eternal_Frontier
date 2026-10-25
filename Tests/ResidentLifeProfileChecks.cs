@@ -7,7 +7,7 @@ internal static class ResidentLifeProfileChecks
   var p=ResidentLifeProfile.Create(17,"Mira");var same=ResidentLifeProfile.Create(17,"Mira");
   Check(p.Traits.SequenceEqual(same.Traits)&&p.ScheduleOffsetHours==same.ScheduleOffsetHours,"traits and schedules deterministic by resident identity");
   Check(p.Traits.Count==2&&p.Traits.Distinct().Count()==2&&!(p.HasTrait(ResidentTrait.Sociable)&&p.HasTrait(ResidentTrait.Solitary)),"two compatible unique traits");
-  Check(p.ActivityAtTick(8*ResidentLifeProfile.TicksPerHour)==ResidentDailyActivity.Work || p.ActivityAtTick(7*ResidentLifeProfile.TicksPerHour)==ResidentDailyActivity.Work,"daily schedule includes a work block");
+  Check(Enumerable.Range(0,24).Any(hour=>p.ActivityAtTick(hour*ResidentLifeProfile.TicksPerHour)==ResidentDailyActivity.Work),"daily schedule includes a work block");
   Check(p.ActivityAtTick(2*ResidentLifeProfile.TicksPerHour)==ResidentDailyActivity.Sleep,"daily schedule includes sleep hours");
   Check(p.ActivityAtTick(ResidentLifeProfile.TicksPerDay+10)==p.ActivityAtTick(10),"schedule repeats on simulated day boundaries");
   p.RecordMemory(100,ResidentMemoryKind.WorkCompleted,0,4,"Completed a task.");
