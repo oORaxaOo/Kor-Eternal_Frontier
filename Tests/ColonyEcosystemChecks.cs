@@ -87,6 +87,23 @@ internal static class ColonyEcosystemChecks
               unifiedWork.GridFor(ResourceKind.Wood).ResourceCount(ResourceKind.Wood) == 0,
             "a resident must not keep working a second workplace while an external task owns the resident");
 
+        var sharedCapacity = new ColonyEcosystem(8, 8);
+        foreach (var resource in Enum.GetValues<ResourceKind>())
+            sharedCapacity.GridFor(resource).DefineStockpileZone(resource,
+                [new CellPosition(0, 0), new CellPosition(1, 0)]);
+        sharedCapacity.SetExternalStorageBudget(inventoryUsed: 9, inventoryCapacity: 10);
+        var budgetWorker = sharedCapacity.AddCitizen("Budget worker", new CellPosition(0, 0));
+        sharedCapacity.JobBroker.RegisterWorkplace("First output", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Wood, outputAmount: 1, workSeconds: 0.1f);
+        sharedCapacity.JobBroker.RegisterWorkplace("Second output", new CellPosition(0, 0),
+            workerCapacity: 1, outputResource: ResourceKind.Alloy, outputAmount: 1, workSeconds: 0.1f);
+        sharedCapacity.Step(0.1f);
+        Check(sharedCapacity.Citizens.Count(citizen => citizen.OutputReservationId > 0) == 1,
+            "output reservations across different resource grids must share the same aggregate inventory budget");
+        sharedCapacity.SetExternalStorageBudget(inventoryUsed: 10, inventoryCapacity: 10);
+        Check(sharedCapacity.Citizens.All(citizen => citizen.OutputReservationId == 0),
+            "external shipments filling the aggregate inventory must release all over-budget output reservations");
+
         var logisticsEvents = new ColonyEcosystem(4, 4);
         logisticsEvents.Grid.DefineStockpileZone(ResourceKind.Food,
             [new CellPosition(0, 0), new CellPosition(1, 0)]);
