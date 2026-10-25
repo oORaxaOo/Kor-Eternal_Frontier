@@ -2038,39 +2038,50 @@ internal sealed class ColonySimulation
     public void Step(float deltaSeconds)
     {
         if (deltaSeconds <= 0 || float.IsNaN(deltaSeconds) || float.IsInfinity(deltaSeconds)) return;
-        float workCycleElapsed = 0f;
-        _tickManager.Advance(deltaSeconds, tick =>
+        _tickManager.Advance(deltaSeconds, AdvanceSimulationTick);
+    }
+
+    /// <summary>
+    /// Advances one tick supplied by WorldSimulation. During a live session, the colony clock is
+    /// a mirror of the authoritative world tick; standalone tests may still advance a colony directly.
+    /// </summary>
+    internal void AdvanceWorldTick(SimulationTick tick)
+    {
+        if (tick.Number <= 0 || !float.IsFinite(tick.DeltaSeconds) || tick.DeltaSeconds <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(tick));
+        _tickManager.RestoreTickCount(tick.Number);
+        AdvanceSimulationTick(tick);
+    }
+
+    private void AdvanceSimulationTick(SimulationTick tick)
+    {
+        float dt = tick.DeltaSeconds;
+        ElapsedSeconds = (float)(tick.Number / (double)TickManager.TicksPerSecond);
+
+        StepEnvironment(dt);
+        StepEnvironmentalExposure(dt);
+
+        if (tick.IsWorkCycle)
         {
-            float dt = tick.DeltaSeconds;
-            ElapsedSeconds += dt;
-            workCycleElapsed += dt;
+            // Work planning is aligned to the shared clock's 10 Hz boundary and receives exactly
+            // one work interval, independent of frame chunking.
+            StepEcosystem(6f / TickManager.TicksPerSecond);
+            AssignJobs();
+        }
 
-            // Fluid/thermal simulation already owns its own accumulator, so it can be called safely
-            // at tick cadence while doing expensive environment work only when due.
-            StepEnvironment(dt);
-            StepEnvironmentalExposure(dt);
+        foreach (var worker in _workers)
+        {
+            if (worker.Task == null) continue;
+            if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
+                continue;
+            AdvanceWorker(worker, dt);
+        }
 
-            if (tick.IsWorkCycle)
-            {
-                StepEcosystem(workCycleElapsed);
-                workCycleElapsed = 0f;
-                AssignJobs();
-            }
-
-            foreach (var worker in _workers)
-            {
-                if (worker.Task == null) continue;
-                if (_citizensByWorker.TryGetValue(worker.Id, out var citizen) && citizen.State == CitizenState.MentalBreak)
-                    continue;
-                AdvanceWorker(worker, dt);
-            }
-
-            if (tick.IsRare)
-                StepSocialRelationships(TickManager.RareInterval / (float)TickManager.TicksPerSecond);
-            if (tick.IsGlobal)
-                StepStoryteller();
-            SyncThingGrid();
-        });
+        if (tick.IsRare)
+            StepSocialRelationships(TickManager.RareInterval / (float)TickManager.TicksPerSecond);
+        if (tick.IsGlobal)
+            StepStoryteller();
+        SyncThingGrid();
     }
 
     private void SyncThingGrid()
