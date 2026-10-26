@@ -2033,6 +2033,51 @@ internal sealed class ColonySimulation
         return affected;
     }
 
+    /// <summary>
+    /// Converts high strategic/macro Blight pressure into a rare local foothold at the colony edge.
+    /// The decision is deterministic and only evaluated on a ten-second authoritative tick.
+    /// </summary>
+    internal bool TryIntroduceBlightFromStrategicPressure(int seed, long authoritativeTick, double pressure)
+    {
+        if (authoritativeTick < 0) throw new ArgumentOutOfRangeException(nameof(authoritativeTick));
+        if (!double.IsFinite(pressure) || pressure is < 0d or > 1d)
+            throw new ArgumentOutOfRangeException(nameof(pressure));
+        const long infiltrationIntervalTicks = TickManager.TicksPerSecond * 10L;
+        if (authoritativeTick == 0 || authoritativeTick % infiltrationIntervalTicks != 0 || pressure < .70d)
+            return false;
+
+        long epoch = authoritativeTick / infiltrationIntervalTicks;
+        int chancePercent = Math.Clamp(4 + (int)Math.Round((pressure - .70d) / .30d * 26d), 4, 30);
+        int roll = BlightSpreadRoll(seed, -1, (int)(epoch & int.MaxValue),
+            (int)Math.Round(pressure * 1_000d), 0, 0, epoch);
+        if (roll >= chancePercent) return false;
+
+        // Infiltration begins on exposed ground at the settlement's map edge, never inside the
+        // protected starter structures. The normal local spread and water/magma rules take over.
+        var perimeter = new List<CellPosition>(2 * Width + 2 * Height - 4);
+        for (int x = 0; x < Width; x++) perimeter.Add(new CellPosition(x, 0));
+        for (int y = 1; y < Height - 1; y++) perimeter.Add(new CellPosition(Width - 1, y));
+        for (int x = Width - 1; x >= 0; x--) perimeter.Add(new CellPosition(x, Height - 1));
+        for (int y = Height - 2; y > 0; y--) perimeter.Add(new CellPosition(0, y));
+
+        int start = (int)(LeisureHash(seed, epoch, 17) % (uint)perimeter.Count);
+        for (int offset = 0; offset < perimeter.Count; offset++)
+        {
+            var cell = perimeter[(start + offset) % perimeter.Count];
+            var tile = _tiles[cell.X, cell.Y];
+            if (tile.Terrain is TerrainKind.Rock or TerrainKind.Water ||
+                tile.Architecture != ArchitectureKind.None || tile.IsBlightInfected ||
+                tile.MagmaLevel > 0 || tile.WaterLevel >= 2 || ObjectAt(cell.X, cell.Y) is not null)
+                continue;
+
+            tile.IsBlightInfected = true;
+            Message = $"Strategic Blight pressure ({pressure:P0}) breached the colony perimeter at ({cell.X}, {cell.Y}).";
+            return true;
+        }
+
+        return false;
+    }
+
     private int SpreadLocalBlight(long epoch)
     {
         var infectedObjects = _objects
