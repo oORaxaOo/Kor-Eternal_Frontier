@@ -81,6 +81,7 @@ internal sealed class WorldSimulation
 
     private void ConfigureSimulationKernel(long initialTick)
     {
+        Colony.ApplyWorldClimate(SpatialWorld.Ecology.CurrentSeason, SpatialWorld.Ecology.CurrentWeather);
         _kernel = new SimulationKernel(initialTick);
         const int WorkCycleTicks = TickManager.TicksPerSecond / 10;
 
@@ -98,6 +99,8 @@ internal sealed class WorldSimulation
             SpatialWorld.Step(tick.DeltaSeconds);
             // Integer ticks, rather than repeated floating-point addition, define canonical time.
             SpatialWorld.ClockSeconds = tick.Number / (double)TickManager.TicksPerSecond;
+            SpatialWorld.Ecology.SynchronizeClimate(SpatialWorld.ClockSeconds, SpatialWorld.Seed);
+            Colony.ApplyWorldClimate(SpatialWorld.Ecology.CurrentSeason, SpatialWorld.Ecology.CurrentWeather);
         });
 
         _kernel.Register("strategic-arrivals-blight-and-army-materialization", SimulationPhase.Strategic, WorkCycleTicks, _ =>
