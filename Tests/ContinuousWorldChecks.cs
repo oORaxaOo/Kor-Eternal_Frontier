@@ -156,6 +156,30 @@ internal static class ContinuousWorldChecks
                   item.Kind == WorldEventKind.ResourceSiteCorrupted &&
                   item.Description.Contains(resourceSite.Name, StringComparison.Ordinal)),
             "when Blight consumes the last organic resource, a persisted ecology event must identify the depleted site");
+        var corruptedSiteSave = ContinuousWorldState.Deserialize(ContinuousWorldState.Serialize(blightResourceWorld));
+        Check(corruptedSiteSave.Entities.Single(entity => entity.Id == resourceSite.Id).ResourceAmount == 0d &&
+              corruptedSiteSave.Ecology.RecentEvents.Any(item =>
+                  item.Kind == WorldEventKind.ResourceSiteCorrupted &&
+                  item.Description.Contains(resourceSite.Name, StringComparison.Ordinal)),
+            "depleted site reserves and the named corruption event must survive world save/load");
+
+        var macroBlightWorld = ContinuousWorldState.Generate(4403);
+        var macroHotspot = macroBlightWorld.Ecology.Hotspots[0];
+        var linkedMacroFront = macroBlightWorld.Entities.Single(entity =>
+            entity.Id == macroHotspot.WorldEntityId && entity.Kind == WorldEntityKind.BlightFront);
+        double firstMacroCellCenter = MacroWorldState.WorldCellSize * .5d;
+        macroHotspot.X = firstMacroCellCenter;
+        macroHotspot.Y = firstMacroCellCenter;
+        macroHotspot.Radius = 2_000d;
+        macroHotspot.Intensity = .92d;
+        macroHotspot.NextSpreadAt = double.MaxValue;
+        linkedMacroFront.X = firstMacroCellCenter;
+        linkedMacroFront.Y = firstMacroCellCenter;
+        float macroPressureBefore = macroBlightWorld.MacroWorld.Cells[0].BlightPresence;
+        macroBlightWorld.Step(1d);
+        Check(macroBlightWorld.MacroWorld.Cells[0].BlightPresence >= .90f &&
+              macroBlightWorld.MacroWorld.Cells[0].BlightPresence > macroPressureBefore,
+            "live strategic Blight hotspots must update pressure in the matching macro-world cells");
 
         var pressureWorld = ContinuousWorldState.Generate(4401);
         var exposedSettlement = pressureWorld.Entities.First(entity =>
