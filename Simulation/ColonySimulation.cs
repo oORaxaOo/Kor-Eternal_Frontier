@@ -185,6 +185,7 @@ internal sealed class ColonySimulation
     private readonly Queue<PathCacheKey> _pathCacheOrder = new();
     internal int PathfindingSearches { get; private set; }
     internal int PathCacheHits { get; private set; }
+    internal int AutonomousLeisurePathfindsThisWorkCycle => _autonomousLeisurePathfindsThisWorkCycle;
     internal int CachedPathCount => _pathCache.Count;
     internal TickManager Clock => _tickManager;
     internal ThingGrid Things => _thingGrid;
