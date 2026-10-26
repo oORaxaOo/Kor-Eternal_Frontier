@@ -2460,6 +2460,17 @@ internal sealed class ColonySimulation
 
     private void StepEnvironmentalExposure(float deltaSeconds)
     {
+        // Build infected object footprints once per environmental tick. Looking up objects linearly
+        // for every resident at 60 Hz would turn a thousands-resident colony into O(pawns × objects).
+        var infectedObjectCells = new HashSet<CellPosition>();
+        foreach (var item in _objects)
+        {
+            if (!item.IsBuilt || !item.IsBlightInfected) continue;
+            for (int y = item.Origin.Y; y < item.Origin.Y + item.Height; y++)
+            for (int x = item.Origin.X; x < item.Origin.X + item.Width; x++)
+                if (InBounds(x, y)) infectedObjectCells.Add(new CellPosition(x, y));
+        }
+
         foreach (var worker in _workers)
         {
             int x = Math.Clamp((int)worker.X, 0, Width - 1);
@@ -2478,7 +2489,7 @@ internal sealed class ColonySimulation
             citizen.EnvironmentallyExposed = worker.ThermalExposure > 15f;
 
             bool blightExposed = _tiles[x, y].IsBlightInfected ||
-                ObjectAt(x, y) is { IsBlightInfected: true };
+                infectedObjectCells.Contains(new CellPosition(x, y));
             if (blightExposed)
             {
                 if (_blightExposedWorkers.Add(worker.Id))
