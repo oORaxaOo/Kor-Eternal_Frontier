@@ -8,6 +8,11 @@ internal static class ContinuousWorldChecks
 {
     public static void Run()
     {
+        var legacyHerdEvent = System.Text.Json.JsonSerializer.Deserialize<WorldEventState>(
+            """{"Id":7,"Kind":1,"OccurredAt":300,"Title":"herd movement","Description":"legacy event"}""");
+        Check(legacyHerdEvent?.Kind == WorldEventKind.HerdMigration,
+            "new world event kinds must not renumber the event IDs persisted in older saves");
+
         var ecologyWorld = ContinuousWorldState.Generate(81357);
         Check(ecologyWorld.Ecology.CurrentSeason == WorldSeason.Spring &&
               Enum.IsDefined(ecologyWorld.Ecology.CurrentWeather),
