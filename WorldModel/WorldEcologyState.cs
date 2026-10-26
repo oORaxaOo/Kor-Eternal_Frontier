@@ -1,7 +1,15 @@
 namespace KorTheBlight.WorldModel;
 
 internal enum WildlifeSpecies { LonghornGrazer, AshbackGrazer, DuskStalker }
-internal enum WorldEventKind { WeatherShift, SeasonChanged, HerdMigration, BlightSurge, RareSighting, Drought }
+internal enum WorldEventKind
+{
+    WeatherShift = 0,
+    HerdMigration = 1,
+    BlightSurge = 2,
+    RareSighting = 3,
+    Drought = 4,
+    SeasonChanged = 5
+}
 internal enum WorldSeason { Spring, Summer, Autumn, Winter }
 internal enum WorldWeather { Clear, Rain, Storm, Heatwave, Frost, Snow, Drought }
 
