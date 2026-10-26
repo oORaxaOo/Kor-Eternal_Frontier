@@ -55,6 +55,16 @@ internal sealed class WorldEventState
 /// </summary>
 internal sealed class WorldEcologyState
 {
+    // Immutable, shared option tables avoid allocating new weather arrays on each climate sync.
+    private static readonly WorldWeather[] SpringWeatherOptions =
+        [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought];
+    private static readonly WorldWeather[] SummerWeatherOptions =
+        [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Heatwave, WorldWeather.Drought];
+    private static readonly WorldWeather[] AutumnWeatherOptions =
+        [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought];
+    private static readonly WorldWeather[] WinterWeatherOptions =
+        [WorldWeather.Clear, WorldWeather.Storm, WorldWeather.Frost, WorldWeather.Snow];
+
     public const double SeasonDurationSeconds = 3_600d;
     public const double WeatherIntervalSeconds = 300d;
 
@@ -188,14 +198,7 @@ internal sealed class WorldEcologyState
     {
         long slotClock = slot * (long)WeatherIntervalSeconds;
         var season = (WorldSeason)(((long)Math.Floor(slotClock / SeasonDurationSeconds)) % 4);
-        WorldWeather[] options = season switch
-        {
-            WorldSeason.Spring => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
-            WorldSeason.Summer => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Heatwave, WorldWeather.Drought],
-            WorldSeason.Autumn => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
-            WorldSeason.Winter => [WorldWeather.Clear, WorldWeather.Storm, WorldWeather.Frost, WorldWeather.Snow],
-            _ => [WorldWeather.Clear]
-        };
+        WorldWeather[] options = OptionsForSeason(season);
 
         int choice = StableRoll(seed, 0x57454154484552L, slot, options.Length);
         if (slot > 0)
@@ -210,16 +213,18 @@ internal sealed class WorldEcologyState
     {
         long slotClock = slot * (long)WeatherIntervalSeconds;
         var season = (WorldSeason)(((long)Math.Floor(slotClock / SeasonDurationSeconds)) % 4);
-        WorldWeather[] options = season switch
-        {
-            WorldSeason.Spring => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
-            WorldSeason.Summer => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Heatwave, WorldWeather.Drought],
-            WorldSeason.Autumn => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
-            WorldSeason.Winter => [WorldWeather.Clear, WorldWeather.Storm, WorldWeather.Frost, WorldWeather.Snow],
-            _ => [WorldWeather.Clear]
-        };
+        WorldWeather[] options = OptionsForSeason(season);
         return options[StableRoll(seed, 0x57454154484552L, slot, options.Length)];
     }
+
+    private static WorldWeather[] OptionsForSeason(WorldSeason season) => season switch
+    {
+        WorldSeason.Spring => SpringWeatherOptions,
+        WorldSeason.Summer => SummerWeatherOptions,
+        WorldSeason.Autumn => AutumnWeatherOptions,
+        WorldSeason.Winter => WinterWeatherOptions,
+        _ => SpringWeatherOptions
+    };
 
     private static double SeasonFoodMultiplier(WorldSeason season) => season switch
     {
