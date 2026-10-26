@@ -193,7 +193,7 @@ internal sealed class ContinuousWorldState
         SynchronizeBlightFronts();
         ApplyBlightResourceDamage(deltaSeconds);
         FactionIntelligenceSystem.Step(this, deltaSeconds);
-        FactionStrategicDirector.Step(this, deltaSeconds);
+        FactionStrategicDirector.Step(this);
         // Continuous settlement food production is integrated directly against elapsed world time.
         foreach (var settlement in Entities.Where(entity => entity.Kind == WorldEntityKind.Settlement))
         {
@@ -340,7 +340,8 @@ internal sealed class ContinuousWorldState
                      entity.Kind == WorldEntityKind.ResourceSite &&
                      entity.Resource.HasValue && entity.ResourceAmount > 0))
         {
-            double attritionRate = site.Resource.Value switch
+            WorldResourceKind resource = site.Resource.GetValueOrDefault();
+            double attritionRate = resource switch
             {
                 WorldResourceKind.Food => 0.00012d,
                 WorldResourceKind.Wood => 0.00006d,
@@ -353,7 +354,7 @@ internal sealed class ContinuousWorldState
             double before = site.ResourceAmount;
             site.ResourceAmount = Math.Max(0d, before - deltaSeconds * pressure * attritionRate);
             if (before > 0d && site.ResourceAmount <= 0d)
-                Ecology.RecordResourceSiteCorrupted(ClockSeconds, site.Name, site.Resource.Value);
+                Ecology.RecordResourceSiteCorrupted(ClockSeconds, site.Name, resource);
         }
     }
 
