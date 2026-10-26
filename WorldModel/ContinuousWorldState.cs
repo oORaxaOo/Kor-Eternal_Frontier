@@ -431,19 +431,16 @@ internal sealed class ContinuousWorldState
             .ToArray();
     }
 
-    private void SynchronizeClimateFromClock()
-    {
-        Ecology.SynchronizeClimate(ClockSeconds, Seed);
-    }
-
     public void Validate()
     {
         FactionIntelligence ??= [];
         if (FactionIntelligence.Count == 0) FactionIntelligenceSystem.Initialize(this);
         if (SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported continuous world schema version: {SchemaVersion}.");
+        if (!double.IsFinite(ClockSeconds) || ClockSeconds < 0)
+            throw new InvalidDataException("Continuous world clock is invalid.");
         Ecology ??= new WorldEcologyState();
-        SynchronizeClimateFromClock();
+        Ecology.SynchronizeClimate(ClockSeconds, Seed);
         Ecology.Validate();
         // Older world saves predate the regional layer; regenerate it deterministically from the world seed.
         if (RegionalMap is null || RegionalMap.Regions is null || RegionalMap.Regions.Count == 0)
@@ -454,8 +451,6 @@ internal sealed class ContinuousWorldState
         MacroWorld.Validate();
         if (RegionalMap.Seed != Seed)
             throw new InvalidDataException("Regional world map seed does not match the continuous world seed.");
-        if (!double.IsFinite(ClockSeconds) || ClockSeconds < 0)
-            throw new InvalidDataException("Continuous world clock is invalid.");
         if (Entities.Count > 100_000 || Entities.Select(entity => entity.Id).Distinct().Count() != Entities.Count)
             throw new InvalidDataException("Continuous world entity count or IDs are invalid.");
         foreach (var entity in Entities)
