@@ -177,6 +177,8 @@ internal sealed class ColonySimulation
     public const int StorageRackCapacity = 80;
     private const int CarryCapacity = 5;
     private const int MaxCachedPaths = 8_192;
+    private const int MaxAutonomousLeisurePathfindsPerWorkCycle = 32;
+    private int _autonomousLeisurePathfindsThisWorkCycle;
     private readonly Dictionary<PathCacheKey, List<CellPosition>> _pathCache = [];
     private readonly TickManager _tickManager = new();
     private readonly ThingGrid _thingGrid = new();
@@ -2538,6 +2540,9 @@ internal sealed class ColonySimulation
 
     private void AssignJobs()
     {
+        // Bound autonomous wandering work per planning interval so a large idle population cannot
+        // consume the entire job-assignment budget in one cycle.
+        _autonomousLeisurePathfindsThisWorkCycle = 0;
         foreach (var worker in _workers)
         {
             if (worker.IsExternalVisitor || worker.IsCombatDeployed || worker.Task != null) continue;
@@ -2603,14 +2608,17 @@ internal sealed class ColonySimulation
     private void TryAssignAutonomousLeisure(ColonyWorker worker, long tick)
     {
         const long leisureWindowTicks = 36_000; // Ten simulated minutes at 60 Hz.
+        const int MaxTargetAttemptsPerResident = 8;
         long window = tick / leisureWindowTicks;
-        if (worker.LastAutonomousActivityWindow >= window) return;
-        worker.LastAutonomousActivityWindow = window;
+        if (worker.LastAutonomousActivityWindow >= window ||
+            _autonomousLeisurePathfindsThisWorkCycle >= MaxAutonomousLeisurePathfindsPerWorkCycle)
+            return;
+
         var currentCell = new CellPosition(
             Math.Clamp((int)worker.X, 0, Width - 1),
             Math.Clamp((int)worker.Y, 0, Height - 1));
 
-        for (int attempt = 0; attempt < 96; attempt++)
+        for (int attempt = 0; attempt < MaxTargetAttemptsPerResident; attempt++)
         {
             uint hash = LeisureHash(worker.Id, window, attempt);
             int x = (int)(hash % Width);
@@ -2618,11 +2626,20 @@ internal sealed class ColonySimulation
             var target = new CellPosition(x, y);
             int distance = Math.Abs(target.X - currentCell.X) + Math.Abs(target.Y - currentCell.Y);
             if (distance is < 3 or > 7 || !IsWalkable(target)) continue;
+            if (_autonomousLeisurePathfindsThisWorkCycle >= MaxAutonomousLeisurePathfindsPerWorkCycle)
+                return;
+
+            _autonomousLeisurePathfindsThisWorkCycle++;
             if (!TryFindPath(worker, target, out var route)) continue;
 
+            worker.LastAutonomousActivityWindow = window;
             worker.Task = new WorkerTask(ColonyTaskKind.Move, target, route);
             return;
         }
+
+        // Remember unsuccessful attempts too; otherwise a trapped resident would rescan the
+        // same eight destinations at every 10 Hz planning cycle for the full leisure window.
+        worker.LastAutonomousActivityWindow = window;
     }
 
     private static uint LeisureHash(int workerId, long window, int attempt)
