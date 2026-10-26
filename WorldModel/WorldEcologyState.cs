@@ -175,7 +175,7 @@ internal sealed class WorldEcologyState
         {
             // Wet/cold conditions suppress Blight while heat and drought accelerate expansion.
             // The same deterministic climate already controls forage and settlement food growth.
-            hotspot.Intensity = Math.Min(1d, hotspot.Intensity + deltaSeconds * .0000025d * blightClimate);
+            hotspot.Intensity = Math.Min(1d, hotspot.Intensity + deltaSeconds * .0000033d * blightClimate);
             hotspot.Radius = Math.Min(12_000d,
                 hotspot.Radius + deltaSeconds * .08d * Math.Sqrt(blightClimate));
             if (worldClock >= hotspot.NextSpreadAt)
