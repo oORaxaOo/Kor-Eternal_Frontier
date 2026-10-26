@@ -1907,6 +1907,8 @@ internal sealed class ColonySimulation
         if (!float.IsFinite(damagePerStructure) || damagePerStructure <= 0f)
             throw new ArgumentOutOfRangeException(nameof(damagePerStructure));
         int affected = 0;
+        long spreadEpoch = _tickManager.TickCount / (TickManager.TicksPerSecond * 10L);
+        int newGrowthPoints = SpreadLocalBlight(spreadEpoch);
         foreach (var item in _objects.Where(item => item.IsBuilt && item.IsBlightInfected).OrderBy(item => item.Id).ToArray())
         {
             item.Health = Math.Max(0f, item.Health - damagePerStructure);
@@ -1937,12 +1939,109 @@ internal sealed class ColonySimulation
             }
         }
 
-        if (affected > 0)
+        if (affected > 0 || newGrowthPoints > 0)
         {
-            RefreshWealthMetrics();
-            Message = $"Blight infection damaged {affected} structure(s). Use WAR ROOM → REPAIR ALL with wood/stone/alloy and components to stop the decay.";
+            if (affected > 0) RefreshWealthMetrics();
+            Message = $"Blight damaged {affected} structure(s) and spread across {newGrowthPoints} new growth point(s). Use WAR ROOM → REPAIR ALL with materials and components to cleanse infected structures.";
         }
         return affected;
+    }
+
+    private int SpreadLocalBlight(long epoch)
+    {
+        var infectedObjects = _objects
+            .Where(item => item.IsBuilt && item.IsBlightInfected)
+            .OrderBy(item => item.Id)
+            .ToArray();
+        var infectedTiles = new List<CellPosition>();
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            if (_tiles[x, y].IsBlightInfected)
+                infectedTiles.Add(new CellPosition(x, y));
+
+        int grown = 0;
+        foreach (var cell in infectedTiles)
+        {
+            var sourceTile = _tiles[cell.X, cell.Y];
+            if (sourceTile.MagmaLevel > 0 || sourceTile.WaterLevel >= 2)
+            {
+                sourceTile.IsBlightInfected = false;
+                continue;
+            }
+
+            foreach (var neighbour in CardinalNeighbours(cell))
+                if (TrySpreadBlightToCell(neighbour, sourceId: 0, cell, epoch, 14))
+                    grown++;
+        }
+
+        foreach (var item in infectedObjects)
+        {
+            int left = item.Origin.X - 1;
+            int right = item.Origin.X + item.Width;
+            int top = item.Origin.Y - 1;
+            int bottom = item.Origin.Y + item.Height;
+            for (int y = top; y <= bottom; y++)
+            for (int x = left; x <= right; x++)
+            {
+                bool insideFootprint = x >= item.Origin.X && x < item.Origin.X + item.Width &&
+                                       y >= item.Origin.Y && y < item.Origin.Y + item.Height;
+                if (insideFootprint || x < 0 || x >= Width || y < 0 || y >= Height) continue;
+                if (TrySpreadBlightToCell(new CellPosition(x, y), item.Id, item.Origin, epoch, 22))
+                    grown++;
+            }
+        }
+        return grown;
+    }
+
+    private bool TrySpreadBlightToCell(CellPosition target, int sourceId,
+        CellPosition source, long epoch, int chancePercent)
+    {
+        if (target.X < 0 || target.X >= Width || target.Y < 0 || target.Y >= Height) return false;
+        var tile = _tiles[target.X, target.Y];
+        // Bare stone, open water, deep water and magma form natural barriers to the organism.
+        if (tile.Terrain is TerrainKind.Rock or TerrainKind.Water ||
+            tile.MagmaLevel > 0 || tile.WaterLevel >= 2) return false;
+
+        int roll = BlightSpreadRoll(sourceId, source.X, source.Y, target.X, target.Y, epoch);
+        bool grew = false;
+        var targetObject = ObjectAt(target.X, target.Y);
+        if (targetObject is { IsBuilt: true, IsBlightInfected: false } && roll < chancePercent)
+        {
+            targetObject.IsBlightInfected = true;
+            grew = true;
+        }
+        if (!tile.IsBlightInfected && roll < chancePercent)
+        {
+            tile.IsBlightInfected = true;
+            grew = true;
+        }
+        return grew;
+    }
+
+    private static IEnumerable<CellPosition> CardinalNeighbours(CellPosition cell)
+    {
+        yield return new CellPosition(cell.X, cell.Y - 1);
+        yield return new CellPosition(cell.X - 1, cell.Y);
+        yield return new CellPosition(cell.X + 1, cell.Y);
+        yield return new CellPosition(cell.X, cell.Y + 1);
+    }
+
+    private static int BlightSpreadRoll(int sourceId, int sourceX, int sourceY,
+        int targetX, int targetY, long epoch)
+    {
+        unchecked
+        {
+            uint value = (uint)epoch * 0x9E3779B9u;
+            value ^= (uint)sourceId * 0x85EBCA6Bu;
+            value ^= (uint)(sourceX * 397 ^ sourceY) * 0xC2B2AE35u;
+            value ^= (uint)(targetX * 397 ^ targetY);
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            value ^= value >> 16;
+            return (int)(value % 100u);
+        }
     }
 
     public bool PrepareWorkerForCombat(int workerId)
