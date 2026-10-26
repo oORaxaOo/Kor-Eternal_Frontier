@@ -2528,7 +2528,7 @@ internal sealed class ColonySimulation
                     _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.BlightExposure, 100f);
                 // Sustained proximity to the living organism steadily raises stress; it does not
                 // magically become disease or alter body health without a medical system.
-                worker.Stress = Math.Min(100f, worker.Stress + deltaSeconds * 0.35f);
+                worker.Stress = Math.Min(100f, worker.Stress + deltaSeconds * 0.8f);
             }
             else if (_blightExposedWorkers.Remove(worker.Id))
             {
