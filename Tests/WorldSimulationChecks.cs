@@ -16,15 +16,15 @@ internal static class WorldSimulationChecks
         int infiltrationSeed = Enumerable.Range(1, 1_000).First(seed =>
         {
             var probe = new ColonySimulation(seed);
-            return probe.TryIntroduceBlightFromStrategicPressure(seed, 600, 1d);
+            return probe.TryIntroduceBlightFromStrategicPressure(seed, 600, .99d);
         });
         var infiltrationA = new ColonySimulation(infiltrationSeed);
         var infiltrationB = new ColonySimulation(infiltrationSeed);
         bool seededA = false, seededB = false;
         for (long tick = 600; tick <= 600 * 20 && !seededA; tick += 600)
         {
-            seededA = infiltrationA.TryIntroduceBlightFromStrategicPressure(infiltrationSeed, tick, 1d);
-            seededB = infiltrationB.TryIntroduceBlightFromStrategicPressure(infiltrationSeed, tick, 1d);
+            seededA = infiltrationA.TryIntroduceBlightFromStrategicPressure(infiltrationSeed, tick, .99d);
+            seededB = infiltrationB.TryIntroduceBlightFromStrategicPressure(infiltrationSeed, tick, .99d);
             Check(seededA == seededB,
                 "matching seeds and world ticks must make identical Blight infiltration decisions");
         }
