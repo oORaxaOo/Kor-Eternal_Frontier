@@ -420,7 +420,9 @@ internal sealed class MacroWorldState
         switch (cell.ProductionFocus)
         {
             case ProductionFocus.Agriculture:
-                cell.FoodCount += population * 0.015f * cell.Fertility * (1f - pressure * 0.9f);
+                float climateGrowth = (float)continuous.Ecology.FoodGrowthMultiplier;
+                cell.FoodCount += population * 0.015f * cell.Fertility *
+                                  (1f - pressure * 0.9f) * climateGrowth;
                 break;
             case ProductionFocus.Mining:
                 cell.StoneCount += population * 0.0025f;
