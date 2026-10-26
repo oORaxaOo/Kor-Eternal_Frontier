@@ -220,6 +220,7 @@ internal sealed class ColonySimulation
     private float _environmentAccumulatorSeconds;
     private float _ambientTemperatureCelsius = 20f;
     private readonly HashSet<int> _blightExposedWorkers = [];
+    private readonly HashSet<CellPosition> _infectedObjectCells = [];
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
     private WorkOrderKind? _selectedWorkOrderKind;
     private int? _selectedWorkOrderId;
@@ -2462,13 +2463,13 @@ internal sealed class ColonySimulation
     {
         // Build infected object footprints once per environmental tick. Looking up objects linearly
         // for every resident at 60 Hz would turn a thousands-resident colony into O(pawns × objects).
-        var infectedObjectCells = new HashSet<CellPosition>();
+        _infectedObjectCells.Clear();
         foreach (var item in _objects)
         {
             if (!item.IsBuilt || !item.IsBlightInfected) continue;
             for (int y = item.Origin.Y; y < item.Origin.Y + item.Height; y++)
             for (int x = item.Origin.X; x < item.Origin.X + item.Width; x++)
-                if (InBounds(x, y)) infectedObjectCells.Add(new CellPosition(x, y));
+                if (InBounds(x, y)) _infectedObjectCells.Add(new CellPosition(x, y));
         }
 
         foreach (var worker in _workers)
@@ -2489,7 +2490,7 @@ internal sealed class ColonySimulation
             citizen.EnvironmentallyExposed = worker.ThermalExposure > 15f;
 
             bool blightExposed = _tiles[x, y].IsBlightInfected ||
-                infectedObjectCells.Contains(new CellPosition(x, y));
+                _infectedObjectCells.Contains(new CellPosition(x, y));
             if (blightExposed)
             {
                 if (_blightExposedWorkers.Add(worker.Id))
