@@ -271,6 +271,27 @@ internal sealed class WorldEcologyState
         _ => 1d
     };
 
+    private static double SeasonBlightMultiplier(WorldSeason season) => season switch
+    {
+        WorldSeason.Spring => .95d,
+        WorldSeason.Summer => 1.15d,
+        WorldSeason.Autumn => .90d,
+        WorldSeason.Winter => .65d,
+        _ => 1d
+    };
+
+    private static double WeatherBlightMultiplier(WorldWeather weather) => weather switch
+    {
+        WorldWeather.Clear => 1d,
+        WorldWeather.Rain => .55d,
+        WorldWeather.Storm => .35d,
+        WorldWeather.Heatwave => 1.30d,
+        WorldWeather.Frost => .60d,
+        WorldWeather.Snow => .45d,
+        WorldWeather.Drought => 1.50d,
+        _ => 1d
+    };
+
     public double EnvironmentalPressureAt(double x, double y)
     {
         double pressure = 0;
@@ -297,13 +318,41 @@ internal sealed class WorldEcologyState
         });
     }
 
-    private void AddHotspot(double x, double y, double radius, double intensity, double clock)
+    private BlightHotspotState AddHotspot(double x, double y, double radius, double intensity,
+        double nextSpreadAt, long? worldEntityId = null)
     {
-        Hotspots.Add(new BlightHotspotState
+        var hotspot = new BlightHotspotState
         {
             Id = NextHotspotId++, X = x, Y = y, Radius = radius,
-            Intensity = Math.Clamp(intensity, 0, 1), NextSpreadAt = clock
-        });
+            Intensity = Math.Clamp(intensity, 0, 1), NextSpreadAt = nextSpreadAt,
+            WorldEntityId = worldEntityId
+        };
+        Hotspots.Add(hotspot);
+        return hotspot;
+    }
+
+    internal BlightHotspotState AddHotspotForEntity(WorldEntityState entity, double worldClock)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        if (entity.Kind != WorldEntityKind.BlightFront || entity.Id <= 0)
+            throw new ArgumentException("A linked ecology hotspot must reference a Blight front.", nameof(entity));
+        if (!double.IsFinite(worldClock) || worldClock < 0)
+            throw new ArgumentOutOfRangeException(nameof(worldClock));
+
+        var existing = Hotspots.FirstOrDefault(hotspot => hotspot.WorldEntityId == entity.Id);
+        if (existing is not null) return existing;
+        return AddHotspot(entity.X, entity.Y, 1_600d, .22d, worldClock + 600d, entity.Id);
+    }
+
+    internal void RecordResourceSiteCorrupted(double worldClock, string siteName, WorldResourceKind resource)
+    {
+        if (!double.IsFinite(worldClock) || worldClock < 0)
+            throw new ArgumentOutOfRangeException(nameof(worldClock));
+        if (string.IsNullOrWhiteSpace(siteName))
+            throw new ArgumentException("A resource site needs a name.", nameof(siteName));
+        if (!Enum.IsDefined(resource)) throw new ArgumentOutOfRangeException(nameof(resource));
+        AddEvent(WorldEventKind.ResourceSiteCorrupted, worldClock, "Blight consumed a resource site",
+            $"The Blight exhausted the remaining {resource} reserve at {siteName}.");
     }
 
     private void ChooseMigrationTarget(WildlifeHerdState herd, double clock, int seed)
@@ -392,11 +441,15 @@ internal sealed class WorldEcologyState
                 !double.IsFinite(herd.NextMigrationAt) || herd.NextMigrationAt < 0 ||
                 !double.IsFinite(herd.NextPopulationChangeAt) || herd.NextPopulationChangeAt < 0)
                 throw new InvalidDataException("Wildlife herd state is invalid.");
+        if (Hotspots.Select(item => item.WorldEntityId).Where(id => id.HasValue)
+            .Select(id => id!.Value).Distinct().Count() != Hotspots.Count(item => item.WorldEntityId.HasValue))
+            throw new InvalidDataException("Blight hotspots cannot share one world entity link.");
         foreach (var hotspot in Hotspots)
             if (hotspot.Id <= 0 || !ValidPosition(hotspot.X, hotspot.Y) ||
                 !double.IsFinite(hotspot.Radius) || hotspot.Radius <= 0 ||
                 !double.IsFinite(hotspot.Intensity) || hotspot.Intensity is < 0 or > 1 ||
-                !double.IsFinite(hotspot.NextSpreadAt) || hotspot.NextSpreadAt < 0)
+                !double.IsFinite(hotspot.NextSpreadAt) || hotspot.NextSpreadAt < 0 ||
+                (hotspot.WorldEntityId.HasValue && hotspot.WorldEntityId.Value <= 0))
                 throw new InvalidDataException("Blight hotspot state is invalid.");
         foreach (var item in RecentEvents)
             if (item.Id <= 0 || !Enum.IsDefined(item.Kind) || !double.IsFinite(item.OccurredAt) ||
