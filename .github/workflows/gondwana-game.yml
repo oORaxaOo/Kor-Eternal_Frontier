@@ -1,5 +1,12 @@
 name: Kor Eternal Frontier validation
 
+# Pushes and pull_request synchronize events target the same branch. Keep only one
+# expensive SDL build/package job per branch so duplicate runs cannot starve the
+# graphical startup checks or exhaust hosted-runner capacity.
+concurrency:
+  group: kor-eternal-frontier-validation-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
