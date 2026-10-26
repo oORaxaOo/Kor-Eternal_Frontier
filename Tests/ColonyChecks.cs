@@ -135,9 +135,10 @@ internal static class ColonyChecks
 
         var thermalHazard = new ColonySimulation();
         var thermalControl = new ColonySimulation();
-        // Keep the test resident in the hazardous cell so the opening work schedule cannot
-        // legitimately send them away before exposure has accumulated.
-        thermalHazard.Workers.Single(worker => worker.Id == 1).IsCombatDeployed = true;
+        // Freeze the test resident's colony tasks through the real deployment path so the
+        // opening work schedule cannot legitimately send them away before exposure accumulates.
+        Check(thermalHazard.PrepareWorkerForCombat(1),
+            "a resident can be held in place to isolate the thermal exposure regression");
         thermalHazard.TileAt(16, 12)!.TemperatureCelsius = 5_000f;
         for (int i = 0; i < 20; i++)
         {
