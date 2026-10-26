@@ -13,6 +13,37 @@ internal static class ContinuousWorldChecks
         Check(legacyHerdEvent?.Kind == WorldEventKind.HerdMigration,
             "new world event kinds must not renumber the event IDs persisted in older saves");
 
+        int FindSeedForWeather(WorldWeather desired)
+        {
+            for (int seed = 0; seed < 20_000; seed++)
+            {
+                var climateProbe = new WorldEcologyState();
+                climateProbe.SynchronizeClimate(301, seed);
+                if (climateProbe.CurrentWeather == desired) return seed;
+            }
+            throw new InvalidOperationException($"Could not find a deterministic seed for {desired}.");
+        }
+
+        int rainSeed = FindSeedForWeather(WorldWeather.Rain);
+        int droughtSeed = FindSeedForWeather(WorldWeather.Drought);
+        var wetEcology = new WorldEcologyState();
+        wetEcology.Initialize(rainSeed);
+        wetEcology.Hotspots[0].Intensity = .4d;
+        wetEcology.Hotspots[0].Radius = 1_000d;
+        wetEcology.Hotspots[0].NextSpreadAt = double.MaxValue;
+        wetEcology.Step(1d, 301d, rainSeed);
+        var dryEcology = new WorldEcologyState();
+        dryEcology.Initialize(droughtSeed);
+        dryEcology.Hotspots[0].Intensity = .4d;
+        dryEcology.Hotspots[0].Radius = 1_000d;
+        dryEcology.Hotspots[0].NextSpreadAt = double.MaxValue;
+        dryEcology.Step(1d, 301d, droughtSeed);
+        Check(wetEcology.CurrentWeather == WorldWeather.Rain &&
+              dryEcology.CurrentWeather == WorldWeather.Drought &&
+              wetEcology.Hotspots[0].Intensity < dryEcology.Hotspots[0].Intensity &&
+              wetEcology.Hotspots[0].Radius < dryEcology.Hotspots[0].Radius,
+            "rain must suppress strategic Blight growth while drought accelerates it on the same season tick");
+
         var ecologyWorld = ContinuousWorldState.Generate(81357);
         Check(ecologyWorld.Ecology.CurrentSeason == WorldSeason.Spring &&
               Enum.IsDefined(ecologyWorld.Ecology.CurrentWeather),
@@ -30,6 +61,49 @@ internal static class ContinuousWorldChecks
             "actual climate changes must be recorded in the same world event history shown to the player");
         Check(ecologyWorld.Ecology.FoodGrowthMultiplier > 0,
             "season and weather must expose a usable modifier for the shared world food economy");
+
+        int macroClimateSeed = Enumerable.Range(0, 10_000).First(seed =>
+        {
+            var probe = new WorldEcologyState();
+            probe.SynchronizeClimate(1d, seed);
+            double springMultiplier = probe.FoodGrowthMultiplier;
+            probe.SynchronizeClimate(WorldEcologyState.SeasonDurationSeconds + 1d, seed);
+            return Math.Abs(probe.FoodGrowthMultiplier - springMultiplier) > .01d;
+        });
+        double MeasureMacroFoodGrowth(double clockSeconds, out double expectedMultiplier)
+        {
+            var climateWorld = ContinuousWorldState.Generate(macroClimateSeed);
+            foreach (var hotspot in climateWorld.Ecology.Hotspots) hotspot.IsActive = false;
+            int cellIndex = Enumerable.Range(0, MacroWorldState.CellCount).First(index =>
+            {
+                var cell = climateWorld.MacroWorld.Cells[index];
+                return cell.OwningFactionId != 0 && cell.Population > 0 &&
+                       cell.ProductionFocus == ProductionFocus.Agriculture && cell.Fertility > 0 &&
+                       cell.BlightPresence < .75f;
+            });
+            var initialCell = climateWorld.MacroWorld.Cells[cellIndex];
+            climateWorld.ClockSeconds = clockSeconds;
+            climateWorld.MacroWorld.SimulationTicks = MacroWorldState.TicksPerMacroTurn -
+                                                      TickManager.TicksPerSecond;
+            climateWorld.MacroWorld.MacroTurnsScheduled = 0;
+            climateWorld.MacroWorld.TurnPhase = MacroTurnPhase.Economy;
+            climateWorld.MacroWorld.MacroTurnCursor = cellIndex;
+            climateWorld.MacroWorld.MarketTurnAccumulator.Reset();
+            climateWorld.Step(1d);
+            expectedMultiplier = climateWorld.Ecology.FoodGrowthMultiplier;
+            var advancedCell = climateWorld.MacroWorld.Cells[cellIndex];
+            double outputFactor = initialCell.Population * .015d * initialCell.Fertility *
+                                  (1d - initialCell.BlightPresence * .9d);
+            return (advancedCell.FoodCount - initialCell.FoodCount +
+                    initialCell.Population * .01d) / outputFactor;
+        }
+        double observedSpringFoodGrowth = MeasureMacroFoodGrowth(0d, out double expectedSpringFoodGrowth);
+        double observedSummerFoodGrowth = MeasureMacroFoodGrowth(
+            WorldEcologyState.SeasonDurationSeconds, out double expectedSummerFoodGrowth);
+        Check(Math.Abs(observedSpringFoodGrowth - expectedSpringFoodGrowth) < .02d &&
+              Math.Abs(observedSummerFoodGrowth - expectedSummerFoodGrowth) < .02d &&
+              Math.Abs(expectedSpringFoodGrowth - expectedSummerFoodGrowth) > .01d,
+            "macro agriculture must consume the shared seasonal/weather multiplier rather than a separate fixed climate model");
         var seasonalWorld = ContinuousWorldState.Generate(81357);
         double springFoodMultiplier = seasonalWorld.Ecology.FoodGrowthMultiplier;
         for (int i = 0; i < 60; i++) seasonalWorld.Step(60);
@@ -47,8 +121,14 @@ internal static class ContinuousWorldChecks
         Check(populationBeforeLoss - populationAfterLoss == 1 &&
               depletedHerd.Population == populationAfterLoss,
             "a starving herd must lose at most one animal per scheduled population update, not every render tick");
-        Check(ecologyWorld.Ecology.Herds.Count >= 3 && ecologyWorld.Ecology.Hotspots.Count >= 1,
-            "world generation must seed wildlife herds and a Blight hotspot");
+        int initialHotspotCount = ecologyWorld.Ecology.Hotspots.Count;
+        Check(ecologyWorld.Ecology.Herds.Count >= 3 && initialHotspotCount >= 2 &&
+              ecologyWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront) == initialHotspotCount &&
+              ecologyWorld.Ecology.Hotspots.All(hotspot =>
+                  hotspot.WorldEntityId.HasValue &&
+                  ecologyWorld.Entities.Any(entity => entity.Id == hotspot.WorldEntityId &&
+                                                       entity.Kind == WorldEntityKind.BlightFront)),
+            "every generated strategic Blight front must have a linked, persisted ecological hotspot");
         var firstHerd = ecologyWorld.Ecology.Herds[0];
         double herdStartX = firstHerd.X, herdStartY = firstHerd.Y;
         for (int i = 0; i < 500; i++) ecologyWorld.Step(60);
@@ -56,8 +136,10 @@ internal static class ContinuousWorldChecks
             "wildlife herds must migrate autonomously without player orders");
         Check(ecologyWorld.Ecology.RecentEvents.Count > 0,
             "the world must generate and retain time-based ambient events");
-        Check(ecologyWorld.Ecology.Hotspots.Count > 1,
-            "Blight hotspots must be able to spread into new regions over world time");
+        Check(ecologyWorld.Ecology.Hotspots.Count > initialHotspotCount &&
+              ecologyWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront) ==
+                  ecologyWorld.Ecology.Hotspots.Count,
+            "new Blight hotspots must spread into the world map as linked, visible strategic front entities");
         Check(ecologyWorld.Ecology.IsDangerousAt(
                 ecologyWorld.Ecology.Hotspots[0].X, ecologyWorld.Ecology.Hotspots[0].Y),
             "high-pressure Blight regions must be queryable as dangerous terrain");
@@ -69,8 +151,29 @@ internal static class ContinuousWorldChecks
             "save/load must restore the climate state derived from the authoritative world clock");
         Check(ecologyRestored.Ecology.Herds.Count == ecologyWorld.Ecology.Herds.Count &&
               ecologyRestored.Ecology.Hotspots.Count == ecologyWorld.Ecology.Hotspots.Count &&
-              ecologyRestored.Ecology.RecentEvents.Count == ecologyWorld.Ecology.RecentEvents.Count,
-            "save/load must preserve wildlife, Blight spread and the world event history");
+              ecologyRestored.Ecology.RecentEvents.Count == ecologyWorld.Ecology.RecentEvents.Count &&
+              ecologyRestored.Ecology.Hotspots.All(hotspot =>
+                  hotspot.WorldEntityId.HasValue &&
+                  ecologyRestored.Entities.Any(entity => entity.Id == hotspot.WorldEntityId &&
+                                                          entity.Kind == WorldEntityKind.BlightFront &&
+                                                          Math.Abs(entity.X - hotspot.X) < 1e-6 &&
+                                                          Math.Abs(entity.Y - hotspot.Y) < 1e-6)),
+            "save/load must preserve wildlife, spread fronts, linked positions and world event history");
+
+        var legacyLinkedWorld = ContinuousWorldState.Generate(81359);
+        var legacyJsonNode = System.Text.Json.Nodes.JsonNode.Parse(
+            ContinuousWorldState.Serialize(legacyLinkedWorld))!.AsObject();
+        foreach (var hotspotNode in legacyJsonNode["Ecology"]!["Hotspots"]!.AsArray())
+            hotspotNode!.AsObject().Remove("WorldEntityId");
+        var legacyRestoredWorld = ContinuousWorldState.Deserialize(legacyJsonNode.ToJsonString());
+        legacyRestoredWorld.Step(.1d);
+        Check(legacyRestoredWorld.Ecology.Hotspots.All(hotspot =>
+                  hotspot.WorldEntityId.HasValue &&
+                  legacyRestoredWorld.Entities.Any(entity => entity.Id == hotspot.WorldEntityId &&
+                                                             entity.Kind == WorldEntityKind.BlightFront)) &&
+              legacyRestoredWorld.Entities.Count(entity => entity.Kind == WorldEntityKind.BlightFront) ==
+                  legacyRestoredWorld.Ecology.Hotspots.Count,
+            "older world saves without hotspot links must deterministically reconnect fronts without duplicates");
 
         var deterministicA = ContinuousWorldState.Generate(9912);
         var deterministicB = ContinuousWorldState.Generate(9912);
@@ -78,6 +181,48 @@ internal static class ContinuousWorldChecks
         Check(deterministicA.Ecology.RecentEvents.Select(item => item.Title)
                   .SequenceEqual(deterministicB.Ecology.RecentEvents.Select(item => item.Title)),
             "world events must be reproducible from the same seed and simulation time");
+
+        var blightResourceWorld = ContinuousWorldState.Generate(4402);
+        var resourceSite = blightResourceWorld.Entities.First(entity =>
+            entity.Kind == WorldEntityKind.ResourceSite && entity.Resource == WorldResourceKind.Food);
+        var resourceHotspot = blightResourceWorld.Ecology.Hotspots[0];
+        resourceSite.X = resourceHotspot.X;
+        resourceSite.Y = resourceHotspot.Y;
+        resourceSite.ResourceAmount = 100d;
+        blightResourceWorld.Step(100d);
+        Check(resourceSite.ResourceAmount < 100d,
+            "Blight pressure must gradually consume finite food-resource sites instead of only changing HUD labels");
+        resourceSite.ResourceAmount = .001d;
+        blightResourceWorld.Step(500d);
+        Check(resourceSite.ResourceAmount == 0d &&
+              blightResourceWorld.Ecology.RecentEvents.Any(item =>
+                  item.Kind == WorldEventKind.ResourceSiteCorrupted &&
+                  item.Description.Contains(resourceSite.Name, StringComparison.Ordinal)),
+            "when Blight consumes the last organic resource, a persisted ecology event must identify the depleted site");
+        var corruptedSiteSave = ContinuousWorldState.Deserialize(ContinuousWorldState.Serialize(blightResourceWorld));
+        Check(corruptedSiteSave.Entities.Single(entity => entity.Id == resourceSite.Id).ResourceAmount == 0d &&
+              corruptedSiteSave.Ecology.RecentEvents.Any(item =>
+                  item.Kind == WorldEventKind.ResourceSiteCorrupted &&
+                  item.Description.Contains(resourceSite.Name, StringComparison.Ordinal)),
+            "depleted site reserves and the named corruption event must survive world save/load");
+
+        var macroBlightWorld = ContinuousWorldState.Generate(4403);
+        var macroHotspot = macroBlightWorld.Ecology.Hotspots[0];
+        var linkedMacroFront = macroBlightWorld.Entities.Single(entity =>
+            entity.Id == macroHotspot.WorldEntityId && entity.Kind == WorldEntityKind.BlightFront);
+        double firstMacroCellCenter = MacroWorldState.WorldCellSize * .5d;
+        macroHotspot.X = firstMacroCellCenter;
+        macroHotspot.Y = firstMacroCellCenter;
+        macroHotspot.Radius = 2_000d;
+        macroHotspot.Intensity = .92d;
+        macroHotspot.NextSpreadAt = double.MaxValue;
+        linkedMacroFront.X = firstMacroCellCenter;
+        linkedMacroFront.Y = firstMacroCellCenter;
+        float macroPressureBefore = macroBlightWorld.MacroWorld.Cells[0].BlightPresence;
+        macroBlightWorld.Step(1d);
+        Check(macroBlightWorld.MacroWorld.Cells[0].BlightPresence >= .90f &&
+              macroBlightWorld.MacroWorld.Cells[0].BlightPresence > macroPressureBefore,
+            "live strategic Blight hotspots must update pressure in the matching macro-world cells");
 
         var pressureWorld = ContinuousWorldState.Generate(4401);
         var exposedSettlement = pressureWorld.Entities.First(entity =>

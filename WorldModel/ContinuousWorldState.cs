@@ -122,7 +122,7 @@ internal sealed class ContinuousWorldState
             state.AddEntity(WorldEntityKind.Army, $"{faction} Guard", faction, Math.Clamp(settlement.X + random.Next(-1_200, 1_201), 0, WorldExtent), Math.Clamp(settlement.Y + random.Next(-1_200, 1_201), 0, WorldExtent));
             if (random.NextDouble() > 0.45) state.AddEntity(WorldEntityKind.Caravan, $"{faction} Traders", faction, Math.Clamp(settlement.X + random.Next(-2_500, 2_501), 0, WorldExtent), Math.Clamp(settlement.Y + random.Next(-2_500, 2_501), 0, WorldExtent));
         }
-        state.Ecology.Initialize(seed);
+        state.Ecology.Initialize(seed, state.Entities.Where(entity => entity.Kind == WorldEntityKind.BlightFront).ToArray());
         FactionIntelligenceSystem.Initialize(state);
         state.MacroWorld = MacroWorldState.Generate(seed, state.RegionalMap, state.Entities, state.Inventories, state.Ecology);
         state.Validate();
@@ -184,8 +184,14 @@ internal sealed class ContinuousWorldState
 
         ClockSeconds += deltaSeconds;
         Ecology ??= new WorldEcologyState();
-        if (Ecology.Herds.Count == 0 && Ecology.Hotspots.Count == 0) Ecology.Initialize(Seed);
+        if (Ecology.Herds.Count == 0 && Ecology.Hotspots.Count == 0)
+            Ecology.Initialize(Seed, Entities.Where(entity => entity.Kind == WorldEntityKind.BlightFront).ToArray());
+        // Link older saves that predate hotspot entity IDs before advancing ecology; synchronize
+        // again afterward so newly spread hotspots appear as actual entities on the overworld.
+        SynchronizeBlightFronts();
         Ecology.Step(deltaSeconds, ClockSeconds, Seed);
+        SynchronizeBlightFronts();
+        ApplyBlightResourceDamage(deltaSeconds);
         FactionIntelligenceSystem.Step(this, deltaSeconds);
         FactionStrategicDirector.Step(this);
         // Continuous settlement food production is integrated directly against elapsed world time.
@@ -260,6 +266,96 @@ internal sealed class ContinuousWorldState
         if (MacroWorld.Cells is null || MacroWorld.Cells.Length != MacroWorldState.CellCount || MacroWorld.Cells.All(cell => cell.CellId == 0))
             MacroWorld = MacroWorldState.Generate(Seed, RegionalMap, Entities, Inventories, Ecology);
         MacroWorld.Advance(deltaSeconds, this);
+    }
+
+    /// <summary>
+    /// Keeps each ecological hotspot represented by an actual overworld BlightFront entity.
+    /// Existing saves without IDs are linked deterministically to nearby legacy front entities.
+    /// Newly spawned hotspots create visible entities in the same world tick.
+    /// </summary>
+    private void SynchronizeBlightFronts()
+    {
+        var fronts = Entities
+            .Where(entity => entity.Kind == WorldEntityKind.BlightFront)
+            .OrderBy(entity => entity.Id)
+            .ToArray();
+        var frontById = fronts.ToDictionary(entity => entity.Id);
+        var linkedEntityIds = new HashSet<long>();
+
+        foreach (var hotspot in Ecology.Hotspots.OrderBy(item => item.Id))
+        {
+            WorldEntityState? front = null;
+            if (hotspot.WorldEntityId.HasValue &&
+                frontById.TryGetValue(hotspot.WorldEntityId.Value, out var linked))
+                front = linked;
+
+            if (front is null && !hotspot.WorldEntityId.HasValue)
+            {
+                front = fronts
+                    .Where(entity => !linkedEntityIds.Contains(entity.Id))
+                    .OrderBy(entity => SquaredDistance(entity.X, entity.Y, hotspot.X, hotspot.Y))
+                    .ThenBy(entity => entity.Id)
+                    .FirstOrDefault();
+                if (front is not null)
+                {
+                    // For pre-link saves, the existing strategic entity is canonical. Move the
+                    // ecology hotspot to it once, then let the new persisted link own future state.
+                    hotspot.X = front.X;
+                    hotspot.Y = front.Y;
+                    hotspot.WorldEntityId = front.Id;
+                }
+            }
+
+            if (front is null)
+            {
+                front = AddEntity(WorldEntityKind.BlightFront, $"Blight Front {hotspot.Id}", "Blight",
+                    hotspot.X, hotspot.Y);
+                hotspot.WorldEntityId = front.Id;
+                frontById[front.Id] = front;
+            }
+            else
+            {
+                bool moved = Math.Abs(front.X - hotspot.X) > 0.000001 ||
+                             Math.Abs(front.Y - hotspot.Y) > 0.000001;
+                front.X = hotspot.X;
+                front.Y = hotspot.Y;
+                front.DestinationX = null;
+                front.DestinationY = null;
+                front.MovementSpeed = 0;
+                if (moved) UpdateSpatialIndex(front);
+            }
+            linkedEntityIds.Add(front.Id);
+        }
+
+        // Preserve any legacy strategic fronts that do not yet have an ecology hotspot.
+        foreach (var front in fronts)
+            if (!linkedEntityIds.Contains(front.Id))
+                Ecology.AddHotspotForEntity(front, ClockSeconds);
+    }
+
+    /// <summary>Biological Blight pressure gradually consumes finite organic strategic resource sites.</summary>
+    private void ApplyBlightResourceDamage(double deltaSeconds)
+    {
+        foreach (var site in Entities.Where(entity =>
+                     entity.Kind == WorldEntityKind.ResourceSite &&
+                     entity.Resource.HasValue && entity.ResourceAmount > 0))
+        {
+            WorldResourceKind resource = site.Resource.GetValueOrDefault();
+            double attritionRate = resource switch
+            {
+                WorldResourceKind.Food => 0.00012d,
+                WorldResourceKind.Wood => 0.00006d,
+                _ => 0d
+            };
+            if (attritionRate <= 0d) continue;
+            double pressure = Ecology.EnvironmentalPressureAt(site.X, site.Y);
+            if (pressure <= 0d) continue;
+
+            double before = site.ResourceAmount;
+            site.ResourceAmount = Math.Max(0d, before - deltaSeconds * pressure * attritionRate);
+            if (before > 0d && site.ResourceAmount <= 0d)
+                Ecology.RecordResourceSiteCorrupted(ClockSeconds, site.Name, resource);
+        }
     }
 
     private void UpdateSpatialIndex(WorldEntityState entity)
@@ -453,6 +549,13 @@ internal sealed class ContinuousWorldState
             throw new InvalidDataException("Regional world map seed does not match the continuous world seed.");
         if (Entities.Count > 100_000 || Entities.Select(entity => entity.Id).Distinct().Count() != Entities.Count)
             throw new InvalidDataException("Continuous world entity count or IDs are invalid.");
+        var blightFrontIds = Entities
+            .Where(entity => entity.Kind == WorldEntityKind.BlightFront)
+            .Select(entity => entity.Id)
+            .ToHashSet();
+        if (Ecology.Hotspots.Where(hotspot => hotspot.WorldEntityId.HasValue)
+            .Any(hotspot => !blightFrontIds.Contains(hotspot.WorldEntityId!.Value)))
+            throw new InvalidDataException("A Blight hotspot references a missing strategic front entity.");
         foreach (var entity in Entities)
         {
             if (entity.Id <= 0 || !Enum.IsDefined(entity.Kind) ||
