@@ -894,6 +894,35 @@ internal sealed class ColonySimulation
             throw new InvalidOperationException("The canonical resource ledger rejected an invalid or over-capacity adjustment.");
     }
 
+    /// <summary>
+    /// Applies one deterministic rainfall pulse when the strategic weather front changes. Each
+    /// pulse adds a small amount of real water to exposed colony tiles; normal fluid simulation
+    /// then handles flow and magma interaction.
+    /// </summary>
+    internal int ApplyWeatherPrecipitation(int seed, long authoritativeTick, WorldWeather weather)
+    {
+        if (authoritativeTick < 0) throw new ArgumentOutOfRangeException(nameof(authoritativeTick));
+        if (!Enum.IsDefined(weather)) throw new ArgumentOutOfRangeException(nameof(weather));
+        if (weather is not (WorldWeather.Rain or WorldWeather.Storm)) return 0;
+
+        long weatherSlot = authoritativeTick /
+            (TickManager.TicksPerSecond * (long)WorldEcologyState.WeatherIntervalSeconds);
+        int requestedDrops = weather == WorldWeather.Storm ? 8 : 4;
+        int acceptedDrops = 0;
+        var alreadyTargeted = new HashSet<CellPosition>();
+        for (int attempt = 0; attempt < requestedDrops * 8 && acceptedDrops < requestedDrops; attempt++)
+        {
+            uint hash = LeisureHash(seed, weatherSlot, attempt + 101);
+            int x = (int)(hash % Width);
+            int y = (int)((hash >> 12) % Height);
+            var cell = new CellPosition(x, y);
+            if (!alreadyTargeted.Add(cell)) continue;
+            if (AddFluid(x, y, FluidKind.Water, 1) > 0) acceptedDrops++;
+        }
+
+        return acceptedDrops;
+    }
+
     public int AddFluid(int x, int y, FluidKind kind, int amount)
     {
         if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x), "Fluid coordinates must be inside the colony grid.");
