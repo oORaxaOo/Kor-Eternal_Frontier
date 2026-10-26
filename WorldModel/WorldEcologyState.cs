@@ -1,7 +1,7 @@
 namespace KorTheBlight.WorldModel;
 
 internal enum WildlifeSpecies { LonghornGrazer, AshbackGrazer, DuskStalker }
-internal enum WorldEventKind { WeatherShift, HerdMigration, BlightSurge, RareSighting, Drought }
+internal enum WorldEventKind { WeatherShift, SeasonChanged, HerdMigration, BlightSurge, RareSighting, Drought }
 internal enum WorldSeason { Spring, Summer, Autumn, Winter }
 internal enum WorldWeather { Clear, Rain, Storm, Heatwave, Frost, Snow, Drought }
 
@@ -77,7 +77,19 @@ internal sealed class WorldEcologyState
     public void Step(double deltaSeconds, double worldClock, int seed)
     {
         if (deltaSeconds <= 0) return;
+        WorldSeason previousSeason = CurrentSeason;
+        WorldWeather previousWeather = CurrentWeather;
         SynchronizeClimate(worldClock, seed);
+        if (CurrentWeather != previousWeather)
+        {
+            AddEvent(WorldEventKind.WeatherShift, worldClock, $"Weather changed: {CurrentWeather}",
+                $"The regional weather shifted to {CurrentWeather}. Settlement food growth is now ×{FoodGrowthMultiplier:0.00}.");
+        }
+        if (CurrentSeason != previousSeason)
+        {
+            AddEvent(WorldEventKind.SeasonChanged, worldClock, $"Season changed: {CurrentSeason}",
+                $"The region entered {CurrentSeason}. Seasonal forage and food production conditions have changed.");
+        }
         foreach (var herd in Herds)
         {
             double seasonalForageRate = CurrentSeason switch
