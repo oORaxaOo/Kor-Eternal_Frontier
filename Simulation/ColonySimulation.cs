@@ -128,6 +128,8 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public PawnPersonality Personality { get; } = new();
     public ResidentLifeProfile Life { get; } = ResidentLifeProfile.Create(id, name);
     public ResidentBodyState Body { get; } = new();
+    // Prevent idle movement from continually selecting new destinations inside the same time window.
+    public long LastAutonomousActivityWindow { get; internal set; } = -1;
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -544,7 +546,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 12,
+            SchemaVersion = 13,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -617,6 +619,7 @@ internal sealed class ColonySimulation
                 : worker.Personality.CaptureSnapshot(),
             Life = worker.Life.CaptureSnapshot(),
             Body = worker.Body.CaptureSnapshot(),
+            LastAutonomousActivityWindow = worker.LastAutonomousActivityWindow,
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -703,6 +706,7 @@ internal sealed class ColonySimulation
                 TradeCargo = worker.TradeCargo is null ? [] : new Dictionary<ResourceKind, int>(worker.TradeCargo),
                 ThermalExposure = worker.ThermalExposure,
                 Stress = worker.Stress,
+                LastAutonomousActivityWindow = snapshot.SchemaVersion >= 13 ? worker.LastAutonomousActivityWindow : -1,
                 CarriedResource = worker.CarriedResource,
                 CarriedAmount = worker.CarriedAmount,
                 Task = worker.Task == null ? null : new WorkerTask(worker.Task.Kind,
@@ -2550,6 +2554,7 @@ internal sealed class ColonySimulation
                 }
             }
             if (assigned) continue;
+            TryAssignAutonomousLeisure(worker, _tickManager.TickCount);
         }
     }
 
@@ -2561,6 +2566,8 @@ internal sealed class ColonySimulation
     {
         const long leisureWindowTicks = 36_000; // Ten simulated minutes at 60 Hz.
         long window = tick / leisureWindowTicks;
+        if (worker.LastAutonomousActivityWindow >= window) return;
+        worker.LastAutonomousActivityWindow = window;
         var currentCell = new CellPosition(
             Math.Clamp((int)worker.X, 0, Width - 1),
             Math.Clamp((int)worker.Y, 0, Height - 1));
