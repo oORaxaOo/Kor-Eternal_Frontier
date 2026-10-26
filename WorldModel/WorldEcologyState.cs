@@ -8,7 +8,8 @@ internal enum WorldEventKind
     BlightSurge = 2,
     RareSighting = 3,
     Drought = 4,
-    SeasonChanged = 5
+    SeasonChanged = 5,
+    ResourceSiteCorrupted = 6
 }
 internal enum WorldSeason { Spring, Summer, Autumn, Winter }
 internal enum WorldWeather { Clear, Rain, Storm, Heatwave, Frost, Snow, Drought }
@@ -36,6 +37,7 @@ internal sealed class BlightHotspotState
     public double Radius { get; set; }
     public double Intensity { get; set; }
     public double NextSpreadAt { get; set; }
+    public long? WorldEntityId { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
@@ -71,6 +73,7 @@ internal sealed class WorldEcologyState
     public WorldSeason CurrentSeason { get; set; } = WorldSeason.Spring;
     public WorldWeather CurrentWeather { get; set; } = WorldWeather.Clear;
     public double FoodGrowthMultiplier => SeasonFoodMultiplier(CurrentSeason) * WeatherFoodMultiplier(CurrentWeather);
+    public double BlightGrowthMultiplier => SeasonBlightMultiplier(CurrentSeason) * WeatherBlightMultiplier(CurrentWeather);
 
     public long NextHerdId { get; set; } = 1;
     public long NextHotspotId { get; set; } = 1;
@@ -80,14 +83,29 @@ internal sealed class WorldEcologyState
     public List<BlightHotspotState> Hotspots { get; set; } = [];
     public List<WorldEventState> RecentEvents { get; set; } = [];
 
-    public void Initialize(int seed)
+    public void Initialize(int seed, IReadOnlyCollection<WorldEntityState>? blightFronts = null)
     {
         if (Herds.Count != 0 || Hotspots.Count != 0) return;
         var random = new Random(seed ^ 0x4B4F52);
         AddHerd(WildlifeSpecies.LonghornGrazer, 34, 35_000, 39_000, random, 0);
         AddHerd(WildlifeSpecies.AshbackGrazer, 21, 73_000, 69_000, random, 0);
         AddHerd(WildlifeSpecies.DuskStalker, 8, 29_000, 66_000, random, 0);
-        AddHotspot(64_000, 46_500, 3_500, .52, 500);
+
+        var fronts = blightFronts?
+            .Where(entity => entity.Kind == WorldEntityKind.BlightFront)
+            .OrderBy(entity => entity.Id)
+            .ToArray() ?? [];
+        if (fronts.Length == 0)
+        {
+            AddHotspot(64_000, 46_500, 3_500, .52, 500);
+        }
+        else
+        {
+            for (int i = 0; i < fronts.Length; i++)
+                AddHotspot(fronts[i].X, fronts[i].Y, i == 0 ? 3_500 : 1_800,
+                    i == 0 ? .52 : .22, 500, fronts[i].Id);
+        }
+
         NextWorldEventAt = 900 + random.Next(0, 300);
         SynchronizeClimate(0, seed);
     }
@@ -129,7 +147,9 @@ internal sealed class WorldEcologyState
                 WorldWeather.Drought => -.00012,
                 _ => 0d
             };
-            double pressureLoss = IsDangerousAt(herd.X, herd.Y) ? .0003 : 0d;
+            // Habitat damage varies continuously with local Blight pressure; herds begin to lose
+            // grazing quality before a region crosses the migration-avoidance threshold.
+            double pressureLoss = EnvironmentalPressureAt(herd.X, herd.Y) * .00055d;
             herd.Forage = Math.Clamp(herd.Forage +
                 deltaSeconds * (seasonalForageRate + weatherForageRate - pressureLoss), 0, 1);
             if (worldClock >= herd.NextMigrationAt || Distance(herd.X, herd.Y, herd.TargetX, herd.TargetY) < 100)
@@ -150,10 +170,14 @@ internal sealed class WorldEcologyState
             }
         }
 
+        double blightClimate = BlightGrowthMultiplier;
         foreach (var hotspot in Hotspots.Where(item => item.IsActive).ToArray())
         {
-            hotspot.Intensity = Math.Min(1d, hotspot.Intensity + deltaSeconds * .0000025);
-            hotspot.Radius = Math.Min(12_000d, hotspot.Radius + deltaSeconds * .08);
+            // Wet/cold conditions suppress Blight while heat and drought accelerate expansion.
+            // The same deterministic climate already controls forage and settlement food growth.
+            hotspot.Intensity = Math.Min(1d, hotspot.Intensity + deltaSeconds * .0000025d * blightClimate);
+            hotspot.Radius = Math.Min(12_000d,
+                hotspot.Radius + deltaSeconds * .08d * Math.Sqrt(blightClimate));
             if (worldClock >= hotspot.NextSpreadAt)
             {
                 hotspot.NextSpreadAt = worldClock + 600 + StableRoll(seed, hotspot.Id, (long)worldClock, 600);
