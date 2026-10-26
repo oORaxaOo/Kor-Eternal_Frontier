@@ -318,10 +318,16 @@ internal sealed class ColonyRenderer : IDisposable
             };
             if (tile.Architecture != ArchitectureKind.None)
                 canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
-            if (tile.Architecture != ArchitectureKind.None && tile.IsBlightInfected)
+            if (tile.IsBlightInfected)
             {
-                _fill.Color = new SKColor(173, 28, 84, 72);
-                canvas.DrawRect(rect, _fill);
+                _fill.Color = new SKColor(173, 28, 84, tile.Architecture == ArchitectureKind.None ? (byte)96 : (byte)72);
+                canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
+                if (tile.Architecture == ArchitectureKind.None && zoom >= 0.72f)
+                {
+                    _fill.Color = new SKColor(230, 45, 108, 155);
+                    canvas.DrawCircle(point.X - size * 0.12f, point.Y + size * 0.08f, size * 0.08f, _fill);
+                    canvas.DrawCircle(point.X + size * 0.13f, point.Y - size * 0.10f, size * 0.06f, _fill);
+                }
             }
             if (tile.Architecture != ArchitectureKind.None && tile.Health < tile.MaxHealth)
             {
