@@ -216,6 +216,7 @@ internal sealed class ColonySimulation
     private int _nextDepositId = 1;
     private int _nextProductionId = 1;
     private float _environmentAccumulatorSeconds;
+    private float _ambientTemperatureCelsius = 20f;
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
     private WorkOrderKind? _selectedWorkOrderKind;
     private int? _selectedWorkOrderId;
@@ -921,6 +922,32 @@ internal sealed class ColonySimulation
         return _tiles[x, y].TemperatureCelsius;
     }
 
+    /// <summary>Applies the strategic world's current season and weather as a colony ambient temperature.</summary>
+    internal void ApplyWorldClimate(WorldSeason season, WorldWeather weather)
+    {
+        if (!Enum.IsDefined(season)) throw new ArgumentOutOfRangeException(nameof(season));
+        if (!Enum.IsDefined(weather)) throw new ArgumentOutOfRangeException(nameof(weather));
+        float seasonalTemperature = season switch
+        {
+            WorldSeason.Spring => 18f,
+            WorldSeason.Summer => 27f,
+            WorldSeason.Autumn => 12f,
+            WorldSeason.Winter => 6f,
+            _ => 20f
+        };
+        float weatherOffset = weather switch
+        {
+            WorldWeather.Rain => -2f,
+            WorldWeather.Storm => -5f,
+            WorldWeather.Heatwave => 12f,
+            WorldWeather.Frost => -9f,
+            WorldWeather.Snow => -5f,
+            WorldWeather.Drought => 5f,
+            _ => 0f
+        };
+        _ambientTemperatureCelsius = Math.Clamp(seasonalTemperature + weatherOffset, -15f, 45f);
+    }
+
     public int TotalFluid(FluidKind kind)
     {
         if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
@@ -1019,6 +1046,18 @@ internal sealed class ColonySimulation
             // count keeps the update bounded and lets walls insulate without perfect heat isolation.
             float exchange = neighbours == 0 ? 0 : weightedDelta / neighbours;
             float next = current + exchange * materialConductivity;
+
+            // Outer ground responds quickly to weather; walls retain heat and doors leak more
+            // than insulated walls. Water and magma still apply their own local thermal forces.
+            float ambientConductance = tile.Architecture switch
+            {
+                ArchitectureKind.Wall => 0.012f,
+                ArchitectureKind.Door => 0.035f,
+                ArchitectureKind.Floor => 0.055f,
+                _ when tile.Terrain == TerrainKind.Rock => 0.025f,
+                _ => 0.075f
+            };
+            next += (_ambientTemperatureCelsius - next) * ambientConductance;
 
             if (tile.MagmaLevel > 0)
             {
