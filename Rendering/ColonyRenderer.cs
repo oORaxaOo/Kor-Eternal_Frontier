@@ -1194,12 +1194,13 @@ internal sealed class ColonyRenderer : IDisposable
         {
             int animalCount = spatialWorld.Ecology.Herds.Sum(herd => herd.Population);
             canvas.DrawText($"Herds {spatialWorld.Ecology.Herds.Count} | Estimated animals {animalCount}", 790, 376, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Active Blight hotspots {spatialWorld.Ecology.Hotspots.Count(item => item.IsActive)}", 790, 395, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Season {spatialWorld.Ecology.CurrentSeason} | Weather {spatialWorld.Ecology.CurrentWeather}", 790, 395, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Food growth ×{spatialWorld.Ecology.FoodGrowthMultiplier:0.00} | Active Blight hotspots {spatialWorld.Ecology.Hotspots.Count(item => item.IsActive)}", 790, 414, SKTextAlign.Left, _smallFont, _text);
             var latestEvent = spatialWorld.Ecology.RecentEvents.LastOrDefault();
             _muted.Color = MutedColor;
-            canvas.DrawText(latestEvent == null ? "No world events recorded yet" : $"Latest: {latestEvent.Title}", 790, 417, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText(latestEvent == null ? "No world events recorded yet" : $"Latest: {latestEvent.Title}", 790, 436, SKTextAlign.Left, _smallFont, _muted);
             if (latestEvent != null)
-                canvas.DrawText($"{latestEvent.Kind} | {latestEvent.OccurredAt / 60:0} min", 790, 435, SKTextAlign.Left, _smallFont, _muted);
+                canvas.DrawText($"{latestEvent.Kind} | {latestEvent.OccurredAt / 60:0} min", 790, 454, SKTextAlign.Left, _smallFont, _muted);
         }
         else if (simulation.SelectedWorkOrderId.HasValue)
         {
