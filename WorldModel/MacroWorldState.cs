@@ -436,7 +436,10 @@ internal sealed class MacroWorldState
                 cell.ComponentsCount = Math.Max(0, cell.ComponentsCount - population * 0.00025f);
                 break;
         }
-        cell.WoodCount += population * (cell.Biome == WorldBiomeKind.Forest ? 0.0015f : 0.0003f);
+        // Blight degrades living biomass as well as agriculture; mineral/industrial output is
+        // unaffected by this organic-resource penalty.
+        cell.WoodCount += population * (cell.Biome == WorldBiomeKind.Forest ? 0.0015f : 0.0003f) *
+                          (1f - pressure * 0.75f);
         cell.BlightPresence = Math.Clamp(pressure + (pressure > 0.15f ? 0.01f : -0.002f), 0f, 1f);
         if (cell.FoodCount < population * 0.002f && cell.Population > 0)
         {
@@ -712,6 +715,15 @@ internal sealed class MacroWorldState
         for (int i = start; i < end; i++)
         {
             ref var cell = ref Cells[i];
+            // Refresh the abstract regional layer from live hotspot pressure on a bounded slice.
+            // The existing cell value remains as persistent contamination, while newly spreading
+            // hotspots can immediately expose cells that were clean at world generation.
+            double worldX = (cell.X + 0.5d) * WorldCellSize;
+            double worldY = (cell.Y + 0.5d) * WorldCellSize;
+            float currentWorldPressure = (float)continuous.Ecology.EnvironmentalPressureAt(worldX, worldY);
+            if (currentWorldPressure > cell.BlightPresence)
+                cell.BlightPresence = currentWorldPressure;
+
             float pressure = cell.BlightPresence;
             if (pressure > 0.85f && cell.OwningFactionId != 0)
             {
