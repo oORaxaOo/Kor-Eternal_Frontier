@@ -54,7 +54,10 @@ internal sealed class ResidentLifeProfile
     public ResidentDailyActivity ActivityAtTick(long tick)
     {
         if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
-        int hour = (int)((tick % TicksPerDay) / TicksPerHour);
+        // A fresh colony opens at 09:00 so residents can begin useful work immediately.
+        // The same fixed offset applies to all saved sessions; the resident-specific offset
+        // still staggers each resident's day without making the opening hours a dead zone.
+        int hour = (int)(((tick % TicksPerDay) / TicksPerHour + 9) % 24);
         hour = (hour - _scheduleOffsetHours + 24) % 24;
         if (hour <= 6 || hour >= 22) return ResidentDailyActivity.Sleep;
         if (hour is 8 or 9 or 10 or 11 or 13 or 14 or 15 or 16) return ResidentDailyActivity.Work;
