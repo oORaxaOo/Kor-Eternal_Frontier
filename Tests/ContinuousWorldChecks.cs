@@ -61,6 +61,49 @@ internal static class ContinuousWorldChecks
             "actual climate changes must be recorded in the same world event history shown to the player");
         Check(ecologyWorld.Ecology.FoodGrowthMultiplier > 0,
             "season and weather must expose a usable modifier for the shared world food economy");
+
+        int macroClimateSeed = Enumerable.Range(0, 10_000).First(seed =>
+        {
+            var probe = new WorldEcologyState();
+            probe.SynchronizeClimate(1d, seed);
+            double springMultiplier = probe.FoodGrowthMultiplier;
+            probe.SynchronizeClimate(WorldEcologyState.SeasonDurationSeconds + 1d, seed);
+            return Math.Abs(probe.FoodGrowthMultiplier - springMultiplier) > .01d;
+        });
+        double MeasureMacroFoodGrowth(double clockSeconds, out double expectedMultiplier)
+        {
+            var climateWorld = ContinuousWorldState.Generate(macroClimateSeed);
+            foreach (var hotspot in climateWorld.Ecology.Hotspots) hotspot.IsActive = false;
+            int cellIndex = Enumerable.Range(0, MacroWorldState.CellCount).First(index =>
+            {
+                var cell = climateWorld.MacroWorld.Cells[index];
+                return cell.OwningFactionId != 0 && cell.Population > 0 &&
+                       cell.ProductionFocus == ProductionFocus.Agriculture && cell.Fertility > 0 &&
+                       cell.BlightPresence < .75f;
+            });
+            var initialCell = climateWorld.MacroWorld.Cells[cellIndex];
+            climateWorld.ClockSeconds = clockSeconds;
+            climateWorld.MacroWorld.SimulationTicks = MacroWorldState.TicksPerMacroTurn -
+                                                      TickManager.TicksPerSecond;
+            climateWorld.MacroWorld.MacroTurnsScheduled = 0;
+            climateWorld.MacroWorld.TurnPhase = MacroTurnPhase.Economy;
+            climateWorld.MacroWorld.MacroTurnCursor = cellIndex;
+            climateWorld.MacroWorld.MarketTurnAccumulator.Reset();
+            climateWorld.Step(1d);
+            expectedMultiplier = climateWorld.Ecology.FoodGrowthMultiplier;
+            var advancedCell = climateWorld.MacroWorld.Cells[cellIndex];
+            double outputFactor = initialCell.Population * .015d * initialCell.Fertility *
+                                  (1d - initialCell.BlightPresence * .9d);
+            return (advancedCell.FoodCount - initialCell.FoodCount +
+                    initialCell.Population * .01d) / outputFactor;
+        }
+        double observedSpringFoodGrowth = MeasureMacroFoodGrowth(0d, out double expectedSpringFoodGrowth);
+        double observedSummerFoodGrowth = MeasureMacroFoodGrowth(
+            WorldEcologyState.SeasonDurationSeconds, out double expectedSummerFoodGrowth);
+        Check(Math.Abs(observedSpringFoodGrowth - expectedSpringFoodGrowth) < .02d &&
+              Math.Abs(observedSummerFoodGrowth - expectedSummerFoodGrowth) < .02d &&
+              Math.Abs(expectedSpringFoodGrowth - expectedSummerFoodGrowth) > .01d,
+            "macro agriculture must consume the shared seasonal/weather multiplier rather than a separate fixed climate model");
         var seasonalWorld = ContinuousWorldState.Generate(81357);
         double springFoodMultiplier = seasonalWorld.Ecology.FoodGrowthMultiplier;
         for (int i = 0; i < 60; i++) seasonalWorld.Step(60);
