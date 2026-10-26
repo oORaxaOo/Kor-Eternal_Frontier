@@ -135,6 +135,9 @@ internal static class ColonyChecks
 
         var thermalHazard = new ColonySimulation();
         var thermalControl = new ColonySimulation();
+        // Keep the test resident in the hazardous cell so the opening work schedule cannot
+        // legitimately send them away before exposure has accumulated.
+        thermalHazard.Workers.Single(worker => worker.Id == 1).IsCombatDeployed = true;
         thermalHazard.TileAt(16, 12)!.TemperatureCelsius = 5_000f;
         for (int i = 0; i < 20; i++)
         {
