@@ -7,6 +7,58 @@ internal static class WorldSimulationChecks
 {
     public static void Run()
     {
+        // Strategic-to-local infestation must be deterministic, pressure-gated, edge-first and persistent.
+        var lowPressureProbe = new ColonySimulation(seed: 63017);
+        Check(!lowPressureProbe.TryIntroduceBlightFromStrategicPressure(63017, 600, .69d) &&
+              !lowPressureProbe.TryIntroduceBlightFromStrategicPressure(63017, 599, 1d),
+            "local Blight infiltration must require both sufficient strategic pressure and a ten-second clock boundary");
+
+        int infiltrationSeed = Enumerable.Range(1, 1_000).First(seed =>
+        {
+            var probe = new ColonySimulation(seed);
+            return probe.TryIntroduceBlightFromStrategicPressure(seed, 600, 1d);
+        });
+        var infiltrationA = new ColonySimulation(infiltrationSeed);
+        var infiltrationB = new ColonySimulation(infiltrationSeed);
+        bool seededA = false, seededB = false;
+        for (long tick = 600; tick <= 600 * 20 && !seededA; tick += 600)
+        {
+            seededA = infiltrationA.TryIntroduceBlightFromStrategicPressure(infiltrationSeed, tick, 1d);
+            seededB = infiltrationB.TryIntroduceBlightFromStrategicPressure(infiltrationSeed, tick, 1d);
+            Check(seededA == seededB,
+                "matching seeds and world ticks must make identical Blight infiltration decisions");
+        }
+        Check(seededA && seededB,
+            "sustained severe strategic pressure must eventually seed a local Blight foothold");
+        string InfectedPerimeterSignature(ColonySimulation colony) => string.Join("|",
+            Enumerable.Range(0, ColonySimulation.Width).SelectMany(x =>
+                Enumerable.Range(0, ColonySimulation.Height)
+                    .Where(y => colony.TileAt(x, y)?.IsBlightInfected == true)
+                    .Select(y => $"{x}:{y}")));
+        string infestationSignature = InfectedPerimeterSignature(infiltrationA);
+        Check(infestationSignature.Length > 0 &&
+              infestationSignature == InfectedPerimeterSignature(infiltrationB),
+            "local Blight infiltration must choose the same edge tile for the same seed and pressure history");
+        var savedInfestation = ColonySaveService.Deserialize(ColonySaveService.Serialize(infiltrationA));
+        Check(InfectedPerimeterSignature(savedInfestation) == infestationSignature,
+            "a strategic Blight foothold must survive colony save/load");
+
+        var integrationSeed = infiltrationSeed;
+        var infestationWorld = new WorldSimulation(integrationSeed);
+        var infestationHome = infestationWorld.SpatialWorld.Entities.Single(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        var linkedHotspot = infestationWorld.SpatialWorld.Ecology.Hotspots[0];
+        linkedHotspot.X = infestationHome.X;
+        linkedHotspot.Y = infestationHome.Y;
+        linkedHotspot.Radius = 3_000d;
+        linkedHotspot.Intensity = .99d;
+        linkedHotspot.NextSpreadAt = double.MaxValue;
+        for (int frame = 0; frame < 13; frame++) infestationWorld.Step(.8f);
+        Check(Enumerable.Range(0, ColonySimulation.Width).Any(x =>
+                Enumerable.Range(0, ColonySimulation.Height)
+                    .Any(y => infestationWorld.Colony.TileAt(x, y)?.IsBlightInfected == true)),
+            "the unified world simulation must carry high strategic hotspot pressure into the active colony");
+
         var terrainProbe = new ColonySimulation(seed: 41024);
         Check(terrainProbe.FindEcosystemPath(ResourceKind.Food, new CellPosition(21, 6), new CellPosition(22, 6)) is null &&
               terrainProbe.FindEcosystemPath(ResourceKind.Wood, new CellPosition(21, 6), new CellPosition(22, 6)) is null,
