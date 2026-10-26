@@ -6,7 +6,7 @@ internal enum GridTileKind { Ground, Wall, Stockpile }
 /// <summary>The four states are intentionally presentation-independent.</summary>
 internal enum CitizenState { Idle, Working, MovingToStorage, MovingToJob, MentalBreak }
 internal enum SimulationNeedKind { Hunger = 1, Fatigue = 2 }
-internal enum SimulationHazardKind { ThermalExposure = 1 }
+internal enum SimulationHazardKind { ThermalExposure = 1, BlightExposure = 2 }
 
 /// <summary>
 /// Compact tile data. Coordinates are encoded by the array index rather than repeated per tile.
