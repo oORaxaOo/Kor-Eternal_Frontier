@@ -20,6 +20,15 @@ internal static class ResidentLifeProfileChecks
   leisureColony.AdvanceWorldTick(new SimulationTick(recreationTick+6,1f/TickManager.TicksPerSecond));
   Check(leisureWorker.Task?.Kind==ColonyTaskKind.Move&&leisureWorker.Task.Target==leisureTarget,
    "an autonomous leisure walk must keep its chosen target rather than thrashing between orders");
+  leisureWorker.X=leisureTarget.X+.5f;leisureWorker.Y=leisureTarget.Y+.5f;leisureWorker.Task=null;
+  leisureColony.AdvanceWorldTick(new SimulationTick(recreationTick+12,1f/TickManager.TicksPerSecond));
+  Check(leisureWorker.Task is null,
+   "a resident that completes its short leisure walk must not select another destination in the same time window");
+  var leisureSnapshot=leisureColony.CaptureSnapshot();
+  var leisureRestored=ColonySimulation.RestoreSnapshot(leisureSnapshot);
+  Check(leisureRestored.Workers.Single(worker=>worker.Id==leisureWorker.Id).LastAutonomousActivityWindow==
+        leisureWorker.LastAutonomousActivityWindow,
+   "the autonomous movement window must persist across colony save/load");
   p.RecordMemory(100,ResidentMemoryKind.WorkCompleted,0,4,"Completed a task.");
   p.RecordMemory(100,ResidentMemoryKind.Friendship,18,3,"Formed a meaningful bond.");
   Check(p.RecentMoodBias(100)>0&&p.RecentMoodBias(18100)==0,"memory influence decays deterministically");
