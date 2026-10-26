@@ -2377,8 +2377,13 @@ internal sealed class ColonySimulation
                 continue;
             }
 
-            if (worker.Life.ActivityAtTick(_tickManager.TickCount) != ResidentDailyActivity.Work)
+            ResidentDailyActivity activity = worker.Life.ActivityAtTick(_tickManager.TickCount);
+            if (activity != ResidentDailyActivity.Work)
+            {
+                if (activity == ResidentDailyActivity.Recreation)
+                    TryAssignAutonomousLeisure(worker, _tickManager.TickCount);
                 continue;
+            }
 
             bool assigned = false;
             // Priority is evaluated across excavation, tile builds, object blueprints and production orders.
@@ -2407,6 +2412,49 @@ internal sealed class ColonySimulation
                 }
             }
             if (assigned) continue;
+        }
+    }
+
+    /// <summary>
+    /// Gives idle residents short, repeatable leisure walks so downtime has visible movement
+    /// without stealing a resident from a committed player or economy task.
+    /// </summary>
+    private void TryAssignAutonomousLeisure(ColonyWorker worker, long tick)
+    {
+        const long leisureWindowTicks = 36_000; // Ten simulated minutes at 60 Hz.
+        long window = tick / leisureWindowTicks;
+        var currentCell = new CellPosition(
+            Math.Clamp((int)worker.X, 0, Width - 1),
+            Math.Clamp((int)worker.Y, 0, Height - 1));
+
+        for (int attempt = 0; attempt < 96; attempt++)
+        {
+            uint hash = LeisureHash(worker.Id, window, attempt);
+            int x = (int)(hash % Width);
+            int y = (int)((hash >> 12) % Height);
+            var target = new CellPosition(x, y);
+            int distance = Math.Abs(target.X - currentCell.X) + Math.Abs(target.Y - currentCell.Y);
+            if (distance is < 3 or > 7 || !IsWalkable(target)) continue;
+            if (!TryFindPath(worker, target, out var route)) continue;
+
+            worker.Task = new WorkerTask(ColonyTaskKind.Move, target, route);
+            return;
+        }
+    }
+
+    private static uint LeisureHash(int workerId, long window, int attempt)
+    {
+        unchecked
+        {
+            uint value = (uint)workerId * 0x9E3779B9u;
+            value ^= (uint)window * 0x85EBCA6Bu;
+            value ^= (uint)attempt * 0xC2B2AE35u;
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            value ^= value >> 16;
+            return value;
         }
     }
 
