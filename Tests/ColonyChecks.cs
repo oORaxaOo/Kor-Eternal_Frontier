@@ -496,6 +496,14 @@ internal static class ColonyChecks
         catch (InvalidDataException) { versionRejected = true; }
         Check(versionRejected, "unsupported or incomplete save data must be rejected rather than loaded");
 
+        var climateColony = new ColonySimulation(seed: 77);
+        float ambientBeforeWeather = climateColony.TemperatureAt(5, 5);
+        climateColony.ApplyWorldClimate(WorldSeason.Winter, WorldWeather.Frost);
+        climateColony.Step(10f);
+        climateColony.Step(10f);
+        Check(climateColony.TemperatureAt(5, 5) < ambientBeforeWeather,
+            "world seasons and weather must alter local colony temperatures through ambient heat exchange");
+
         var blightColony = new ColonySimulation(seed: 2137);
         var infectedHabitat = blightColony.Objects.Single(item => item.Kind == PlaceableKind.Habitat);
         infectedHabitat.IsBlightInfected = true;
