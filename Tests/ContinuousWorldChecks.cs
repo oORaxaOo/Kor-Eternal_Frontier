@@ -21,6 +21,8 @@ internal static class ContinuousWorldChecks
         }
         Check(weatherChanged,
             "world weather must transition over time instead of being an event-only label");
+        Check(ecologyWorld.Ecology.RecentEvents.Any(item => item.Kind == WorldEventKind.WeatherShift),
+            "actual climate changes must be recorded in the same world event history shown to the player");
         Check(ecologyWorld.Ecology.FoodGrowthMultiplier > 0,
             "season and weather must expose a usable modifier for the shared world food economy");
         var seasonalWorld = ContinuousWorldState.Generate(81357);
