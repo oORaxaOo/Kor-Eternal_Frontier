@@ -219,6 +219,7 @@ internal sealed class ColonySimulation
     private int _nextProductionId = 1;
     private float _environmentAccumulatorSeconds;
     private float _ambientTemperatureCelsius = 20f;
+    private readonly HashSet<int> _blightExposedWorkers = [];
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
     private WorkOrderKind? _selectedWorkOrderKind;
     private int? _selectedWorkOrderId;
@@ -1164,6 +1165,7 @@ internal sealed class ColonySimulation
         _ecosystem = new ColonyEcosystem(Width, Height);
         _ecosystem.EventEmitted += HandleResidentLifeEvent;
         _citizensByWorker.Clear();
+        _blightExposedWorkers.Clear();
         _gardenJobsByObject.Clear();
         _storageZonesByObject.Clear();
 
@@ -1331,8 +1333,16 @@ internal sealed class ColonySimulation
                     worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Rested,0,3,"Recovered some rest.");
                 break;
             case SimulationEventKind.HazardChanged:
-                worker.Life.RecordMemory(item.Tick,item.Value>0?ResidentMemoryKind.EnvironmentalHazard:ResidentMemoryKind.Recovery,0,item.Value>0?-6:2,
-                    item.Value>0?"Dangerous environmental exposure affected this resident.":"Environmental exposure returned to a safe level.");
+                if (item.RelatedId == (long)SimulationHazardKind.BlightExposure)
+                    worker.Life.RecordMemory(item.Tick,
+                        item.Value > 0 ? ResidentMemoryKind.EnvironmentalHazard : ResidentMemoryKind.Recovery,
+                        0, item.Value > 0 ? -7 : 2,
+                        item.Value > 0
+                            ? "Exposure to the living Blight increased this resident's stress."
+                            : "This resident left the Blight-affected area.");
+                else
+                    worker.Life.RecordMemory(item.Tick,item.Value>0?ResidentMemoryKind.EnvironmentalHazard:ResidentMemoryKind.Recovery,0,item.Value>0?-6:2,
+                        item.Value>0?"Dangerous environmental exposure affected this resident.":"Environmental exposure returned to a safe level.");
                 break;
             case SimulationEventKind.MentalBreakStarted:
                 worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.MentalBreak,0,-8,"Stress became overwhelming and interrupted normal work.");
@@ -2466,6 +2476,22 @@ internal sealed class ColonySimulation
 
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
             citizen.EnvironmentallyExposed = worker.ThermalExposure > 15f;
+
+            bool blightExposed = _tiles[x, y].IsBlightInfected ||
+                ObjectAt(x, y) is { IsBlightInfected: true };
+            if (blightExposed)
+            {
+                if (_blightExposedWorkers.Add(worker.Id))
+                    _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.BlightExposure, 100f);
+                // Sustained proximity to the living organism steadily raises stress; it does not
+                // magically become disease or alter body health without a medical system.
+                worker.Stress = Math.Min(100f, worker.Stress + deltaSeconds * 0.35f);
+            }
+            else if (_blightExposedWorkers.Remove(worker.Id))
+            {
+                _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.BlightExposure, 0f);
+            }
+
             if (previous < 15f && worker.ThermalExposure >= 15f)
             {
                 _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, worker.ThermalExposure);
