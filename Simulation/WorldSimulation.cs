@@ -107,8 +107,9 @@ internal sealed class WorldSimulation
                 Colony.ApplyWeatherPrecipitation(SpatialWorld.Seed, tick.Number, currentWeather);
         });
 
-        _kernel.Register("strategic-arrivals-blight-and-army-materialization", SimulationPhase.Strategic, WorkCycleTicks, _ =>
+        _kernel.Register("strategic-arrivals-blight-and-army-materialization", SimulationPhase.Strategic, WorkCycleTicks, tick =>
         {
+            ProcessStrategicBlightInfiltration(tick.Number);
             ProcessBlightPressureThreats();
             ProcessMacroArrivals();
             SyncCombatCoverFromColony();
@@ -253,6 +254,28 @@ internal sealed class WorldSimulation
     /// only a scarcity input: it never scales Blight aggression down when the colony is damaged.
     /// The incident key is encoded in world entities so saves naturally preserve cooldown state.
     /// </summary>
+    /// <summary>
+    /// Couples strategic ecology to the active settlement. Sustained local or macro Blight pressure
+    /// gets a deterministic chance to establish a local foothold every ten simulated seconds.
+    /// </summary>
+    private void ProcessStrategicBlightInfiltration(long authoritativeTick)
+    {
+        const long infiltrationIntervalTicks = TickManager.TicksPerSecond * 10L;
+        if (authoritativeTick == 0 || authoritativeTick % infiltrationIntervalTicks != 0) return;
+
+        var home = SpatialWorld.Entities.FirstOrDefault(entity =>
+            entity.Kind == WorldEntityKind.Settlement && entity.Faction == "Kor");
+        if (home is null) return;
+
+        int macroX = Math.Clamp((int)(home.X / MacroWorldState.WorldCellSize), 0, MacroWorldState.Columns - 1);
+        int macroY = Math.Clamp((int)(home.Y / MacroWorldState.WorldCellSize), 0, MacroWorldState.Rows - 1);
+        double localPressure = SpatialWorld.Ecology.EnvironmentalPressureAt(home.X, home.Y);
+        double macroPressure = Math.Clamp(
+            SpatialWorld.MacroWorld.GetCell(macroX, macroY).BlightPresence, 0d, 1d);
+        double pressure = Math.Max(localPressure, macroPressure);
+        Colony.TryIntroduceBlightFromStrategicPressure(SpatialWorld.Seed, authoritativeTick, pressure);
+    }
+
     private void ProcessBlightPressureThreats()
     {
         var home = SpatialWorld.Entities.FirstOrDefault(entity =>
