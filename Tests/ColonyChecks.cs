@@ -509,6 +509,28 @@ internal static class ColonyChecks
         Check(climateColony.TemperatureAt(5, 5) < ambientBeforeWeather,
             "world seasons and weather must alter local colony temperatures through ambient heat exchange");
 
+        var blightExposureColony = new ColonySimulation(seed: 2136);
+        var blightExposedWorker = blightExposureColony.Workers.Single(worker => worker.Id == 1);
+        int exposedX = Math.Clamp((int)blightExposedWorker.X, 0, ColonySimulation.Width - 1);
+        int exposedY = Math.Clamp((int)blightExposedWorker.Y, 0, ColonySimulation.Height - 1);
+        blightExposureColony.TileAt(exposedX, exposedY)!.IsBlightInfected = true;
+        Check(blightExposureColony.PrepareWorkerForCombat(blightExposedWorker.Id),
+            "a test resident can remain stationary while exposed to infected ground");
+        float stressBeforeBlight = blightExposedWorker.Stress;
+        blightExposureColony.Step(5f);
+        Check(blightExposedWorker.Stress > stressBeforeBlight,
+            "standing on infected ground must increase resident stress over time");
+        Check(blightExposedWorker.Life.Memories.Any(memory =>
+                memory.Kind == ResidentMemoryKind.EnvironmentalHazard &&
+                memory.Detail.Contains("living Blight", StringComparison.Ordinal)),
+            "entering a Blight-affected tile must be preserved in the resident's life memory");
+        blightExposureColony.TileAt(exposedX, exposedY)!.IsBlightInfected = false;
+        blightExposureColony.Step(0.1f);
+        Check(blightExposedWorker.Life.Memories.Any(memory =>
+                memory.Kind == ResidentMemoryKind.Recovery &&
+                memory.Detail.Contains("left the Blight", StringComparison.Ordinal)),
+            "leaving an infected area must record recovery from the local hazard");
+
         var blightColony = new ColonySimulation(seed: 2137);
         var infectedHabitat = blightColony.Objects.Single(item => item.Kind == PlaceableKind.Habitat);
         infectedHabitat.IsBlightInfected = true;
