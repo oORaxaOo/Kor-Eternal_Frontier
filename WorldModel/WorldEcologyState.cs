@@ -171,8 +171,15 @@ internal sealed class WorldEcologyState
         }
 
         double blightClimate = BlightGrowthMultiplier;
-        foreach (var hotspot in Hotspots.Where(item => item.IsActive).ToArray())
+        int hotspotsToProcess = Hotspots.Count;
+        int activeHotspotCount = Hotspots.Count(item => item.IsActive);
+        // Index the pre-existing collection rather than materializing an array on every 60 Hz tick.
+        // Newly spawned hotspots begin updating on the next tick, preserving stable update order.
+        for (int hotspotIndex = 0; hotspotIndex < hotspotsToProcess; hotspotIndex++)
         {
+            var hotspot = Hotspots[hotspotIndex];
+            if (!hotspot.IsActive) continue;
+
             // Wet/cold conditions suppress Blight while heat and drought accelerate expansion.
             // The same deterministic climate already controls forage and settlement food growth.
             hotspot.Intensity = Math.Min(1d, hotspot.Intensity + deltaSeconds * .0000033d * blightClimate);
@@ -181,7 +188,7 @@ internal sealed class WorldEcologyState
             if (worldClock >= hotspot.NextSpreadAt)
             {
                 hotspot.NextSpreadAt = worldClock + 600 + StableRoll(seed, hotspot.Id, (long)worldClock, 600);
-                if (hotspot.Intensity >= .58 && Hotspots.Count(item => item.IsActive) < 12 &&
+                if (hotspot.Intensity >= .58 && activeHotspotCount < 12 &&
                     StableRoll(seed, hotspot.Id, (long)worldClock, 100) < 38)
                 {
                     double angle = StableRoll(seed, hotspot.Id, (long)worldClock + 1, 6283) / 1000d;
@@ -190,6 +197,7 @@ internal sealed class WorldEcologyState
                         Math.Clamp(hotspot.X + Math.Cos(angle) * distance, 0, ContinuousWorldState.WorldExtent),
                         Math.Clamp(hotspot.Y + Math.Sin(angle) * distance, 0, ContinuousWorldState.WorldExtent),
                         1_200, .22, worldClock + 600);
+                    activeHotspotCount++;
                     AddEvent(WorldEventKind.BlightSurge, worldClock, "Blight bloom detected",
                         "A new Blight hotspot has emerged. Nearby routes and habitats are at risk.");
                 }
@@ -295,8 +303,11 @@ internal sealed class WorldEcologyState
     public double EnvironmentalPressureAt(double x, double y)
     {
         double pressure = 0;
-        foreach (var hotspot in Hotspots.Where(item => item.IsActive))
+        // This query is used for many macro cells and wildlife each tick, so avoid a LINQ
+        // iterator allocation in the hottest ecology path.
+        foreach (var hotspot in Hotspots)
         {
+            if (!hotspot.IsActive) continue;
             double distance = Distance(x, y, hotspot.X, hotspot.Y);
             if (distance >= hotspot.Radius) continue;
             pressure = Math.Max(pressure, hotspot.Intensity * (1 - distance / hotspot.Radius));
