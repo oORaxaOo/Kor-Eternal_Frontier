@@ -23,6 +23,23 @@ internal static class ContinuousWorldChecks
             "world weather must transition over time instead of being an event-only label");
         Check(ecologyWorld.Ecology.FoodGrowthMultiplier > 0,
             "season and weather must expose a usable modifier for the shared world food economy");
+        var seasonalWorld = ContinuousWorldState.Generate(81357);
+        double springFoodMultiplier = seasonalWorld.Ecology.FoodGrowthMultiplier;
+        for (int i = 0; i < 60; i++) seasonalWorld.Step(60);
+        Check(seasonalWorld.Ecology.CurrentSeason == WorldSeason.Summer &&
+              Math.Abs(seasonalWorld.Ecology.FoodGrowthMultiplier - springFoodMultiplier) > 0.001,
+            "the seasonal calendar must advance and change food-growing conditions");
+        var depletedHerdWorld = ContinuousWorldState.Generate(81358);
+        var depletedHerd = depletedHerdWorld.Ecology.Herds[0];
+        depletedHerd.Forage = 0;
+        depletedHerd.NextPopulationChangeAt = 0;
+        int populationBeforeLoss = depletedHerd.Population;
+        depletedHerdWorld.Step(1);
+        int populationAfterLoss = depletedHerd.Population;
+        depletedHerdWorld.Step(1);
+        Check(populationBeforeLoss - populationAfterLoss == 1 &&
+              depletedHerd.Population == populationAfterLoss,
+            "a starving herd must lose at most one animal per scheduled population update, not every render tick");
         Check(ecologyWorld.Ecology.Herds.Count >= 3 && ecologyWorld.Ecology.Hotspots.Count >= 1,
             "world generation must seed wildlife herds and a Blight hotspot");
         var firstHerd = ecologyWorld.Ecology.Herds[0];
