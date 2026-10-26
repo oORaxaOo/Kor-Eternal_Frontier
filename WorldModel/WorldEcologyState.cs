@@ -2,6 +2,8 @@ namespace KorTheBlight.WorldModel;
 
 internal enum WildlifeSpecies { LonghornGrazer, AshbackGrazer, DuskStalker }
 internal enum WorldEventKind { WeatherShift, HerdMigration, BlightSurge, RareSighting, Drought }
+internal enum WorldSeason { Spring, Summer, Autumn, Winter }
+internal enum WorldWeather { Clear, Rain, Storm, Heatwave, Frost, Snow, Drought }
 
 internal sealed class WildlifeHerdState
 {
@@ -14,6 +16,7 @@ internal sealed class WildlifeHerdState
     public double TargetY { get; set; }
     public double Speed { get; set; }
     public double NextMigrationAt { get; set; }
+    public double NextPopulationChangeAt { get; set; }
     public double Forage { get; set; } = 1d;
 }
 
@@ -44,6 +47,13 @@ internal sealed class WorldEventState
 /// </summary>
 internal sealed class WorldEcologyState
 {
+    public const double SeasonDurationSeconds = 3_600d;
+    public const double WeatherIntervalSeconds = 300d;
+
+    public WorldSeason CurrentSeason { get; set; } = WorldSeason.Spring;
+    public WorldWeather CurrentWeather { get; set; } = WorldWeather.Clear;
+    public double FoodGrowthMultiplier => SeasonFoodMultiplier(CurrentSeason) * WeatherFoodMultiplier(CurrentWeather);
+
     public long NextHerdId { get; set; } = 1;
     public long NextHotspotId { get; set; } = 1;
     public long NextEventId { get; set; } = 1;
@@ -61,14 +71,37 @@ internal sealed class WorldEcologyState
         AddHerd(WildlifeSpecies.DuskStalker, 8, 29_000, 66_000, random, 0);
         AddHotspot(64_000, 46_500, 3_500, .52, 500);
         NextWorldEventAt = 900 + random.Next(0, 300);
+        SynchronizeClimate(0, seed);
     }
 
     public void Step(double deltaSeconds, double worldClock, int seed)
     {
         if (deltaSeconds <= 0) return;
+        SynchronizeClimate(worldClock, seed);
         foreach (var herd in Herds)
         {
-            herd.Forage = Math.Clamp(herd.Forage + deltaSeconds * (IsDangerousAt(herd.X, herd.Y) ? -.0003 : .00008), 0, 1);
+            double seasonalForageRate = CurrentSeason switch
+            {
+                WorldSeason.Spring => .00010,
+                WorldSeason.Summer => .00013,
+                WorldSeason.Autumn => .00004,
+                WorldSeason.Winter => -.00004,
+                _ => 0d
+            };
+            double weatherForageRate = CurrentWeather switch
+            {
+                WorldWeather.Rain => .00005,
+                WorldWeather.Clear => .00001,
+                WorldWeather.Storm => -.00002,
+                WorldWeather.Heatwave => -.00007,
+                WorldWeather.Frost => -.00008,
+                WorldWeather.Snow => -.00005,
+                WorldWeather.Drought => -.00012,
+                _ => 0d
+            };
+            double pressureLoss = IsDangerousAt(herd.X, herd.Y) ? .0003 : 0d;
+            herd.Forage = Math.Clamp(herd.Forage +
+                deltaSeconds * (seasonalForageRate + weatherForageRate - pressureLoss), 0, 1);
             if (worldClock >= herd.NextMigrationAt || Distance(herd.X, herd.Y, herd.TargetX, herd.TargetY) < 100)
                 ChooseMigrationTarget(herd, worldClock, seed);
             double dx = herd.TargetX - herd.X, dy = herd.TargetY - herd.Y;
@@ -76,8 +109,15 @@ internal sealed class WorldEcologyState
             double travel = herd.Speed * deltaSeconds;
             if (distance <= travel || distance < .001) { herd.X = herd.TargetX; herd.Y = herd.TargetY; }
             else { herd.X += dx / distance * travel; herd.Y += dy / distance * travel; }
-            if (herd.Forage < .15 && herd.Population > 2) herd.Population = Math.Max(2, herd.Population - 1);
-            else if (herd.Forage > .8 && herd.Population < 80 && worldClock % 300 < deltaSeconds) herd.Population++;
+            if (worldClock >= herd.NextPopulationChangeAt)
+            {
+                if (herd.Forage < .15 && herd.Population > 2)
+                    herd.Population = Math.Max(2, herd.Population - 1);
+                else if (herd.Forage > .8 && herd.Population < 80)
+                    herd.Population++;
+                herd.NextPopulationChangeAt = worldClock + 300 +
+                    StableRoll(seed, herd.Id, (long)Math.Floor(worldClock / 300d), 300);
+            }
         }
 
         foreach (var hotspot in Hotspots.Where(item => item.IsActive).ToArray())
@@ -109,6 +149,79 @@ internal sealed class WorldEcologyState
         }
     }
 
+    /// <summary>
+    /// Reconstructs climate directly from the authoritative world clock and seed. This keeps
+    /// season/weather deterministic across frame chunking, saves, and resumed sessions.
+    /// </summary>
+    public void SynchronizeClimate(double worldClock, int seed)
+    {
+        if (!double.IsFinite(worldClock) || worldClock < 0)
+            throw new ArgumentOutOfRangeException(nameof(worldClock), "Climate time must be finite and non-negative.");
+
+        long seasonIndex = (long)Math.Floor(worldClock / SeasonDurationSeconds);
+        CurrentSeason = (WorldSeason)(seasonIndex % 4);
+        long weatherSlot = (long)Math.Floor(worldClock / WeatherIntervalSeconds);
+        CurrentWeather = WeatherForSlot(seed, weatherSlot);
+    }
+
+    private static WorldWeather WeatherForSlot(int seed, long slot)
+    {
+        long slotClock = slot * (long)WeatherIntervalSeconds;
+        var season = (WorldSeason)(((long)Math.Floor(slotClock / SeasonDurationSeconds)) % 4);
+        WorldWeather[] options = season switch
+        {
+            WorldSeason.Spring => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
+            WorldSeason.Summer => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Heatwave, WorldWeather.Drought],
+            WorldSeason.Autumn => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
+            WorldSeason.Winter => [WorldWeather.Clear, WorldWeather.Storm, WorldWeather.Frost, WorldWeather.Snow],
+            _ => [WorldWeather.Clear]
+        };
+
+        int choice = StableRoll(seed, 0x57454154484552L, slot, options.Length);
+        if (slot > 0)
+        {
+            WorldWeather previous = WeatherForSlotRaw(seed, slot - 1);
+            if (options[choice] == previous) choice = (choice + 1) % options.Length;
+        }
+        return options[choice];
+    }
+
+    private static WorldWeather WeatherForSlotRaw(int seed, long slot)
+    {
+        long slotClock = slot * (long)WeatherIntervalSeconds;
+        var season = (WorldSeason)(((long)Math.Floor(slotClock / SeasonDurationSeconds)) % 4);
+        WorldWeather[] options = season switch
+        {
+            WorldSeason.Spring => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
+            WorldSeason.Summer => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Heatwave, WorldWeather.Drought],
+            WorldSeason.Autumn => [WorldWeather.Clear, WorldWeather.Rain, WorldWeather.Storm, WorldWeather.Drought],
+            WorldSeason.Winter => [WorldWeather.Clear, WorldWeather.Storm, WorldWeather.Frost, WorldWeather.Snow],
+            _ => [WorldWeather.Clear]
+        };
+        return options[StableRoll(seed, 0x57454154484552L, slot, options.Length)];
+    }
+
+    private static double SeasonFoodMultiplier(WorldSeason season) => season switch
+    {
+        WorldSeason.Spring => 1.15d,
+        WorldSeason.Summer => 1.35d,
+        WorldSeason.Autumn => .90d,
+        WorldSeason.Winter => .45d,
+        _ => 1d
+    };
+
+    private static double WeatherFoodMultiplier(WorldWeather weather) => weather switch
+    {
+        WorldWeather.Clear => 1d,
+        WorldWeather.Rain => 1.15d,
+        WorldWeather.Storm => .65d,
+        WorldWeather.Heatwave => .70d,
+        WorldWeather.Frost => .45d,
+        WorldWeather.Snow => .50d,
+        WorldWeather.Drought => .35d,
+        _ => 1d
+    };
+
     public double EnvironmentalPressureAt(double x, double y)
     {
         double pressure = 0;
@@ -129,7 +242,9 @@ internal sealed class WorldEcologyState
         {
             Id = NextHerdId++, Species = species, Population = population, X = x, Y = y,
             TargetX = x, TargetY = y, Speed = species == WildlifeSpecies.DuskStalker ? 95 : 55,
-            NextMigrationAt = clock + 120 + random.Next(0, 180), Forage = .65 + random.NextDouble() * .3
+            NextMigrationAt = clock + 120 + random.Next(0, 180),
+            NextPopulationChangeAt = clock + 300 + random.Next(0, 300),
+            Forage = .65 + random.NextDouble() * .3
         });
     }
 
@@ -213,7 +328,8 @@ internal sealed class WorldEcologyState
 
     public void Validate()
     {
-        if (Herds.Count > 10_000 || Hotspots.Count > 100 || RecentEvents.Count > 100 ||
+        if (!Enum.IsDefined(CurrentSeason) || !Enum.IsDefined(CurrentWeather) ||
+            Herds.Count > 10_000 || Hotspots.Count > 100 || RecentEvents.Count > 100 ||
             NextHerdId <= Herds.Select(item => item.Id).DefaultIfEmpty(0).Max() ||
             NextHotspotId <= Hotspots.Select(item => item.Id).DefaultIfEmpty(0).Max() ||
             NextEventId <= RecentEvents.Select(item => item.Id).DefaultIfEmpty(0).Max() ||
@@ -224,7 +340,8 @@ internal sealed class WorldEcologyState
                 !ValidPosition(herd.X, herd.Y) || !ValidPosition(herd.TargetX, herd.TargetY) ||
                 !double.IsFinite(herd.Speed) || herd.Speed <= 0 ||
                 !double.IsFinite(herd.Forage) || herd.Forage is < 0 or > 1 ||
-                !double.IsFinite(herd.NextMigrationAt) || herd.NextMigrationAt < 0)
+                !double.IsFinite(herd.NextMigrationAt) || herd.NextMigrationAt < 0 ||
+                !double.IsFinite(herd.NextPopulationChangeAt) || herd.NextPopulationChangeAt < 0)
                 throw new InvalidDataException("Wildlife herd state is invalid.");
         foreach (var hotspot in Hotspots)
             if (hotspot.Id <= 0 || !ValidPosition(hotspot.X, hotspot.Y) ||
