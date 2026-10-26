@@ -496,6 +496,30 @@ internal static class ColonyChecks
         catch (InvalidDataException) { versionRejected = true; }
         Check(versionRejected, "unsupported or incomplete save data must be rejected rather than loaded");
 
+        var blightColony = new ColonySimulation(seed: 2137);
+        var infectedHabitat = blightColony.Objects.Single(item => item.Kind == PlaceableKind.Habitat);
+        infectedHabitat.IsBlightInfected = true;
+        var magmaBarrier = blightColony.TileAt(14, 8)!;
+        magmaBarrier.MagmaLevel = 1;
+        for (int i = 0; i < 12; i++)
+        {
+            blightColony.Step(10f);
+            blightColony.ApplyBlightInfectionTick(0.01f);
+        }
+        Check(Enumerable.Range(0, ColonySimulation.Width).Any(x =>
+                Enumerable.Range(0, ColonySimulation.Height).Any(y =>
+                    blightColony.TileAt(x, y) is { IsBlightInfected: true, Architecture: ArchitectureKind.None } tile &&
+                    tile.Terrain == TerrainKind.Ground)),
+            "local Blight must creep from infected structures onto bare organic ground");
+        Check(!magmaBarrier.IsBlightInfected,
+            "magma must block and cleanse local Blight growth");
+        var blightSnapshot = blightColony.CaptureSnapshot();
+        var restoredBlightColony = ColonySimulation.RestoreSnapshot(blightSnapshot);
+        Check(Enumerable.Range(0, ColonySimulation.Width).Any(x =>
+                Enumerable.Range(0, ColonySimulation.Height).Any(y =>
+                    restoredBlightColony.TileAt(x, y)?.IsBlightInfected == true)),
+            "organic Blight growth must persist through colony save/load");
+
         var fullSnapshot = new ColonySimulation().CaptureSnapshot();
         int fullCapacity = ColonySimulation.BaseStockpileCapacity;
         int startingTotal = fullSnapshot.Inventory.Sum(stack => stack.Amount);
