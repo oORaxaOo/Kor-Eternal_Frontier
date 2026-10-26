@@ -509,6 +509,27 @@ internal static class ColonyChecks
         Check(climateColony.TemperatureAt(5, 5) < ambientBeforeWeather,
             "world seasons and weather must alter local colony temperatures through ambient heat exchange");
 
+        var rainyColonyA = new ColonySimulation(seed: 4451);
+        var rainyColonyB = new ColonySimulation(seed: 4451);
+        const long firstWeatherSlotTick = 300L * TickManager.TicksPerSecond;
+        int rainAddedA = rainyColonyA.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Rain);
+        int rainAddedB = rainyColonyB.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Rain);
+        Check(rainAddedA > 0 && rainAddedA <= 4 && rainAddedA == rainAddedB,
+            "rainfall must add a bounded, reproducible amount of water to exposed local tiles");
+        Check(Enumerable.Range(0, ColonySimulation.Width).All(x =>
+                Enumerable.Range(0, ColonySimulation.Height).All(y =>
+                    rainyColonyA.FluidLevelAt(x, y, FluidKind.Water) ==
+                    rainyColonyB.FluidLevelAt(x, y, FluidKind.Water))),
+            "identical world seeds and weather ticks must produce identical rainfall placement");
+        int waterBeforeClearWeather = rainyColonyA.TotalFluid(FluidKind.Water);
+        Check(rainyColonyA.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Clear) == 0 &&
+              rainyColonyA.TotalFluid(FluidKind.Water) == waterBeforeClearWeather,
+            "clear weather must not create water in the local fluid simulation");
+        var stormColony = new ColonySimulation(seed: 4451);
+        int stormAdded = stormColony.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Storm);
+        Check(stormAdded >= rainAddedA && stormAdded <= 8,
+            "storm fronts must deliver at least as much local precipitation as rain fronts");
+
         var blightExposureColony = new ColonySimulation(seed: 2136);
         var blightExposedWorker = blightExposureColony.Workers.Single(worker => worker.Id == 1);
         int exposedX = Math.Clamp((int)blightExposedWorker.X, 0, ColonySimulation.Width - 1);
