@@ -1,5 +1,6 @@
 using KorTheBlight.Simulation;
 using KorTheBlight.Rendering;
+using KorTheBlight.WorldModel;
 
 namespace KorTheBlight.Tests;
 
@@ -134,6 +135,10 @@ internal static class ColonyChecks
 
         var thermalHazard = new ColonySimulation();
         var thermalControl = new ColonySimulation();
+        // Freeze the test resident's colony tasks through the real deployment path so the
+        // opening work schedule cannot legitimately send them away before exposure accumulates.
+        Check(thermalHazard.PrepareWorkerForCombat(1),
+            "a resident can be held in place to isolate the thermal exposure regression");
         thermalHazard.TileAt(16, 12)!.TemperatureCelsius = 5_000f;
         for (int i = 0; i < 20; i++)
         {
@@ -495,6 +500,81 @@ internal static class ColonyChecks
         try { ColonySaveService.Deserialize("{\"SchemaVersion\":99}"); }
         catch (InvalidDataException) { versionRejected = true; }
         Check(versionRejected, "unsupported or incomplete save data must be rejected rather than loaded");
+
+        var climateColony = new ColonySimulation(seed: 77);
+        float ambientBeforeWeather = climateColony.TemperatureAt(5, 5);
+        climateColony.ApplyWorldClimate(WorldSeason.Winter, WorldWeather.Frost);
+        climateColony.Step(10f);
+        climateColony.Step(10f);
+        Check(climateColony.TemperatureAt(5, 5) < ambientBeforeWeather,
+            "world seasons and weather must alter local colony temperatures through ambient heat exchange");
+
+        var rainyColonyA = new ColonySimulation(seed: 4451);
+        var rainyColonyB = new ColonySimulation(seed: 4451);
+        const long firstWeatherSlotTick = 300L * TickManager.TicksPerSecond;
+        int rainAddedA = rainyColonyA.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Rain);
+        int rainAddedB = rainyColonyB.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Rain);
+        Check(rainAddedA > 0 && rainAddedA <= 4 && rainAddedA == rainAddedB,
+            "rainfall must add a bounded, reproducible amount of water to exposed local tiles");
+        Check(Enumerable.Range(0, ColonySimulation.Width).All(x =>
+                Enumerable.Range(0, ColonySimulation.Height).All(y =>
+                    rainyColonyA.FluidLevelAt(x, y, FluidKind.Water) ==
+                    rainyColonyB.FluidLevelAt(x, y, FluidKind.Water))),
+            "identical world seeds and weather ticks must produce identical rainfall placement");
+        int waterBeforeClearWeather = rainyColonyA.TotalFluid(FluidKind.Water);
+        Check(rainyColonyA.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Clear) == 0 &&
+              rainyColonyA.TotalFluid(FluidKind.Water) == waterBeforeClearWeather,
+            "clear weather must not create water in the local fluid simulation");
+        var stormColony = new ColonySimulation(seed: 4451);
+        int stormAdded = stormColony.ApplyWeatherPrecipitation(4451, firstWeatherSlotTick, WorldWeather.Storm);
+        Check(stormAdded >= rainAddedA && stormAdded <= 8,
+            "storm fronts must deliver at least as much local precipitation as rain fronts");
+
+        var blightExposureColony = new ColonySimulation(seed: 2136);
+        var blightExposedWorker = blightExposureColony.Workers.Single(worker => worker.Id == 1);
+        int exposedX = Math.Clamp((int)blightExposedWorker.X, 0, ColonySimulation.Width - 1);
+        int exposedY = Math.Clamp((int)blightExposedWorker.Y, 0, ColonySimulation.Height - 1);
+        blightExposureColony.TileAt(exposedX, exposedY)!.IsBlightInfected = true;
+        Check(blightExposureColony.PrepareWorkerForCombat(blightExposedWorker.Id),
+            "a test resident can remain stationary while exposed to infected ground");
+        float stressBeforeBlight = blightExposedWorker.Stress;
+        blightExposureColony.Step(5f);
+        Check(blightExposedWorker.Stress > stressBeforeBlight,
+            "standing on infected ground must increase resident stress over time");
+        Check(blightExposedWorker.Life.Memories.Any(memory =>
+                memory.Kind == ResidentMemoryKind.EnvironmentalHazard &&
+                memory.Detail.Contains("living Blight", StringComparison.Ordinal)),
+            "entering a Blight-affected tile must be preserved in the resident's life memory");
+        blightExposureColony.TileAt(exposedX, exposedY)!.IsBlightInfected = false;
+        blightExposureColony.Step(0.1f);
+        Check(blightExposedWorker.Life.Memories.Any(memory =>
+                memory.Kind == ResidentMemoryKind.Recovery &&
+                memory.Detail.Contains("left the Blight", StringComparison.Ordinal)),
+            "leaving an infected area must record recovery from the local hazard");
+
+        var blightColony = new ColonySimulation(seed: 2137);
+        var infectedHabitat = blightColony.Objects.Single(item => item.Kind == PlaceableKind.Habitat);
+        infectedHabitat.IsBlightInfected = true;
+        var magmaBarrier = blightColony.TileAt(14, 8)!;
+        magmaBarrier.MagmaLevel = 1;
+        for (int i = 0; i < 12; i++)
+        {
+            blightColony.Step(10f);
+            blightColony.ApplyBlightInfectionTick(0.01f);
+        }
+        Check(Enumerable.Range(0, ColonySimulation.Width).Any(x =>
+                Enumerable.Range(0, ColonySimulation.Height).Any(y =>
+                    blightColony.TileAt(x, y) is { IsBlightInfected: true, Architecture: ArchitectureKind.None } tile &&
+                    tile.Terrain == TerrainKind.Ground)),
+            "local Blight must creep from infected structures onto bare organic ground");
+        Check(!magmaBarrier.IsBlightInfected,
+            "magma must block and cleanse local Blight growth");
+        var blightSnapshot = blightColony.CaptureSnapshot();
+        var restoredBlightColony = ColonySimulation.RestoreSnapshot(blightSnapshot);
+        Check(Enumerable.Range(0, ColonySimulation.Width).Any(x =>
+                Enumerable.Range(0, ColonySimulation.Height).Any(y =>
+                    restoredBlightColony.TileAt(x, y)?.IsBlightInfected == true)),
+            "organic Blight growth must persist through colony save/load");
 
         var fullSnapshot = new ColonySimulation().CaptureSnapshot();
         int fullCapacity = ColonySimulation.BaseStockpileCapacity;

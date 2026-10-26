@@ -8,7 +8,45 @@ internal static class ContinuousWorldChecks
 {
     public static void Run()
     {
+        var legacyHerdEvent = System.Text.Json.JsonSerializer.Deserialize<WorldEventState>(
+            """{"Id":7,"Kind":1,"OccurredAt":300,"Title":"herd movement","Description":"legacy event"}""");
+        Check(legacyHerdEvent?.Kind == WorldEventKind.HerdMigration,
+            "new world event kinds must not renumber the event IDs persisted in older saves");
+
         var ecologyWorld = ContinuousWorldState.Generate(81357);
+        Check(ecologyWorld.Ecology.CurrentSeason == WorldSeason.Spring &&
+              Enum.IsDefined(ecologyWorld.Ecology.CurrentWeather),
+            "a new world must initialize a valid deterministic season and weather state");
+        bool weatherChanged = false;
+        WorldWeather firstWeather = ecologyWorld.Ecology.CurrentWeather;
+        for (int i = 0; i < 6; i++)
+        {
+            ecologyWorld.Step(60);
+            weatherChanged |= ecologyWorld.Ecology.CurrentWeather != firstWeather;
+        }
+        Check(weatherChanged,
+            "world weather must transition over time instead of being an event-only label");
+        Check(ecologyWorld.Ecology.RecentEvents.Any(item => item.Kind == WorldEventKind.WeatherShift),
+            "actual climate changes must be recorded in the same world event history shown to the player");
+        Check(ecologyWorld.Ecology.FoodGrowthMultiplier > 0,
+            "season and weather must expose a usable modifier for the shared world food economy");
+        var seasonalWorld = ContinuousWorldState.Generate(81357);
+        double springFoodMultiplier = seasonalWorld.Ecology.FoodGrowthMultiplier;
+        for (int i = 0; i < 60; i++) seasonalWorld.Step(60);
+        Check(seasonalWorld.Ecology.CurrentSeason == WorldSeason.Summer &&
+              Math.Abs(seasonalWorld.Ecology.FoodGrowthMultiplier - springFoodMultiplier) > 0.001,
+            "the seasonal calendar must advance and change food-growing conditions");
+        var depletedHerdWorld = ContinuousWorldState.Generate(81358);
+        var depletedHerd = depletedHerdWorld.Ecology.Herds[0];
+        depletedHerd.Forage = 0;
+        depletedHerd.NextPopulationChangeAt = 0;
+        int populationBeforeLoss = depletedHerd.Population;
+        depletedHerdWorld.Step(1);
+        int populationAfterLoss = depletedHerd.Population;
+        depletedHerdWorld.Step(1);
+        Check(populationBeforeLoss - populationAfterLoss == 1 &&
+              depletedHerd.Population == populationAfterLoss,
+            "a starving herd must lose at most one animal per scheduled population update, not every render tick");
         Check(ecologyWorld.Ecology.Herds.Count >= 3 && ecologyWorld.Ecology.Hotspots.Count >= 1,
             "world generation must seed wildlife herds and a Blight hotspot");
         var firstHerd = ecologyWorld.Ecology.Herds[0];
@@ -25,6 +63,10 @@ internal static class ContinuousWorldChecks
             "high-pressure Blight regions must be queryable as dangerous terrain");
         string ecologyJson = ContinuousWorldState.Serialize(ecologyWorld);
         var ecologyRestored = ContinuousWorldState.Deserialize(ecologyJson);
+        Check(ecologyRestored.Ecology.CurrentSeason == ecologyWorld.Ecology.CurrentSeason &&
+              ecologyRestored.Ecology.CurrentWeather == ecologyWorld.Ecology.CurrentWeather &&
+              Math.Abs(ecologyRestored.Ecology.FoodGrowthMultiplier - ecologyWorld.Ecology.FoodGrowthMultiplier) < 1e-9,
+            "save/load must restore the climate state derived from the authoritative world clock");
         Check(ecologyRestored.Ecology.Herds.Count == ecologyWorld.Ecology.Herds.Count &&
               ecologyRestored.Ecology.Hotspots.Count == ecologyWorld.Ecology.Hotspots.Count &&
               ecologyRestored.Ecology.RecentEvents.Count == ecologyWorld.Ecology.RecentEvents.Count,

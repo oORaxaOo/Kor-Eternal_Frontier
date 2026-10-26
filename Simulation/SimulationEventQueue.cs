@@ -7,6 +7,7 @@ namespace KorTheBlight.Simulation;
 internal enum SimulationEventKind
 {
     NeedThresholdCrossed,
+    NeedSatisfied,
     JobBecameAvailable,
     StockChanged,
     RouteInvalidated,

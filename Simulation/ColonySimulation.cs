@@ -126,6 +126,10 @@ internal sealed class ColonyWorker(int id, string name, float x, float y, float 
     public float ThermalExposure { get; internal set; }
     public float Stress { get; internal set; }
     public PawnPersonality Personality { get; } = new();
+    public ResidentLifeProfile Life { get; } = ResidentLifeProfile.Create(id, name);
+    public ResidentBodyState Body { get; } = new();
+    // Prevent idle movement from continually selecting new destinations inside the same time window.
+    public long LastAutonomousActivityWindow { get; internal set; } = -1;
     public bool Hungry => Hunger >= 80f;
     public ResourceKind? CarriedResource { get; internal set; }
     public int CarriedAmount { get; internal set; }
@@ -173,16 +177,20 @@ internal sealed class ColonySimulation
     public const int StorageRackCapacity = 80;
     private const int CarryCapacity = 5;
     private const int MaxCachedPaths = 8_192;
+    private const int MaxAutonomousLeisurePathfindsPerWorkCycle = 32;
+    private int _autonomousLeisurePathfindsThisWorkCycle;
     private readonly Dictionary<PathCacheKey, List<CellPosition>> _pathCache = [];
     private readonly TickManager _tickManager = new();
     private readonly ThingGrid _thingGrid = new();
     private readonly Queue<PathCacheKey> _pathCacheOrder = new();
     internal int PathfindingSearches { get; private set; }
     internal int PathCacheHits { get; private set; }
+    internal int AutonomousLeisurePathfindsThisWorkCycle => _autonomousLeisurePathfindsThisWorkCycle;
     internal int CachedPathCount => _pathCache.Count;
     internal TickManager Clock => _tickManager;
     internal ThingGrid Things => _thingGrid;
     public float SimulationSpeed => _tickManager.SpeedMultiplier;
+    public long CurrentTick => _tickManager.TickCount;
     public void SetSimulationSpeed(float multiplier) => _tickManager.SetSpeed(multiplier);
     private readonly TileCell[,] _tiles = new TileCell[Width, Height];
     private readonly List<TileConstructionOrder> _tileOrders = [];
@@ -213,6 +221,9 @@ internal sealed class ColonySimulation
     private int _nextDepositId = 1;
     private int _nextProductionId = 1;
     private float _environmentAccumulatorSeconds;
+    private float _ambientTemperatureCelsius = 20f;
+    private readonly HashSet<int> _blightExposedWorkers = [];
+    private readonly HashSet<CellPosition> _infectedObjectCells = [];
     private readonly float[,] _temperatureBuffer = new float[Width, Height];
     private WorkOrderKind? _selectedWorkOrderKind;
     private int? _selectedWorkOrderId;
@@ -540,7 +551,7 @@ internal sealed class ColonySimulation
     {
         var snapshot = new ColonySnapshot
         {
-            SchemaVersion = 10,
+            SchemaVersion = 13,
             WorkPriorities = _workPriorities.CaptureSnapshot(),
             Wealth = _wealth.Current,
             SocialTick = _socialTick,
@@ -611,6 +622,9 @@ internal sealed class ColonySimulation
             Personality = _citizensByWorker.TryGetValue(worker.Id, out var personaCitizen)
                 ? personaCitizen.Personality.CaptureSnapshot()
                 : worker.Personality.CaptureSnapshot(),
+            Life = worker.Life.CaptureSnapshot(),
+            Body = worker.Body.CaptureSnapshot(),
+            LastAutonomousActivityWindow = worker.LastAutonomousActivityWindow,
             CarriedResource = worker.CarriedResource, CarriedAmount = worker.CarriedAmount,
             Task = worker.Task == null ? null : new WorkerTaskSnapshot
             {
@@ -697,6 +711,7 @@ internal sealed class ColonySimulation
                 TradeCargo = worker.TradeCargo is null ? [] : new Dictionary<ResourceKind, int>(worker.TradeCargo),
                 ThermalExposure = worker.ThermalExposure,
                 Stress = worker.Stress,
+                LastAutonomousActivityWindow = snapshot.SchemaVersion >= 13 ? worker.LastAutonomousActivityWindow : -1,
                 CarriedResource = worker.CarriedResource,
                 CarriedAmount = worker.CarriedAmount,
                 Task = worker.Task == null ? null : new WorkerTask(worker.Task.Kind,
@@ -711,6 +726,10 @@ internal sealed class ColonySimulation
             };
             if (worker.Personality is not null)
                 restored.Personality.RestoreSnapshot(worker.Personality);
+            if (snapshot.SchemaVersion >= 11 && worker.Life is not null)
+                restored.Life.RestoreSnapshot(worker.Life, worker.Id);
+            if (snapshot.SchemaVersion >= 12 && worker.Body is not null)
+                restored.Body.RestoreSnapshot(worker.Body, worker.Id);
             return restored;
         }));
         simulation._nextWorkerId = simulation._workers.Count == 0 ? 1 : simulation._workers.Max(worker => worker.Id) + 1;
@@ -876,6 +895,35 @@ internal sealed class ColonySimulation
             throw new InvalidOperationException("The canonical resource ledger rejected an invalid or over-capacity adjustment.");
     }
 
+    /// <summary>
+    /// Applies one deterministic rainfall pulse when the strategic weather front changes. Each
+    /// pulse adds a small amount of real water to exposed colony tiles; normal fluid simulation
+    /// then handles flow and magma interaction.
+    /// </summary>
+    internal int ApplyWeatherPrecipitation(int seed, long authoritativeTick, WorldWeather weather)
+    {
+        if (authoritativeTick < 0) throw new ArgumentOutOfRangeException(nameof(authoritativeTick));
+        if (!Enum.IsDefined(weather)) throw new ArgumentOutOfRangeException(nameof(weather));
+        if (weather is not (WorldWeather.Rain or WorldWeather.Storm)) return 0;
+
+        long weatherSlot = authoritativeTick /
+            (TickManager.TicksPerSecond * (long)WorldEcologyState.WeatherIntervalSeconds);
+        int requestedDrops = weather == WorldWeather.Storm ? 8 : 4;
+        int acceptedDrops = 0;
+        var alreadyTargeted = new HashSet<CellPosition>();
+        for (int attempt = 0; attempt < requestedDrops * 8 && acceptedDrops < requestedDrops; attempt++)
+        {
+            uint hash = LeisureHash(seed, weatherSlot, attempt + 101);
+            int x = (int)(hash % Width);
+            int y = (int)((hash >> 12) % Height);
+            var cell = new CellPosition(x, y);
+            if (!alreadyTargeted.Add(cell)) continue;
+            if (AddFluid(x, y, FluidKind.Water, 1) > 0) acceptedDrops++;
+        }
+
+        return acceptedDrops;
+    }
+
     public int AddFluid(int x, int y, FluidKind kind, int amount)
     {
         if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x), "Fluid coordinates must be inside the colony grid.");
@@ -910,6 +958,32 @@ internal sealed class ColonySimulation
     {
         if (!InBounds(x, y)) throw new ArgumentOutOfRangeException(nameof(x));
         return _tiles[x, y].TemperatureCelsius;
+    }
+
+    /// <summary>Applies the strategic world's current season and weather as a colony ambient temperature.</summary>
+    internal void ApplyWorldClimate(WorldSeason season, WorldWeather weather)
+    {
+        if (!Enum.IsDefined(season)) throw new ArgumentOutOfRangeException(nameof(season));
+        if (!Enum.IsDefined(weather)) throw new ArgumentOutOfRangeException(nameof(weather));
+        float seasonalTemperature = season switch
+        {
+            WorldSeason.Spring => 18f,
+            WorldSeason.Summer => 27f,
+            WorldSeason.Autumn => 12f,
+            WorldSeason.Winter => 6f,
+            _ => 20f
+        };
+        float weatherOffset = weather switch
+        {
+            WorldWeather.Rain => -2f,
+            WorldWeather.Storm => -5f,
+            WorldWeather.Heatwave => 12f,
+            WorldWeather.Frost => -9f,
+            WorldWeather.Snow => -5f,
+            WorldWeather.Drought => 5f,
+            _ => 0f
+        };
+        _ambientTemperatureCelsius = Math.Clamp(seasonalTemperature + weatherOffset, -15f, 45f);
     }
 
     public int TotalFluid(FluidKind kind)
@@ -1011,6 +1085,18 @@ internal sealed class ColonySimulation
             float exchange = neighbours == 0 ? 0 : weightedDelta / neighbours;
             float next = current + exchange * materialConductivity;
 
+            // Outer ground responds quickly to weather; walls retain heat and doors leak more
+            // than insulated walls. Water and magma still apply their own local thermal forces.
+            float ambientConductance = tile.Architecture switch
+            {
+                ArchitectureKind.Wall => 0.012f,
+                ArchitectureKind.Door => 0.035f,
+                ArchitectureKind.Floor => 0.055f,
+                _ when tile.Terrain == TerrainKind.Rock => 0.025f,
+                _ => 0.075f
+            };
+            next += (_ambientTemperatureCelsius - next) * ambientConductance;
+
             if (tile.MagmaLevel > 0)
             {
                 float magmaTemperature = Math.Min(2_000f, 600f + tile.MagmaLevel * 100f);
@@ -1110,7 +1196,9 @@ internal sealed class ColonySimulation
     private void InitializeEcosystem()
     {
         _ecosystem = new ColonyEcosystem(Width, Height);
+        _ecosystem.EventEmitted += HandleResidentLifeEvent;
         _citizensByWorker.Clear();
+        _blightExposedWorkers.Clear();
         _gardenJobsByObject.Clear();
         _storageZonesByObject.Clear();
 
@@ -1194,6 +1282,7 @@ internal sealed class ColonySimulation
         {
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
             bool externallyBusy = worker.Task != null || worker.IsCombatDeployed || worker.IsExternalVisitor || worker.IsLeaving;
+            citizen.ScheduledActivity = worker.Life.ActivityAtTick(authoritativeTick);
             _ecosystem.SetExternalTaskState(citizen.Id, externallyBusy);
         }
 
@@ -1219,6 +1308,21 @@ internal sealed class ColonySimulation
         int beforeFood = grid.ResourceCount(ResourceKind.Food);
         _ecosystem.Step(deltaSeconds, authoritativeTick);
         int afterFood = grid.ResourceCount(ResourceKind.Food);
+
+        foreach (var worker in _workers)
+        {
+            if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            int tileX = Math.Clamp((int)worker.X, 0, Width - 1);
+            int tileY = Math.Clamp((int)worker.Y, 0, Height - 1);
+            float temperature = _tiles[tileX, tileY].TemperatureCelsius;
+            bool safeEnvironment = worker.ThermalExposure < 15f && temperature is >= 0f and <= 35f;
+            bool resting = citizen.State == CitizenState.Idle && citizen.Fatigue < 60f &&
+                           worker.Task is null && !worker.IsCombatDeployed && !worker.IsExternalVisitor && !worker.IsLeaving;
+            if (worker.Body.Advance(deltaSeconds, worker.ThermalExposure, temperature, authoritativeTick, resting, safeEnvironment))
+                worker.Life.RecordMemory(authoritativeTick, ResidentMemoryKind.EnvironmentalHazard, 0, -8,
+                    "Sustained thermal exposure caused a physical injury.");
+        }
+
         if (afterFood < beforeFood)
         {
             int consumed = beforeFood - afterFood;
@@ -1240,6 +1344,46 @@ internal sealed class ColonySimulation
         foreach (var resource in Enum.GetValues<ResourceKind>())
             if (resource != ResourceKind.Food)
                 ReconcileSpatialStorage(resource);
+    }
+
+    private void HandleResidentLifeEvent(SimulationEvent item)
+    {
+        if (item.SubjectId <= 0 || item.SubjectId > int.MaxValue) return;
+        var worker = _workers.FirstOrDefault(candidate => candidate.Id == (int)item.SubjectId);
+        if (worker is null) return;
+        switch (item.Kind)
+        {
+            case SimulationEventKind.NeedThresholdCrossed:
+                if (item.RelatedId == (long)SimulationNeedKind.Hunger)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.HungerCrisis,0,-4,"Hunger became a critical need.");
+                else if (item.RelatedId == (long)SimulationNeedKind.Fatigue)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Exhaustion,0,-4,"Exhaustion reached a critical level.");
+                break;
+            case SimulationEventKind.NeedSatisfied:
+                if (item.RelatedId == (long)PawnNeedKind.Hunger)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.AteMeal,0,4,"Found food and recovered from hunger.");
+                else if (item.RelatedId == (long)PawnNeedKind.Sleep)
+                    worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Rested,0,3,"Recovered some rest.");
+                break;
+            case SimulationEventKind.HazardChanged:
+                if (item.RelatedId == (long)SimulationHazardKind.BlightExposure)
+                    worker.Life.RecordMemory(item.Tick,
+                        item.Value > 0 ? ResidentMemoryKind.EnvironmentalHazard : ResidentMemoryKind.Recovery,
+                        0, item.Value > 0 ? -7 : 2,
+                        item.Value > 0
+                            ? "Exposure to the living Blight increased this resident's stress."
+                            : "This resident left the Blight-affected area.");
+                else
+                    worker.Life.RecordMemory(item.Tick,item.Value>0?ResidentMemoryKind.EnvironmentalHazard:ResidentMemoryKind.Recovery,0,item.Value>0?-6:2,
+                        item.Value>0?"Dangerous environmental exposure affected this resident.":"Environmental exposure returned to a safe level.");
+                break;
+            case SimulationEventKind.MentalBreakStarted:
+                worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.MentalBreak,0,-8,"Stress became overwhelming and interrupted normal work.");
+                break;
+            case SimulationEventKind.MentalBreakEnded:
+                worker.Life.RecordMemory(item.Tick,ResidentMemoryKind.Recovery,0,5,"Recovered enough to resume normal activity.");
+                break;
+        }
     }
 
     public ResourceDeposit? DepositAt(int x, int y) =>
@@ -1849,6 +1993,8 @@ internal sealed class ColonySimulation
         if (!float.IsFinite(damagePerStructure) || damagePerStructure <= 0f)
             throw new ArgumentOutOfRangeException(nameof(damagePerStructure));
         int affected = 0;
+        long spreadEpoch = _tickManager.TickCount / (TickManager.TicksPerSecond * 10L);
+        int newGrowthPoints = SpreadLocalBlight(spreadEpoch);
         foreach (var item in _objects.Where(item => item.IsBuilt && item.IsBlightInfected).OrderBy(item => item.Id).ToArray())
         {
             item.Health = Math.Max(0f, item.Health - damagePerStructure);
@@ -1879,12 +2025,109 @@ internal sealed class ColonySimulation
             }
         }
 
-        if (affected > 0)
+        if (affected > 0 || newGrowthPoints > 0)
         {
-            RefreshWealthMetrics();
-            Message = $"Blight infection damaged {affected} structure(s). Use WAR ROOM → REPAIR ALL with wood/stone/alloy and components to stop the decay.";
+            if (affected > 0) RefreshWealthMetrics();
+            Message = $"Blight damaged {affected} structure(s) and spread across {newGrowthPoints} new growth point(s). Use WAR ROOM → REPAIR ALL with materials and components to cleanse infected structures.";
         }
         return affected;
+    }
+
+    private int SpreadLocalBlight(long epoch)
+    {
+        var infectedObjects = _objects
+            .Where(item => item.IsBuilt && item.IsBlightInfected)
+            .OrderBy(item => item.Id)
+            .ToArray();
+        var infectedTiles = new List<CellPosition>();
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+            if (_tiles[x, y].IsBlightInfected)
+                infectedTiles.Add(new CellPosition(x, y));
+
+        int grown = 0;
+        foreach (var cell in infectedTiles)
+        {
+            var sourceTile = _tiles[cell.X, cell.Y];
+            if (sourceTile.MagmaLevel > 0 || sourceTile.WaterLevel >= 2)
+            {
+                sourceTile.IsBlightInfected = false;
+                continue;
+            }
+
+            foreach (var neighbour in CardinalNeighbours(cell))
+                if (TrySpreadBlightToCell(neighbour, sourceId: 0, cell, epoch, 14))
+                    grown++;
+        }
+
+        foreach (var item in infectedObjects)
+        {
+            int left = item.Origin.X - 1;
+            int right = item.Origin.X + item.Width;
+            int top = item.Origin.Y - 1;
+            int bottom = item.Origin.Y + item.Height;
+            for (int y = top; y <= bottom; y++)
+            for (int x = left; x <= right; x++)
+            {
+                bool insideFootprint = x >= item.Origin.X && x < item.Origin.X + item.Width &&
+                                       y >= item.Origin.Y && y < item.Origin.Y + item.Height;
+                if (insideFootprint || x < 0 || x >= Width || y < 0 || y >= Height) continue;
+                if (TrySpreadBlightToCell(new CellPosition(x, y), item.Id, item.Origin, epoch, 22))
+                    grown++;
+            }
+        }
+        return grown;
+    }
+
+    private bool TrySpreadBlightToCell(CellPosition target, int sourceId,
+        CellPosition source, long epoch, int chancePercent)
+    {
+        if (target.X < 0 || target.X >= Width || target.Y < 0 || target.Y >= Height) return false;
+        var tile = _tiles[target.X, target.Y];
+        // Bare stone, open water, deep water and magma form natural barriers to the organism.
+        if (tile.Terrain is TerrainKind.Rock or TerrainKind.Water ||
+            tile.MagmaLevel > 0 || tile.WaterLevel >= 2) return false;
+
+        int roll = BlightSpreadRoll(sourceId, source.X, source.Y, target.X, target.Y, epoch);
+        bool grew = false;
+        var targetObject = ObjectAt(target.X, target.Y);
+        if (targetObject is { IsBuilt: true, IsBlightInfected: false } && roll < chancePercent)
+        {
+            targetObject.IsBlightInfected = true;
+            grew = true;
+        }
+        if (!tile.IsBlightInfected && roll < chancePercent)
+        {
+            tile.IsBlightInfected = true;
+            grew = true;
+        }
+        return grew;
+    }
+
+    private static IEnumerable<CellPosition> CardinalNeighbours(CellPosition cell)
+    {
+        yield return new CellPosition(cell.X, cell.Y - 1);
+        yield return new CellPosition(cell.X - 1, cell.Y);
+        yield return new CellPosition(cell.X + 1, cell.Y);
+        yield return new CellPosition(cell.X, cell.Y + 1);
+    }
+
+    private static int BlightSpreadRoll(int sourceId, int sourceX, int sourceY,
+        int targetX, int targetY, long epoch)
+    {
+        unchecked
+        {
+            uint value = (uint)epoch * 0x9E3779B9u;
+            value ^= (uint)sourceId * 0x85EBCA6Bu;
+            value ^= (uint)(sourceX * 397 ^ sourceY) * 0xC2B2AE35u;
+            value ^= (uint)(targetX * 397 ^ targetY);
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            value ^= value >> 16;
+            return (int)(value % 100u);
+        }
     }
 
     public bool PrepareWorkerForCombat(int workerId)
@@ -2220,17 +2463,47 @@ internal sealed class ColonySimulation
             if (existing != null && _socialTick - existing.LastEncounterTick < 30) continue;
             var citizenA = _citizensByWorker.GetValueOrDefault(a.Id);
             var citizenB = _citizensByWorker.GetValueOrDefault(b.Id);
+            int previousAffinity = existing?.Affinity ?? 0;
+            float socialStressA = Math.Clamp(a.Stress - a.Life.RecentMoodBias(_tickManager.TickCount), 0f, 100f);
+            float socialStressB = Math.Clamp(b.Stress - b.Life.RecentMoodBias(_tickManager.TickCount), 0f, 100f);
             _socialRelationships.RecordEncounter(a.Id, b.Id, _socialTick,
-                a.Stress, a.Hunger, citizenA == null ? 100f : 100f - citizenA.Fatigue,
+                socialStressA, a.Hunger, citizenA == null ? 100f : 100f - citizenA.Fatigue,
                 citizenA?.State == CitizenState.MentalBreak,
-                b.Stress, b.Hunger, citizenB == null ? 100f : 100f - citizenB.Fatigue,
+                socialStressB, b.Hunger, citizenB == null ? 100f : 100f - citizenB.Fatigue,
                 citizenB?.State == CitizenState.MentalBreak);
+            var updated = _socialRelationships.Get(a.Id, b.Id);
+            if (existing is null)
+            {
+                a.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.FirstMeeting,b.Id,2,$"Met {b.Name} for the first time.");
+                b.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.FirstMeeting,a.Id,2,$"Met {a.Name} for the first time.");
+            }
+            else if(updated is not null&&previousAffinity>updated.Affinity&&(updated.Affinity<=-60||previousAffinity-updated.Affinity>=3))
+            {
+                a.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.SocialConflict,b.Id,-3,$"A tense encounter with {b.Name} affected this resident.");
+                b.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.SocialConflict,a.Id,-3,$"A tense encounter with {a.Name} affected this resident.");
+            }
+            else if(updated is not null&&updated.Affinity>previousAffinity&&(updated.Affinity>=60||updated.Affinity-previousAffinity>=2))
+            {
+                a.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Friendship,b.Id,3,$"A positive encounter with {b.Name} strengthened the relationship.");
+                b.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.Friendship,a.Id,3,$"A positive encounter with {a.Name} strengthened the relationship.");
+            }
         }
         _incidentManager.Consume(_socialRelationships.DrainEvents());
     }
 
     private void StepEnvironmentalExposure(float deltaSeconds)
     {
+        // Build infected object footprints once per environmental tick. Looking up objects linearly
+        // for every resident at 60 Hz would turn a thousands-resident colony into O(pawns × objects).
+        _infectedObjectCells.Clear();
+        foreach (var item in _objects)
+        {
+            if (!item.IsBuilt || !item.IsBlightInfected) continue;
+            for (int y = item.Origin.Y; y < item.Origin.Y + item.Height; y++)
+            for (int x = item.Origin.X; x < item.Origin.X + item.Width; x++)
+                if (InBounds(x, y)) _infectedObjectCells.Add(new CellPosition(x, y));
+        }
+
         foreach (var worker in _workers)
         {
             int x = Math.Clamp((int)worker.X, 0, Width - 1);
@@ -2246,6 +2519,23 @@ internal sealed class ColonySimulation
                 : Math.Max(0f, previous - deltaSeconds * 1.25f);
 
             if (!_citizensByWorker.TryGetValue(worker.Id, out var citizen)) continue;
+            citizen.EnvironmentallyExposed = worker.ThermalExposure > 15f;
+
+            bool blightExposed = _tiles[x, y].IsBlightInfected ||
+                _infectedObjectCells.Contains(new CellPosition(x, y));
+            if (blightExposed)
+            {
+                if (_blightExposedWorkers.Add(worker.Id))
+                    _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.BlightExposure, 100f);
+                // Sustained proximity to the living organism steadily raises stress; it does not
+                // magically become disease or alter body health without a medical system.
+                worker.Stress = Math.Min(100f, worker.Stress + deltaSeconds * 0.8f);
+            }
+            else if (_blightExposedWorkers.Remove(worker.Id))
+            {
+                _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.BlightExposure, 0f);
+            }
+
             if (previous < 15f && worker.ThermalExposure >= 15f)
             {
                 _ecosystem.ReportHazard(citizen.Id, SimulationHazardKind.ThermalExposure, worker.ThermalExposure);
@@ -2280,6 +2570,9 @@ internal sealed class ColonySimulation
 
     private void AssignJobs()
     {
+        // Bound autonomous wandering work per planning interval so a large idle population cannot
+        // consume the entire job-assignment budget in one cycle.
+        _autonomousLeisurePathfindsThisWorkCycle = 0;
         foreach (var worker in _workers)
         {
             if (worker.IsExternalVisitor || worker.IsCombatDeployed || worker.Task != null) continue;
@@ -2296,6 +2589,14 @@ internal sealed class ColonySimulation
                 AssignDelivery(worker);
                 // Carrying cargo is an outstanding logistics obligation. Never assign unrelated
                 // work while the worker is waiting for storage capacity or a reachable drop-off.
+                continue;
+            }
+
+            ResidentDailyActivity activity = worker.Life.ActivityAtTick(_tickManager.TickCount);
+            if (activity != ResidentDailyActivity.Work)
+            {
+                if (activity == ResidentDailyActivity.Recreation)
+                    TryAssignAutonomousLeisure(worker, _tickManager.TickCount);
                 continue;
             }
 
@@ -2326,6 +2627,64 @@ internal sealed class ColonySimulation
                 }
             }
             if (assigned) continue;
+            TryAssignAutonomousLeisure(worker, _tickManager.TickCount);
+        }
+    }
+
+    /// <summary>
+    /// Gives idle residents short, repeatable leisure walks so downtime has visible movement
+    /// without stealing a resident from a committed player or economy task.
+    /// </summary>
+    private void TryAssignAutonomousLeisure(ColonyWorker worker, long tick)
+    {
+        const long leisureWindowTicks = 36_000; // Ten simulated minutes at 60 Hz.
+        const int MaxTargetAttemptsPerResident = 8;
+        long window = tick / leisureWindowTicks;
+        if (worker.LastAutonomousActivityWindow >= window ||
+            _autonomousLeisurePathfindsThisWorkCycle >= MaxAutonomousLeisurePathfindsPerWorkCycle)
+            return;
+
+        var currentCell = new CellPosition(
+            Math.Clamp((int)worker.X, 0, Width - 1),
+            Math.Clamp((int)worker.Y, 0, Height - 1));
+
+        for (int attempt = 0; attempt < MaxTargetAttemptsPerResident; attempt++)
+        {
+            uint hash = LeisureHash(worker.Id, window, attempt);
+            int x = (int)(hash % Width);
+            int y = (int)((hash >> 12) % Height);
+            var target = new CellPosition(x, y);
+            int distance = Math.Abs(target.X - currentCell.X) + Math.Abs(target.Y - currentCell.Y);
+            if (distance is < 3 or > 7 || !IsWalkable(target)) continue;
+            if (_autonomousLeisurePathfindsThisWorkCycle >= MaxAutonomousLeisurePathfindsPerWorkCycle)
+                return;
+
+            _autonomousLeisurePathfindsThisWorkCycle++;
+            if (!TryFindPath(worker, target, out var route)) continue;
+
+            worker.LastAutonomousActivityWindow = window;
+            worker.Task = new WorkerTask(ColonyTaskKind.Move, target, route);
+            return;
+        }
+
+        // Remember unsuccessful attempts too; otherwise a trapped resident would rescan the
+        // same eight destinations at every 10 Hz planning cycle for the full leisure window.
+        worker.LastAutonomousActivityWindow = window;
+    }
+
+    private static uint LeisureHash(int workerId, long window, int attempt)
+    {
+        unchecked
+        {
+            uint value = (uint)workerId * 0x9E3779B9u;
+            value ^= (uint)window * 0x85EBCA6Bu;
+            value ^= (uint)attempt * 0xC2B2AE35u;
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            value ^= value >> 16;
+            return value;
         }
     }
 
@@ -2527,7 +2886,7 @@ internal sealed class ColonySimulation
                 continue;
             }
 
-            float speed = worker.Hungry ? 1f : 2f;
+            float speed = (worker.Hungry ? 1f : 2f) * worker.Body.MovementMultiplier;
             float movement = Math.Min(distance, speed * deltaSeconds);
             worker.X += dx / distance * movement;
             worker.Y += dy / distance * movement;
@@ -2583,6 +2942,7 @@ internal sealed class ColonySimulation
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         AssignDelivery(worker);
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.WorkCompleted,0,1,$"Collected {amount} {deposit.Resource} from a finite deposit.");
         Message = $"{worker.Name} collected {amount} {deposit.Resource}; returning it to stockpile.";
     }
 
@@ -2596,10 +2956,12 @@ internal sealed class ColonySimulation
         }
 
         int delivered = Math.Min(worker.CarriedAmount, InventoryFreeCapacity);
+        ResourceKind resourceType = worker.CarriedResource.Value;
         if (delivered > 0)
         {
-            AddResource(worker.CarriedResource.Value, delivered);
+            AddResource(resourceType, delivered);
             worker.CarriedAmount -= delivered;
+            worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ResourceDelivered,0,2,$"Delivered {delivered} {resourceType} to colony storage.");
         }
 
         if (worker.CarriedAmount == 0)
@@ -2628,7 +2990,7 @@ internal sealed class ColonySimulation
             return;
         }
 
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (order.WorkDone < order.WorkRequired) return;
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
@@ -2646,6 +3008,7 @@ internal sealed class ColonySimulation
         InvalidatePathCache();
         AddDeposit(order.Cell, ResourceKind.Stone, amount: 3);
         order.Status = ConstructionStatus.Complete;
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.WorkCompleted,0,2,"Completed an excavation; stone is now available to be hauled.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"Excavation complete at ({order.Cell.X}, {order.Cell.Y}); 3 stone are ready to be hauled.";
@@ -2660,7 +3023,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        order.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (order.WorkDone < order.WorkRequired) return;
 
         var tile = _tiles[order.Cell.X, order.Cell.Y];
@@ -2670,6 +3033,7 @@ internal sealed class ColonySimulation
         tile.ConstructionOrderId = null;
         InvalidatePathCache();
         order.Status = ConstructionStatus.Complete;
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ConstructionCompleted,0,3,$"Completed a {order.Target.ToString().ToLowerInvariant()} structure.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"{order.Target} completed at ({order.Cell.X}, {order.Cell.Y}).";
@@ -2684,11 +3048,12 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f);
+        item.WorkDone += deltaSeconds * (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (item.WorkDone < item.WorkRequired) return;
         item.Status = ConstructionStatus.Complete;
         item.Health = item.MaxHealth;
         item.IsBlightInfected = false;
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ConstructionCompleted,0,3,$"Completed a {item.Kind.ToString().ToLowerInvariant()} building.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = $"{item.Kind} completed and is now operational.";
@@ -2703,7 +3068,7 @@ internal sealed class ColonySimulation
                 worker.Task = null;
             return;
         }
-        float workRate = worker.Hungry ? 0.5f : 1f;
+        float workRate = (worker.Hungry ? 0.5f : 1f) * worker.Life.WorkSpeedMultiplier(_tickManager.TickCount,worker.Stress) * worker.Body.WorkMultiplier;
         if (order.WorkDone + deltaSeconds * workRate >= order.WorkRequired && InventoryFreeCapacity < 1)
         {
             Message = "Production is waiting for storage space before it can deliver the completed component.";
@@ -2714,6 +3079,7 @@ internal sealed class ColonySimulation
         order.Complete = true;
         order.Assigned = false;
         AddResource(ResourceKind.Components, 1);
+        worker.Life.RecordMemory(_tickManager.TickCount,ResidentMemoryKind.ProductionCompleted,0,2,"Completed a component production order.");
         _reservations.ReleasePawn(worker.Id);
                 worker.Task = null;
         Message = "Workbench production completed: 1 component produced from committed materials.";

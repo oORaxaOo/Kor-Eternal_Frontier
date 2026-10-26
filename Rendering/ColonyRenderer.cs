@@ -318,10 +318,16 @@ internal sealed class ColonyRenderer : IDisposable
             };
             if (tile.Architecture != ArchitectureKind.None)
                 canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
-            if (tile.Architecture != ArchitectureKind.None && tile.IsBlightInfected)
+            if (tile.IsBlightInfected)
             {
-                _fill.Color = new SKColor(173, 28, 84, 72);
-                canvas.DrawRect(rect, _fill);
+                _fill.Color = new SKColor(173, 28, 84, tile.Architecture == ArchitectureKind.None ? (byte)96 : (byte)72);
+                canvas.DrawRect(Inset(rect, size * 0.04f), _fill);
+                if (tile.Architecture == ArchitectureKind.None && zoom >= 0.72f)
+                {
+                    _fill.Color = new SKColor(230, 45, 108, 155);
+                    canvas.DrawCircle(point.X - size * 0.12f, point.Y + size * 0.08f, size * 0.08f, _fill);
+                    canvas.DrawCircle(point.X + size * 0.13f, point.Y - size * 0.10f, size * 0.06f, _fill);
+                }
             }
             if (tile.Architecture != ArchitectureKind.None && tile.Health < tile.MaxHealth)
             {
@@ -886,12 +892,16 @@ internal sealed class ColonyRenderer : IDisposable
         {
             var citizen = simulation.CitizenForWorker(worker.Id);
             string toil = worker.Task?.JobTracker.CurrentToil?.Kind.ToString() ?? "Idle";
-            canvas.DrawText($"Job: {worker.Task?.Kind.ToString() ?? "No assigned job"}", 24, 550, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 570, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Hunger {worker.Hunger:0}/100  |  Mood {citizen?.Mood ?? 100:0}  |  Stress {worker.Stress:0}", 24, 590, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0}  |  Carried {worker.CarriedAmount} {worker.CarriedResource?.ToString() ?? "—"}", 24, 610, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Job: {worker.Task?.Kind.ToString() ?? "No assigned job"}", 24, 545, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Current toil: {toil} | Route steps: {worker.Task?.Route.Count ?? 0}", 24, 562, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Hunger {worker.Hunger:0}/100 | Mood {citizen?.Mood ?? 100:0} | Stress {worker.Stress:0}", 24, 579, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Fatigue {citizen?.Fatigue ?? 100:0} | HP {worker.Body.TotalHealth:0}% | Injuries {worker.Body.ActiveInjuryCount}", 24, 596, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Routine: {worker.Life.ActivityAtTick(simulation.CurrentTick)} | {worker.Life.TraitSummary}", 24, 613, SKTextAlign.Left, _smallFont, _text);
             _muted.Color = MutedColor;
-            canvas.DrawText(simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.", 24, 630, SKTextAlign.Left, _smallFont, _muted);
+            string diagnostic = simulation.InspectWorker(worker.Id)?.PrimaryReason ?? "No current needs warning.";
+            string note = diagnostic == "No current needs warning." ? worker.Life.LatestMemorySummary : diagnostic;
+            if(note.Length>47) note=note[..44]+"...";
+            canvas.DrawText(note, 24, 630, SKTextAlign.Left, _smallFont, _muted);
         }
         else
         {
@@ -1190,12 +1200,13 @@ internal sealed class ColonyRenderer : IDisposable
         {
             int animalCount = spatialWorld.Ecology.Herds.Sum(herd => herd.Population);
             canvas.DrawText($"Herds {spatialWorld.Ecology.Herds.Count} | Estimated animals {animalCount}", 790, 376, SKTextAlign.Left, _smallFont, _text);
-            canvas.DrawText($"Active Blight hotspots {spatialWorld.Ecology.Hotspots.Count(item => item.IsActive)}", 790, 395, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Season {spatialWorld.Ecology.CurrentSeason} | Weather {spatialWorld.Ecology.CurrentWeather}", 790, 395, SKTextAlign.Left, _smallFont, _text);
+            canvas.DrawText($"Food growth ×{spatialWorld.Ecology.FoodGrowthMultiplier:0.00} | Active Blight hotspots {spatialWorld.Ecology.Hotspots.Count(item => item.IsActive)}", 790, 414, SKTextAlign.Left, _smallFont, _text);
             var latestEvent = spatialWorld.Ecology.RecentEvents.LastOrDefault();
             _muted.Color = MutedColor;
-            canvas.DrawText(latestEvent == null ? "No world events recorded yet" : $"Latest: {latestEvent.Title}", 790, 417, SKTextAlign.Left, _smallFont, _muted);
+            canvas.DrawText(latestEvent == null ? "No world events recorded yet" : $"Latest: {latestEvent.Title}", 790, 436, SKTextAlign.Left, _smallFont, _muted);
             if (latestEvent != null)
-                canvas.DrawText($"{latestEvent.Kind} | {latestEvent.OccurredAt / 60:0} min", 790, 435, SKTextAlign.Left, _smallFont, _muted);
+                canvas.DrawText($"{latestEvent.Kind} | {latestEvent.OccurredAt / 60:0} min", 790, 454, SKTextAlign.Left, _smallFont, _muted);
         }
         else if (simulation.SelectedWorkOrderId.HasValue)
         {

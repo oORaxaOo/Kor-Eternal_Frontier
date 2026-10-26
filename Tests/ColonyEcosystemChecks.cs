@@ -316,6 +316,19 @@ internal static class ColonyEcosystemChecks
               restoredRecruitment.Workers.Select(worker => worker.Id).Distinct().Count() == 29,
             "recruitment after loading must continue the ID sequence without collisions");
 
+        // Exercise the full colony-worker path, not only the lower-level citizen model.
+        // This is a bounded smoke run, not a wall-clock performance claim for thousands of workers.
+        var scaledColony = new ColonySimulation(seed: 50_031);
+        for (int batch = 0; batch < 5; batch++)
+            Check(scaledColony.RecruitColonists(1_000) == 1_000,
+                "bulk recruitment should support 5,000 individually simulated colony workers");
+        scaledColony.Step(1f);
+        Check(scaledColony.Workers.Count == 5_003 &&
+              scaledColony.Workers.All(worker => scaledColony.CitizenForWorker(worker.Id) is not null),
+            "all 5,000 recruited workers must remain linked to the authoritative citizen simulation after advancing time");
+        Check(scaledColony.AutonomousLeisurePathfindsThisWorkCycle <= 32,
+            "resident autonomy must respect the per-work-cycle pathfinding budget at colony scale");
+
         var pathCacheColony = new ColonySimulation();
         var pathStart = new CellPosition(2, 5);
         var pathTarget = new CellPosition(8, 5);

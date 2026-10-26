@@ -193,8 +193,9 @@ internal sealed class ContinuousWorldState
         {
             var inventory = InventoryFor(settlement.Id);
             double foodRate = settlement.Faction == "Blight" ? 0d : settlement.Faction == "Kor" ? 0.04d : 0.02d;
-            // Blight pressure damages the regional food economy; severe hotspots can make land
-            // effectively unproductive even before a settlement is physically abandoned.
+            // Seasons and weather affect every settlement's food economy through the same
+            // deterministic climate model; Blight pressure then applies a separate local penalty.
+            foodRate *= Ecology.FoodGrowthMultiplier;
             double habitatPressure = Ecology.EnvironmentalPressureAt(settlement.X, settlement.Y);
             foodRate *= Math.Clamp(1d - habitatPressure * 1.6d, 0d, 1d);
             double freeCapacity = Math.Max(0d, InventoryCapacityFor(settlement.Id) - InventoryTotalAt(settlement.Id));
@@ -436,7 +437,10 @@ internal sealed class ContinuousWorldState
         if (FactionIntelligence.Count == 0) FactionIntelligenceSystem.Initialize(this);
         if (SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported continuous world schema version: {SchemaVersion}.");
+        if (!double.IsFinite(ClockSeconds) || ClockSeconds < 0)
+            throw new InvalidDataException("Continuous world clock is invalid.");
         Ecology ??= new WorldEcologyState();
+        Ecology.SynchronizeClimate(ClockSeconds, Seed);
         Ecology.Validate();
         // Older world saves predate the regional layer; regenerate it deterministically from the world seed.
         if (RegionalMap is null || RegionalMap.Regions is null || RegionalMap.Regions.Count == 0)
@@ -447,8 +451,6 @@ internal sealed class ContinuousWorldState
         MacroWorld.Validate();
         if (RegionalMap.Seed != Seed)
             throw new InvalidDataException("Regional world map seed does not match the continuous world seed.");
-        if (!double.IsFinite(ClockSeconds) || ClockSeconds < 0)
-            throw new InvalidDataException("Continuous world clock is invalid.");
         if (Entities.Count > 100_000 || Entities.Select(entity => entity.Id).Distinct().Count() != Entities.Count)
             throw new InvalidDataException("Continuous world entity count or IDs are invalid.");
         foreach (var entity in Entities)

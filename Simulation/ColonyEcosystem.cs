@@ -6,7 +6,7 @@ internal enum GridTileKind { Ground, Wall, Stockpile }
 /// <summary>The four states are intentionally presentation-independent.</summary>
 internal enum CitizenState { Idle, Working, MovingToStorage, MovingToJob, MentalBreak }
 internal enum SimulationNeedKind { Hunger = 1, Fatigue = 2 }
-internal enum SimulationHazardKind { ThermalExposure = 1 }
+internal enum SimulationHazardKind { ThermalExposure = 1, BlightExposure = 2 }
 
 /// <summary>
 /// Compact tile data. Coordinates are encoded by the array index rather than repeated per tile.
@@ -378,6 +378,9 @@ internal sealed class CitizenAgent
     private float _stress;
     private bool _canReceiveJob = true;
     private readonly PawnPersonality _personality = new();
+    internal ResidentDailyActivity ScheduledActivity { get; set; } = ResidentDailyActivity.Work;
+    // Unsafe thermal exposure prevents restorative sleep; the environmental system applies the fatigue penalty.
+    internal bool EnvironmentallyExposed { get; set; }
 
     public int Id { get; }
     public string Name { get; }
@@ -670,6 +673,13 @@ internal sealed class ColonyEcosystem
     public long SimulationTick { get; private set; }
     public IReadOnlyList<SimulationEvent> DrainEvents(int maxCount = 4096) => _events.DrainDue(SimulationTick, maxCount);
     public string LastEvent { get; private set; } = "Colony systems online.";
+    internal event Action<SimulationEvent>? EventEmitted;
+
+    private void EmitEvent(long tick, SimulationEventKind kind, long subjectId, long relatedId = 0, double value = 0)
+    {
+        var item = _events.Enqueue(tick, kind, subjectId, relatedId, value);
+        EventEmitted?.Invoke(item);
+    }
 
     public ColonyEcosystem(int width, int height)
     {
@@ -693,7 +703,7 @@ internal sealed class ColonyEcosystem
         if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
         if (!float.IsFinite(severity) || severity is < 0 or > 100)
             throw new ArgumentOutOfRangeException(nameof(severity));
-        _events.Enqueue(SimulationTick, SimulationEventKind.HazardChanged, citizenId, (long)kind, severity);
+        EmitEvent(SimulationTick, SimulationEventKind.HazardChanged, citizenId, (long)kind, severity);
     }
 
     public CitizenAgent AddCitizen(string name, CellPosition position)
@@ -890,7 +900,7 @@ internal sealed class ColonyEcosystem
             float previousHunger = citizen.Hunger;
             citizen.Hunger = Math.Max(0, citizen.Hunger - deltaSeconds * 0.30f);
             if (previousHunger >= 30f && citizen.Hunger < 30f)
-                _events.Enqueue(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
+                EmitEvent(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
                     (long)SimulationNeedKind.Hunger, citizen.Hunger);
             // Rest satisfaction declines slowly at baseline and faster during travel/work.
             float fatigueDrain = citizen.State switch
@@ -902,7 +912,7 @@ internal sealed class ColonyEcosystem
             float previousFatigue = citizen.Fatigue;
             citizen.Fatigue = Math.Max(0, citizen.Fatigue - deltaSeconds * fatigueDrain);
             if (previousFatigue >= 20f && citizen.Fatigue < 20f)
-                _events.Enqueue(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
+                EmitEvent(SimulationTick, SimulationEventKind.NeedThresholdCrossed, citizen.Id,
                     (long)SimulationNeedKind.Fatigue, citizen.Fatigue);
 
             UpdateStress(citizen, deltaSeconds);
@@ -912,7 +922,7 @@ internal sealed class ColonyEcosystem
                 if (citizen.Stress <= 45f)
                 {
                     citizen.State = CitizenState.Idle;
-                    _events.Enqueue(SimulationTick, SimulationEventKind.MentalBreakEnded, citizen.Id, value: citizen.Stress);
+                    EmitEvent(SimulationTick, SimulationEventKind.MentalBreakEnded, citizen.Id, value: citizen.Stress);
                     LastEvent = $"{citizen.Name} has recovered from a mental break.";
                 }
                 else
@@ -945,6 +955,7 @@ internal sealed class ColonyEcosystem
                     {
                         AccountConsumedInventory(eaten);
                         citizen.Hunger = Math.Min(100f, citizen.Hunger + 65f);
+                        EmitEvent(SimulationTick,SimulationEventKind.NeedSatisfied,citizen.Id,(long)PawnNeedKind.Hunger,citizen.Hunger);
                         LastEvent = $"{citizen.Name} ate from the stockpile.";
                     }
                     citizen.State = CitizenState.Idle;
@@ -956,8 +967,32 @@ internal sealed class ColonyEcosystem
             {
                 ReleaseAssignment(citizen);
                 citizen.State = CitizenState.MentalBreak;
-                _events.Enqueue(SimulationTick, SimulationEventKind.MentalBreakStarted, citizen.Id, value: citizen.Stress);
+                EmitEvent(SimulationTick, SimulationEventKind.MentalBreakStarted, citizen.Id, value: citizen.Stress);
                 LastEvent = $"{citizen.Name} is overwhelmed and has stopped working.";
+                continue;
+            }
+
+            if (citizen.ScheduledActivity != ResidentDailyActivity.Work &&
+                citizen.State is CitizenState.MovingToJob or CitizenState.Working)
+            {
+                ReleaseAssignment(citizen);
+                citizen.State = CitizenState.Idle;
+            }
+
+            if (citizen.ScheduledActivity == ResidentDailyActivity.Sleep)
+            {
+                citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.10f);
+                // Sleep is an activity, not a guaranteed recovery button: dangerous exposure
+                // interrupts restorative rest while StepEnvironmentalExposure reduces fatigue.
+                if (!citizen.EnvironmentallyExposed)
+                    citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 12f);
+                continue;
+            }
+            if (citizen.ScheduledActivity == ResidentDailyActivity.Recreation)
+            {
+                citizen.Stress = Math.Max(0f, citizen.Stress - deltaSeconds * 0.16f);
+                if (citizen.Fatigue < 75f)
+                    citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 3f);
                 continue;
             }
 
@@ -986,7 +1021,10 @@ internal sealed class ColonyEcosystem
             // Idle citizens recover before returning to the labour pool.
             if (citizen.Fatigue < 60f)
             {
+                float before = citizen.Fatigue;
                 citizen.Fatigue = Math.Min(100f, citizen.Fatigue + deltaSeconds * 8f);
+                if (before < 60f && citizen.Fatigue >= 60f)
+                    EmitEvent(SimulationTick,SimulationEventKind.NeedSatisfied,citizen.Id,(long)PawnNeedKind.Sleep,citizen.Fatigue);
                 continue;
             }
             if (citizen.Hunger < 30f || !citizen.CanReceiveJob) continue;
