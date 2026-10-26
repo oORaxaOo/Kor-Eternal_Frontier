@@ -2048,7 +2048,7 @@ internal sealed class ColonySimulation
 
         long epoch = authoritativeTick / infiltrationIntervalTicks;
         int chancePercent = Math.Clamp(4 + (int)Math.Round((pressure - .70d) / .30d * 26d), 4, 30);
-        int roll = BlightSpreadRoll(seed, -1, (int)(epoch & int.MaxValue),
+        int roll = BlightSpreadRoll(seed, (int)(epoch & int.MaxValue),
             (int)Math.Round(pressure * 1_000d), 0, 0, epoch);
         if (roll >= chancePercent) return false;
 
