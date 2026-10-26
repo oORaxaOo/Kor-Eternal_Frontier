@@ -193,8 +193,9 @@ internal sealed class ContinuousWorldState
         {
             var inventory = InventoryFor(settlement.Id);
             double foodRate = settlement.Faction == "Blight" ? 0d : settlement.Faction == "Kor" ? 0.04d : 0.02d;
-            // Blight pressure damages the regional food economy; severe hotspots can make land
-            // effectively unproductive even before a settlement is physically abandoned.
+            // Seasons and weather affect every settlement's food economy through the same
+            // deterministic climate model; Blight pressure then applies a separate local penalty.
+            foodRate *= Ecology.FoodGrowthMultiplier;
             double habitatPressure = Ecology.EnvironmentalPressureAt(settlement.X, settlement.Y);
             foodRate *= Math.Clamp(1d - habitatPressure * 1.6d, 0d, 1d);
             double freeCapacity = Math.Max(0d, InventoryCapacityFor(settlement.Id) - InventoryTotalAt(settlement.Id));
@@ -430,6 +431,11 @@ internal sealed class ContinuousWorldState
             .ToArray();
     }
 
+    private void SynchronizeClimateFromClock()
+    {
+        Ecology.SynchronizeClimate(ClockSeconds, Seed);
+    }
+
     public void Validate()
     {
         FactionIntelligence ??= [];
@@ -437,6 +443,7 @@ internal sealed class ContinuousWorldState
         if (SchemaVersion != 1)
             throw new InvalidDataException($"Unsupported continuous world schema version: {SchemaVersion}.");
         Ecology ??= new WorldEcologyState();
+        SynchronizeClimateFromClock();
         Ecology.Validate();
         // Older world saves predate the regional layer; regenerate it deterministically from the world seed.
         if (RegionalMap is null || RegionalMap.Regions is null || RegionalMap.Regions.Count == 0)
