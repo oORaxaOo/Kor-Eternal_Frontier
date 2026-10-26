@@ -10,6 +10,16 @@ internal static class ResidentLifeProfileChecks
   Check(Enumerable.Range(0,24).Any(hour=>p.ActivityAtTick(hour*ResidentLifeProfile.TicksPerHour)==ResidentDailyActivity.Work),"daily schedule includes a work block");
   Check(p.ActivityAtTick(17*ResidentLifeProfile.TicksPerHour)==ResidentDailyActivity.Sleep,"daily schedule includes sleep hours after the opening work shift");
   Check(p.ActivityAtTick(ResidentLifeProfile.TicksPerDay+10)==p.ActivityAtTick(10),"schedule repeats on simulated day boundaries");
+  var leisureColony=new ColonySimulation(seed:781);
+  long recreationTick=9*ResidentLifeProfile.TicksPerHour;
+  leisureColony.AdvanceWorldTick(new SimulationTick(recreationTick,1f/TickManager.TicksPerSecond));
+  Check(leisureColony.Workers.Any(worker=>worker.Task?.Kind==ColonyTaskKind.Move),
+   "idle residents must autonomously walk to nearby destinations during recreation hours");
+  var leisureWorker=leisureColony.Workers.First(worker=>worker.Task?.Kind==ColonyTaskKind.Move);
+  var leisureTarget=leisureWorker.Task!.Target;
+  leisureColony.AdvanceWorldTick(new SimulationTick(recreationTick+6,1f/TickManager.TicksPerSecond));
+  Check(leisureWorker.Task?.Kind==ColonyTaskKind.Move&&leisureWorker.Task.Target==leisureTarget,
+   "an autonomous leisure walk must keep its chosen target rather than thrashing between orders");
   p.RecordMemory(100,ResidentMemoryKind.WorkCompleted,0,4,"Completed a task.");
   p.RecordMemory(100,ResidentMemoryKind.Friendship,18,3,"Formed a meaningful bond.");
   Check(p.RecentMoodBias(100)>0&&p.RecentMoodBias(18100)==0,"memory influence decays deterministically");
